@@ -621,3 +621,33 @@ induction H.
          intros h.
          admit.
 Qed.
+
+(* %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% *)
+
+Inductive tree (X : Type) : Type :=
+  | node : X -> tree X -> tree X -> tree X
+  | leaf : tree X.
+
+Arguments leaf {_}.
+Arguments node {_} n l r.
+
+Axiom FreshMonad : Type -> Type.
+
+Axiom Sym : Type.
+Axiom gensym : FreshMonad Sym.
+
+Axiom ret : forall {X}, X -> FreshMonad X.
+Axiom bind: forall {X Y}, FreshMonad X -> (X -> FreshMonad Y) -> FreshMonad Y.
+
+Notation "'let!' x ':=' e1 'in' e2" := (bind e1 (fun x => e2))
+                                         (x ident, at level 90).
+
+Fixpoint label' (t: tree unit): FreshMonad (tree Sym) :=
+  match t with
+  | leaf => ret leaf
+  | node _ l r =>
+    let! f := gensym in
+    let! l' := label' l in
+    let! r' := label' r in
+    ret (node f l' r')
+  end.
