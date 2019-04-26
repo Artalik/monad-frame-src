@@ -26,22 +26,32 @@ Inductive val : Type :=
 | val_fun : var -> trm -> val
 | val_fix : var -> var -> trm -> val
 | val_leaf : val
-| val_node : trm -> trm -> trm -> val
+| val_node : val
+| val_node1 : val -> val
+| val_node2 : val -> val -> val
+| val_node3 : val -> val -> val -> val
 
 with trm : Type :=
      | trm_val : val -> trm
      | trm_var : var -> trm
      | trm_fun : var -> trm -> trm
      | trm_fix : var -> var -> trm -> trm
-     | trm_node : trm -> trm -> trm -> trm
      | trm_if : trm -> trm -> trm -> trm
-     | trm_match : trm -> trm -> trm -> trm
+     | trm_match : trm -> trm -> var -> var -> var -> trm -> trm
      | trm_seq : trm -> trm -> trm
      | trm_let : var -> trm -> trm -> trm
      | trm_app : trm -> trm -> trm
      | trm_while : trm -> trm -> trm
      | trm_for : var -> trm -> trm -> trm -> trm.
 
+Definition trm_node (n l r: trm): trm :=
+  trm_app
+   (trm_app
+     (trm_app
+       (trm_val (val_node))
+       n)
+     l)
+   r.
 
 Coercion val_prim : prim >-> val.
 Coercion val_bool : bool >-> val.
@@ -89,7 +99,7 @@ Definition hprop := heap -> Prop.
 Definition hempty := fun (h : heap) => Equal h empty.
 
 Definition hsingle loc : hprop :=
-  fun h =>  Equal h (singleton loc) /\ loc <> null.
+  fun h =>  Equal h (singleton loc).
 
 Definition hpure (P:Prop) : hprop :=
   fun h =>  Equal h empty /\ P.
@@ -255,20 +265,18 @@ Proof.
 Qed.
 
 Lemma single_fresh : forall h,
-    exists l, \# (singleton l) h /\ l <> null.
+    exists l, \# (singleton l) h.
 Proof.
   intros. unfold disjoint.
   pose (max_elt h). pose (i := o). assert (o = i) by auto.
   induction i.
-  * exists (S a). split; intros.
+  * exists (S a). intros.
     ** intro. destruct H0.
        pose (P := H1). apply (max_elt_spec2 H) in P.
        apply singleton_spec in H0. rewrite H0 in P. auto.
-    ** auto.
-  * exists (S 0). split; intros.
+  * exists (S 0). intros.
     ** intro. destruct H0. apply max_elt_spec3 in H.
        unfold Empty in H. apply H in H1. assumption.
-    ** auto.
 Qed.
 
 Implicit Types t : trm.
@@ -276,10 +284,17 @@ Implicit Types v : val.
 Implicit Types s : sym.
 Implicit Types b : bool.
 Implicit Types n : int.
+Import ListNotations.
 
 Fixpoint subst (y:var) (w:val) (t:trm) : trm :=
   let aux t := subst y w t in
   let aux_no_capture x t := if eq_var_dec x y then t else aux t in
+  let aux_no_captures xs t := (fix AUX xs := match xs with
+                              | [] => aux t
+                              | x :: xs => if eq_var_dec x y then t
+                                           else AUX xs
+                              end) xs
+  in
   match t with
   | trm_val v => trm_val v
   | trm_var x => if eq_var_dec x y then trm_val w else t
@@ -287,13 +302,12 @@ Fixpoint subst (y:var) (w:val) (t:trm) : trm :=
   | trm_fix f x t1 => trm_fix f x (if eq_var_dec f y then t1 else
                                      aux_no_capture x t1)
   | trm_if t0 t1 t2 => trm_if (aux t0) (aux t1) (aux t2)
-  | trm_match t0 t1 t2 => trm_match (aux t0) (aux t1) (aux t2)
+  | trm_match t0 t1 x y z t2 => trm_match (aux t0) (aux t1) x y z (aux_no_captures [x;y;z] t2)
   | trm_seq t1 t2 => trm_seq (aux t1) (aux t2)
   | trm_let x t1 t2 => trm_let x (aux t1) (aux_no_capture x t2)
   | trm_app t1 t2 => trm_app (aux t1) (aux t2)
   | trm_while t1 t2 => trm_while (aux t1) (aux t2)
   | trm_for x t1 t2 t3 => trm_for x (aux t1) (aux t2) (aux_no_capture x t3)
-  | trm_node t1 t2 t3 => trm_node (aux t1) (aux t2) (aux t3)
   end.
 
 
@@ -308,20 +322,20 @@ Inductive red : state -> trm -> state -> val -> Prop :=
     red m1 t0 m2 (val_bool b) ->
     red m2 (if b then t1 else t2) m3 r ->
     red m1 (trm_if t0 t1 t2) m3 r
-| red_match_leaf : forall v t1 t2 t3 m1 m2 m3,
+| red_match_leaf : forall x y z v t1 t2 t3 m1 m2 m3,
     red m1 t1 m2 val_leaf ->
     red m2 t2 m3 v ->
-    red m1 (trm_match t1 t2 t3) m3 v
+    red m1 (trm_match t1 t2 x y z t3) m3 v
 | red_match_node :
-    forall m0 m1 m2 m3 trm1 trm2 trm3 t1 t2 t3 v,
-      red m0 t1 m1 (val_node trm1 trm2 trm3) ->
-      red m2 (trm_app (trm_app (trm_app t3 trm1) trm2) trm3) m3 v ->
-      red m0 (trm_match t1 t2 t3) m3 v
+    forall m0 m1 m2 m3 t1 t2 t3 x y z v v1 v2 v3,
+      red m0 t1 m1 (val_node3 v1 v2 v3) ->
+      red m2 (subst x v1 (subst y v2 (subst z v3 t3))) m3 v ->
+      red m0 (trm_match t1 t2 x y z t3) m3 v
 | red_node : forall m0 m1 m2 m3 t1 t2 t3 v1 v2 v3,
     red m0 t1 m1 v1 ->
     red m1 t2 m2 v2 ->
     red m2 t3 m3 v3 ->
-    red m0 (trm_node t1 t2 t3) m3 (val_node v1 v2 v3)
+    red m0 (trm_node t1 t2 t3) m3 (val_node3 v1 v2 v3)
 | red_seq : forall m1 m2 m3 t1 t2 r,
     red m1 t1 m2 val_unit ->
     red m2 t2 m3 r ->
@@ -336,6 +350,15 @@ Inductive red : state -> trm -> state -> val -> Prop :=
     red m2 t2 m3 v2 ->
     red m3 (trm_app v1 v2) m4 r ->
     red m1 (trm_app t1 t2) m4 r
+| red_app_node: forall m0 m1 v v1,
+    v = val_node ->
+    red m0 (trm_app v v1) m1 (val_node1 v1)
+| red_app_node1: forall m0 m1 v v1 v2,
+    v = val_node1 v1 ->
+    red m0 (trm_app v v2) m1 (val_node2 v1 v2)
+| red_app_node2: forall m0 m1 v v1 v2 v3,
+    v = val_node2 v1 v2 ->
+    red m0 (trm_app v v3) m1 (val_node3 v1 v2 v3)
 | red_app_fun : forall m1 m2 v1 v2 x t r,
     v1 = val_fun x t ->
     red m1 (subst x v2 t) m2 r ->
@@ -346,7 +369,6 @@ Inductive red : state -> trm -> state -> val -> Prop :=
     red m1 (trm_app v1 v2) m2 r
 | red_gensym : forall ma mb l,
     mb = (singleton l) ->
-    l <> null ->
     \# ma mb ->
     red ma (val_gensym) (mb \+ ma) (val_sym l)
 | red_add : forall m n1 n2 n',
@@ -373,7 +395,7 @@ Inductive red : state -> trm -> state -> val -> Prop :=
           else val_unit) m2 r ->
     red m1 (trm_for x n1 n2 t3) m2 r.
 
-
+(*
 Fixpoint trm_size (t:trm) : nat :=
   match t with
   | trm_var x => 1
@@ -396,7 +418,7 @@ Proof.
   induction m; simpl; intuition.
   pose (IHn m). induction n; intuition.
 Qed.
-
+*)
 
 Definition triple (t:trm) (H:hprop) (Q:val->hprop) :=
   forall H' h,
@@ -426,11 +448,11 @@ Proof using.
   exists h' v. splits~. now apply hstar_assoc.
 Qed.
 
-Lemma rule_ref :
+Lemma rule_gensym :
   triple val_gensym \[] (fun r => Hexists l, \[r = val_sym l] \* (\s l)).
 Proof.
   intros. intros HF h N.
-  pose (e := single_fresh h). destruct e. destruct H.
+  pose (e := single_fresh h). destruct e.
   exists (val_sym x) ((singleton x) \+ h). split.
   * apply disjoint_sym in H. apply red_gensym; try(auto).
   * exists (singleton x) h. repeat split; auto.
@@ -441,7 +463,7 @@ Qed.
 Lemma rule_fix : forall f x t1 H Q,
     H ==> Q (val_fix f x t1) ->
     triple (trm_fix f x t1) H Q.
-Proof using.      
+Proof using.
   introv M. intros HF h H0. exists___. splits.
   { applys red_fix. }
   { red in M. red. red in H0. repeat (destruct H0). destruct H1. destruct H2.
@@ -452,397 +474,150 @@ Proof using.
 Qed.
 
 
+(* %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% *)
 
+Definition LABEL := 4.
+Definition X := 3.
+Definition N := 2.
+Definition L := 1.
+Definition R := 0.
+Definition LL := 5.
+Definition RR := 6.
+Definition FF := 7.
 
+Definition label (t : trm) :=
+  trm_app
+   (val_fix LABEL X
+    (trm_match (trm_var X)
+      val_leaf
+      N L R
+      (trm_let FF (trm_val val_gensym)
+      (trm_let LL (trm_app (trm_var LABEL) (trm_var L))
+      (trm_let RR (trm_app (trm_var LABEL) (trm_var R))
+       (trm_node
+            (trm_var FF)
+            (trm_var LL)
+            (trm_var RR)))))))
+    t.
 
-
-
-
-
-
-
-
-
-
-
-
-Definition rec_res :=
-  (trm_node (trm_val val_gensym) (trm_app (trm_var 4) (trm_var 1)) (trm_app (trm_var 4) (trm_var 0))).
-
-Definition branche_node := trm_fun 2 (trm_fun 1 (trm_fun 0 rec_res)).
-
-Definition fix_label :=
-  val_fix 4 3
-          (trm_match (trm_var 3) val_leaf branche_node).
-
-Definition label (t : trm) := trm_app fix_label t.
-
-Inductive tree (A : Type) :=
-| Leaf : tree A
-| Node : A -> tree A -> tree A -> tree A.
-
-
-
-Fixpoint tree_equiv (T : tree trm) (t : trm) :=
-  match T, t with
-  | Node x t1 t2, val_node x' t1' t2' => tree_equiv t1 t1' /\ tree_equiv t2 t2' /\ x = x'
-  | Leaf _, val_leaf => True
-  | _,_ => False
-  end.
-
-Fixpoint MTree (t : tree trm) :=
-  match t with
-  | Leaf _ => \[]
-  | Node (trm_val (val_sym l)) t1 t2 => \s l \* (MTree t1) \* (MTree t2)
-  | _ => fun h => False
-  end.
-
-
-Fixpoint TreeSpec (t : trm) :=
-  match t with
+Fixpoint TreeSpec (v : val) :=
+  match v with
   | val_leaf => \[]
-  | val_node (val_sym l) t1 t2 => \s l \* (TreeSpec t1) \* (TreeSpec t2)
+  | val_node3 (val_sym l) t1 t2 => \s l \* (TreeSpec t1) \* (TreeSpec t2)
   | _ => fun h => False
   end.
 
-
-Fixpoint is_tree_unit (t : val) :=
-  match t with
-  | val_node val_unit (trm_val t1) (trm_val t2) => is_tree_unit t1 /\ is_tree_unit t2
-  | val_leaf => True
-  | _ => False
-  end.
-
-Definition id :=
-  trm_fix 4 3 (trm_match 3 val_leaf
-                                  (trm_fun 2 (trm_fun 1 (trm_fun 0
-                                                                 (trm_node 2 (trm_app (trm_var 4) (trm_var 1)) (trm_app (trm_var 4) (trm_var 0))))))).
+Inductive IsTree : val -> Prop :=
+  | isLeaf: IsTree val_leaf
+  | isNode: forall n l r, IsTree l -> IsTree r -> IsTree (val_node3 n l r).
 
 
-Lemma test : forall (t : trm) v,
-    triple (id v)
-           (\[ t = trm_val v /\ is_tree_unit v] \* TreeSpec t)
-           (fun v => \[ t = trm_val v /\ is_tree_unit v] \* TreeSpec t).
-Proof.
-  induction t0.
-  * induction v0.
-    { apply rule_frame. red. intros. red in H. simpl in *. repeat (destruct H). now destruct H1. }
-    {  apply rule_frame. red. intros. red in H. simpl in *. repeat (destruct H). now destruct H1. }
-    { apply rule_frame. red. intros. red in H. simpl in *. repeat (destruct H). now destruct H1. }
-    {  apply rule_frame. red. intros. red in H. simpl in *. repeat (destruct H). now destruct H1. }
-    {  apply rule_frame. red. intros. red in H. simpl in *. repeat (destruct H). now destruct H1. }
-    {  apply rule_frame. red. intros. red in H. simpl in *. repeat (destruct H). now destruct H1. }
-    {  apply rule_frame. red. intros. red in H. simpl in *. repeat (destruct H). now destruct H1. }
-    { intros H N P.
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-Lemma Equiv_Tree : forall (T : tree trm) (t : trm) (h : heap),
-    tree_equiv T t -> TreeSpec t h -> MTree T h.
-Proof.
-  induction T; intros.
-  * simpl in *. induction t0; simpl in *; try(contradiction).
-    ** induction v; try(contradiction). assumption.
-  * simpl in *. induction t0; simpl in *; try(contradiction).
-    ** induction v; try(contradiction). destruct H. destruct H1.
-       subst. induction t0; try(contradiction).
-       induction v; try(contradiction). red. red in H0. destruct H0.
-       destruct H0. destruct H0. destruct H2. destruct H3.
-       exists x x0. repeat split; auto.
-       *** intro. red in H0. destruct H0. now rewrite <- H0.
-       *** intro. red in H0. destruct H0. now rewrite H0.
-       *** now destruct H0.
-       *** red. destruct H2. destruct H2. destruct H2. destruct H5. destruct H6.
-           exists x1 x2. repeat split; auto.
-           **** now apply (IHT1 t1).
-           **** now apply (IHT2 t2).
-           ****  intro. now rewrite H7 in H8.
-           **** intro. now rewrite H7.
-       *** intro. now rewrite H4 in H5.
-       *** intro. now rewrite H4.
+Lemma rule_app_fix : forall f x F V t1 H Q,
+    F = (val_fix f x t1) ->
+    triple (subst f F (subst x V t1)) H Q ->
+    triple (trm_app F V) H Q.
+Proof using.
+  introv EF M. subst F. intros HF h N.
+  lets~ (h'&v&R&K): (rm M) HF h.
+  exists h' v. splits~. { applys~ red_app_fix. }
 Qed.
 
-Lemma Equiv_Tree2 : forall (T : tree trm) (t : trm) (h : heap),
-    tree_equiv T t -> MTree T h -> TreeSpec t h.
+Lemma rule_match_tree : forall t t1 t2 x y z H Q,
+    (t = val_leaf -> triple t1 H Q) ->
+    (forall n l r, t = val_node3 n l r -> triple (subst x n (subst y l (subst z r t2))) H Q) ->
+    triple (trm_match t t1 x y z t2) H Q.
+Admitted.
+
+Lemma rule_val : forall v H Q,
+    H ==> Q v ->
+    triple (trm_val v) H Q.
+Admitted.
+
+Definition spec_fun (x:var) (t1:trm) (F:val) :=
+  forall X H Q, triple (subst x X t1) H Q -> triple (trm_app F X) H Q.
+
+Lemma rule_fun_spec : forall x t1 H Q,
+    (forall (F:val), spec_fun x t1 F -> H ==> Q F) ->
+    triple (trm_fun x t1) H Q.
+Admitted.
+
+Lemma rule_app_node : forall F V H Q,
+    F = val_node ->
+    triple (val_node1 V) H Q ->
+    triple (trm_app F V) H Q.
+Admitted.
+
+Lemma rule_app_node1 : forall F v1 V H Q,
+    F = val_node1 v1 ->
+    triple (val_node2 v1 V) H Q ->
+    triple (trm_app F V) H Q.
+Admitted.
+
+Lemma rule_app_node2 : forall F v1 v2 V H Q,
+    F = val_node2 v1 v2 ->
+    triple (val_node3 v1 v2 V) H Q ->
+    triple (trm_app F V) H Q.
+Admitted.
+
+Lemma rule_app_node3 : forall F V1 V2 V3 H Q,
+    F = val_node ->
+    triple (val_node3 V1 V2 V3) H Q ->
+    triple (F V1 V2 V3) H Q.
+Admitted.
+
+Lemma rule_let : forall x t1 t2 H Q Q1,
+    triple t1 H Q1 ->
+    (forall (X:val), triple (subst x X t2) (Q1 X) Q) ->
+    triple (trm_let x t1 t2) H Q.
+Admitted.
+
+Lemma rule_extract_hexists : forall t (A:Type) (J:A->hprop) Q,
+    (forall x, triple t (J x) Q) ->
+    triple t (hexists J) Q.
+Admitted.
+
+Lemma rule_consequence : forall t H' Q' H Q,
+    H ==> H' ->
+    triple t H' Q' ->
+    (forall v, Q' v ==> Q v) ->
+    triple t H Q.
+Admitted.
+
+Theorem label_correct: forall v, IsTree v ->
+  triple (label (trm_val v)) \[] TreeSpec.
 Proof.
-  induction T; intros.
-  * simpl in *. induction t0; simpl in *; try(contradiction).
-    ** induction v; try(contradiction). assumption.
-  * simpl in *. induction t0; simpl in *; try(contradiction).
-    ** induction v; try(contradiction). destruct H. destruct H1.
-       subst. induction t0; try(contradiction).
-       induction v; try(contradiction). red. red in H0. destruct H0.
-       destruct H0. destruct H0. destruct H2. destruct H3.
-       exists x x0. repeat split; auto.
-       *** intro. red in H0. destruct H0. now rewrite <- H0.
-       *** intro. red in H0. destruct H0. now rewrite H0.
-       *** now destruct H0.
-       *** red. destruct H2. destruct H2. destruct H2. destruct H5. destruct H6.
-           exists x1 x2. repeat split; auto.
-           **** intro. now rewrite H7 in H8.
-           **** intro. now rewrite H7.
-       *** intro. now rewrite H4 in H5.
-       *** intro. now rewrite H4.
+intros.
+unfold label.
+induction H.
+- (* Case: v ~ val_leaf *)
+  applys~ rule_app_fix; simpl.
+  applys~ rule_match_tree; try discriminate 1; intro.
+  applys~ rule_val; simpl.
+  admit.
+- (* Case: v ~ val_node *)
+  applys~ rule_app_fix; simpl.
+  applys~ rule_match_tree; try discriminate 1; intros.
+  inversion H1; subst; clear H1; simpl.
+  applys~ rule_let; [| intros f; simpl].
+  + applys~ rule_gensym.
+  + applys~ rule_extract_hexists; intro fresh.
+    applys~ rule_let; [| intros l; simpl].
+    * apply (rule_consequence (H' := \[] \* \[f = val_sym fresh] \* \s fresh)
+             (Q' := fun l' => TreeSpec l' \* \[f = val_sym fresh] \* \s fresh)).
+      -- admit.
+      -- applys~ rule_frame.
+      -- intros x h q.
+         exact q.
+    * simpl. applys~ rule_let; [| intros r; simpl].
+      -- apply (rule_consequence (H' := \[] \* TreeSpec l \* \[f = val_sym fresh] \* \s fresh)
+             (Q' := fun r' => TreeSpec r' \* TreeSpec l \* \[f = val_sym fresh] \* \s fresh)).
+         ++ admit.
+         ++ applys~ rule_frame.
+         ++ intros x h q.
+            exact q.
+      -- applys~ rule_app_node3.
+         applys~ rule_val.
+         simpl.
+         intros h.
+         admit.
 Qed.
-
-Lemma trm_pos : forall t, 1 <= trm_size t.
-Proof.
-  induction t0; simpl; math.
-Qed.
-
-Lemma red_size : forall t m0 m1 r, red m0 t m1 r -> trm_size r <= trm_size t.
-Proof.
-  induction t0; intros; simpl; try(reflexivity); try(math).
-Qed.
-
-
-
-
-
-      rule_frame : forall t H Q H',
-          triple t H Q ->
-          triple t (H \* H') (Q \*+ H').
-
-      (* Lemma val_label : forall x t1 t2 v1 v2 m1 m2, *)
-      (*     t1 = trm_val v1 -> *)
-      (*     t2 = trm_val v2 -> *)
-      (*     is_tree v1 -> *)
-      (*     is_tree v2 -> *)
-      (*     red m1 (label (val_node x t1 t2)) m2 (val_node val_gensym (fix_label t1) (fix_label t2)). *)
-      (* Proof. *)
-      (*   induction x; intros. *)
-      (*   * eapply red_app_arg. *)
-      (*     ** apply red_fix. *)
-      (*     ** apply red_val. *)
-      (*     ** eapply red_app_arg. *)
-      (*        *** apply red_val. *)
-      (*        *** apply red_val. *)
-      (*        *** eapply red_app_fix. *)
-      (*            **** f_equal. *)
-      (*            **** eapply red_match_node. *)
-      (*                 { apply red_val. } *)
-      (*                 eapply red_app_arg. *)
-      (*                 { eapply red_app_arg. *)
-      (*                   { eapply red_app_arg. *)
-      (*                     { eapply red_fun. } *)
-      (*                     { apply red_val. } *)
-      (*                     { eapply red_app_fun. *)
-      (*                       { f_equal. } *)
-      (*                       { apply red_fun. } *)
-      (*                     } *)
-      (*                   } *)
-      (*                   { induction v1; simpl in *; try contradiction; subst. *)
-      (*                     { instantiate (3:=m1). eapply red_val. } *)
-      (*                     { apply red_val. } *)
-
-      (*                   } *)
-      (*                   { eapply red_app_fun. *)
-      (*                     { f_equal. } *)
-      (*                     { apply red_fun. } *)
-      (*                   } *)
-      (*                 } *)
-      (*                 { *)
-      (*                   { induction v2; simpl in *; try contradiction; subst. *)
-      (*                     { eapply red_val. } *)
-      (*                     { apply red_val. } *)
-      (*                   } *)
-      (*                 } *)
-      (*                 { eapply red_app_fun. *)
-      (*                   { f_equal. } *)
-      (*                   { simpl. unfold rec_res. *)
-
-
-
-      Lemma spec_tree : forall t0 v1, triple (label t0)
-                                             \[(t0 = trm_val v1 /\ is_tree_unit v1)]
-
-                                             (fun r => TreeSpec r).
-      Proof.
-        induction t0; red; intros. destruct H; destruct H;
-                                     destruct H; destruct H0; destruct H1; destruct H; destruct H3.
-        * rewrite H3.
-          pose rule_ref.
-          unfold triple in t0. pose (t0 htop h). destruct e.
-          { red. exists empty x0. repeat split; auto.
-            { apply disjoint_empty. }
-            { intro. rewrite H in H2. now rewrite H2 in H5. }
-            { intro. rewrite H in H2. now rewrite H2. }
-          }
-          destruct H5. destruct H5.
-          induction v1; simpl in *; try contradiction.
-          ** exists val_leaf __.
-             split.
-             *** eapply red_app_arg.
-                 **** apply red_val.
-                 **** apply red_val.
-                 **** eapply red_app_fix.
-                      ***** unfold fix_label. f_equal.
-                      ***** simpl. eapply red_match_leaf; apply red_val.
-             *** red. exists empty x0. repeat split; try (now intro).
-                 **** assumption.
-                 **** intro. rewrite H in H2. now rewrite H2 in H7.
-                 **** intro. rewrite H in H2. now rewrite H2.
-          ** induction t1; try contradiction. induction v0; try contradiction.
-             exists (val_node
-                       x1
-                       (val_fix 4 3
-                                (trm_match (trm_var 3) val_leaf branche_node) t2)
-                       (val_fix 4 3
-                                (trm_match (trm_var 3) val_leaf branche_node) t3)
-                    ) __.
-             split.
-             *** eapply red_app_arg.
-                 **** apply red_val.
-                 **** apply red_val.
-                 **** eapply red_app_fix.
-                      ***** unfold fix_label. f_equal.
-                      ***** simpl. eapply red_match_node.
-                      { apply red_val. }
-                      { instantiate (2 := h). induction t2; induction t3; try contradiction.
-                        subst.
-                        eapply red_app_arg.
-                        { eapply red_app_arg.
-                          { eapply red_app_arg.
-                            { eapply red_fun. }
-                            { apply red_val. }
-                            { eapply red_app_fun.
-                              { f_equal. }
-                              { simpl. apply red_fun. }
-                            }
-                          }
-                          { instantiate (1 := v0). apply red_val. }
-                          { eapply red_app_fun.
-                            { f_equal. }
-                            { simpl. apply red_fun. }
-                          }
-                        }
-                        { apply red_val. }
-                        { eapply red_app_fun.
-                          { f_equal. }
-                          { simpl. unfold fix_label. apply red_node. eassumption. }
-                        }
-                      }
-             *** destruct H6. destruct H6. destruct H6. destruct H6. destruct H6. destruct H6. destruct H6.
-                 destruct H6. subst. red. destruct H8. destruct H9.
-                 destruct H7. destruct H11.
-                 exists x2 x0. repeat split.
-                 { red. exists x7 empty. repeat split; destruct H8.
-                   { intro. now rewrite H8 in H14. }
-                   { intro. now rewrite H8. }
-                   { assumption. }
-                   { red.
-
-
-
-
-
-
-
-
-
-                     *** simpl in *. red in H6. destruct H6. destruct H6. destruct H6. destruct H6. destruct H6.
-                         destruct H6. destruct H6. destruct H6. rewrite H9. red. destruct H8. destruct H9.
-                         exists x7 x4. repeat split.
-                         **** red. exists x7 empty. destruct H8. repeat split; auto.
-                              { intro. now rewrite H8 in H11. }
-                              { intro. now rewrite H8. }
-                              { red.
-
-
-
-
-
-                                exists ___.
-                                *** eapply red_app_arg.
-                                    **** apply red_fix.
-                                    **** apply red_val.
-                                    **** eapply red_app_fix.
-                                         ***** f_equal.
-                                         ***** simpl. eapply red_match_node.
-                                         { apply red_val. }
-                                         { instantiate (3 := h). eapply red_app_arg.
-                                           { eapply red_app_arg.
-                                             { eapply red_app_arg.
-                                               { apply red_fun. }
-                                               { induction t3; try contradiction. induction v0; try contradiction.
-                                                 apply red_val. }
-                                               { eapply red_app_fun.
-                                                 { f_equal. }
-                                                 { simpl. apply red_fun. }
-                                               }
-                                             }
-                                             { induction t4 eqn:?.
-                                               {
-
-
-
-
-                                                 induction v1; simpl in *; try contradiction.
-                                                 { eapply red_match_leaf.
-                                                   { apply red_val. }
-                                                   { apply red_val. }
-                                                 }
-                                                 { induction t3; try contradiction. induction v0; try contradiction.
-                                                   eapply red_match_node.
-                                                   { apply red_val. }
-                                                   { eapply red_app_arg.
-                                                     { eapply red_app_arg.
-                                                       { eapply red_app_arg.
-                                                         { eapply red_fun. }
-                                                         { instantiate (3 := h). apply red_val. }
-                                                         { eapply red_app_fun.
-                                                           { f_equal. }
-                                                           { simpl. apply red_fun. }
-                                                         }
-                                                       }
-                                                       { induction t4; induction t5; simpl in *; try contradiction.
-                                                         destruct H4. induction v0; simpl in *; try contradiction.
-                                                         { apply red_val. }
-                                                         {
-
-
-
-                                                           ***** instantiate (2:=h). instantiate (1 := v).
-
-
-
-                                                           t1 = val_node trm1 trm2 trm3 ->
-                                                           red m2 trm1 m3 v1 ->
-                                                           red m3 trm2 m4 v2 ->
-                                                           red m4 trm3 m5 v3 ->
-                                                           red m5 v m6 (val_fun x (val_fun y (val_fun z term))) ->
-                                                           red m6 (subst x v1 (subst y v2 (subst z v3 term))) m7 vres ->
-                                                           red m1 (trm_match t1 t2 v) m7 vres
-
-
-
-                                                               induction t0; red; intros; destruct H; destruct H; destruct H; destruct H0; destruct H1.
-                                                           * induction v; simpl in *.
-                                                             ** unfold label. unfold fix_label.
-                                                                exists val_leaf empty. split; auto.
-                                                                *** eapply (red_app_fix val_unit).
-                                                                    **** f_equal.
-                                                                    **** eapply red_match_wrong. unfold branche_node. red.
-
-                                                                         (subst 4 fix_label (subst 3 val_unit (trm_match 3 val_leaf branche_node))).
-
-                                                                         apply (red_app_fix).
-
-                                                                         | red_app_fix : forall m1 m2 v1 v2 f x t r,
-                                                                             v1 = val_fix f x t ->
-                                                                             red m1 (subst f v1 (subst x v2 t)) m2 r ->
-                                                                             red m1 (trm_app v1 v2) m2 r
