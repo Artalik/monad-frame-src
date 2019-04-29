@@ -402,30 +402,6 @@ Inductive red : state -> trm -> state -> val -> Prop :=
           else val_unit) m2 r ->
     red m1 (trm_for x n1 n2 t3) m2 r.
 
-(*
-Fixpoint trm_size (t:trm) : nat :=
-  match t with
-  | trm_var x => 1
-  | trm_val v => 1
-  | trm_fun x t1 => 1 + trm_size t1
-  | trm_fix f x t1 => 1 + trm_size t1
-  | trm_if t0 t1 t2 => 1 + trm_size t0 + trm_size t1 + trm_size t2
-  | trm_seq t1 t2 => 1 + trm_size t1 + trm_size t2
-  | trm_let x t1 t2 => 1 + trm_size t1 + trm_size t2
-  | trm_app t1 t2 => 1 + trm_size t1 + trm_size t2
-  | trm_while t1 t2 => 1 + trm_size t1 + trm_size t2
-  | trm_for x t1 t2 t3 => 1 + trm_size t1 + trm_size t2 + trm_size t3
-  | trm_match t1 t2 t3 => 1 + trm_size t1 + trm_size t2 + trm_size t3
-  | trm_node t1 t2 t3 => 1 + trm_size t1 + trm_size t2 + trm_size t2
-  end.
-
-Lemma l_max_Sl : forall (n m : nat), n < S (max n m).
-Proof.
-  induction n; intros; intuition.
-  induction m; simpl; intuition.
-  pose (IHn m). induction n; intuition.
-Qed.
- *)
 
 Definition triple (t:trm) (H:hprop) (Q:val->hprop) :=
   forall H' h,
@@ -469,19 +445,6 @@ Proof.
   * exists (singleton x) h. repeat split; auto.
     ** exists x empty (singleton x). repeat split; auto. apply disjoint_empty.
     ** apply hstar_comm in N.  apply (neutral_elem h HF). assumption.
-Qed.
-
-Lemma rule_fix : forall f x t1 H Q,
-    H ==> Q (val_fix f x t1) ->
-    triple (trm_fix f x t1) H Q.
-Proof using.
-  introv M. intros HF h H0. exists___. splits.
-  { applys red_fix. }
-  { red in M. red. red in H0. repeat (destruct H0). destruct H1. destruct H2.
-    exists x0 x1. repeat split; auto.
-    { intro. now rewrite H3 in H4. }
-    { intro. now rewrite H3. }
-  }
 Qed.
 
 
@@ -563,58 +526,6 @@ Proof.
   * apply (himpl_frame_l M N).
 Qed.
 
-Definition spec_fun (x:var) (t1:trm) (F:val) :=
-  forall X H, triple (subst x X t1) H ==> triple (trm_app F X) H.
-
-Lemma spec_fun_fun : forall x t1, spec_fun x t1 (val_fun x t1).
-Proof.
-  introv M. intros HF h N. lets~ (v&h'&P&D) : (rm M) HF h. exists v h'. split~.
-  now eapply red_app_fun.
-Qed.
-
-Lemma rule_fun_spec : forall x t1 H Q,
-    (forall (F:val), spec_fun x t1 F -> (H ==> Q F)) ->
-    triple (trm_fun x t1) H Q.
-Proof.
-  introv M. intros HF h H0. exists (val_fun x t1) h. split.
-  * apply red_fun.
-  * repeat (destruct H0). exists x0 x1. split~. apply~ M. apply spec_fun_fun.
-Qed.
-
-Lemma rule_app_node : forall F V H Q,
-    F = val_node ->
-    triple (val_node1 V) H Q ->
-    triple (trm_app F V) H Q.
-Proof.
-  introv P M. subst F. intros HF h P. lets~ (v&h'&X&D) : (rm M) HF h.
-  exists (val_node1 V) h'. split.
-  * apply~ red_app_node.
-  * inversion X. now subst.
-Qed.
-
-Lemma rule_app_node1 : forall F v1 V H Q,
-    F = val_node1 v1 ->
-    triple (val_node2 v1 V) H Q ->
-    triple (trm_app F V) H Q.
-Proof.
-  introv P M. subst F. intros HF h P. lets~ (v&h'&X&D) : (rm M) HF h.
-  exists (val_node2 v1 V) h'. split.
-  * apply~ red_app_node1.
-  * inversion X. now subst.
-Qed.
-
-
-Lemma rule_app_node2 : forall F v1 v2 V H Q,
-    F = val_node2 v1 v2 ->
-    triple (val_node3 v1 v2 V) H Q ->
-    triple (trm_app F V) H Q.
-Proof.
-  introv P M. subst F. intros HF h P. lets~ (v&h'&X&D) : (rm M) HF h.
-  exists (val_node3 v1 v2 V) h'. split.
-  * apply~ red_app_node2.
-  * inversion X. now subst.
-Qed.
-
 
 Lemma rule_app_node3 : forall F V1 V2 V3 H Q,
     F = val_node ->
@@ -659,22 +570,8 @@ Proof.
   * exists v h'. split~. apply (himpl_frame_l (T v) D).
 Qed.
 
-Lemma rule_extract_hprop : forall t (P:Prop) H Q,
-    (P -> triple t H Q) ->
-    triple t (\[P] \* H) Q.
-Proof.
-  introv M. intros HF h H0. repeat (destruct H0). apply M in H3. destruct H2. destruct H1.
-  destruct H4. destruct H5.
-  lets~ (v&h'&X&D) : (rm H3) HF h.
-  - exists x2 x0. repeat split~; intro.
-    + apply disjoint_sym. apply (equal_disjoint_right H6 H5).
-    + rewrite H0 in H6. rewrite~ empty_union_1 in H6. rewrite H6 in H7. now rewrite H7 in H3.
-    + rewrite H0 in H6. rewrite~ empty_union_1 in H6. rewrite H6 in H7. now rewrite H7.
-  - exists~ v h'.
-Qed.
-
 Lemma himpl_empty_left : forall H, H ==> \[] \* H.
-Proof.
+Proof using.
   introv M. apply hstar_comm. now rewrite <- neutral_elem.
 Qed.
 
@@ -696,7 +593,17 @@ Proof.
       rewrite union_sym in H10. now rewrite union_assoc.
     + intro. rewrite H9. rewrite H7 in H8. rewrite H8. rewrite union_sym.
       rewrite union_sym in H10. now rewrite union_assoc in H10.
-Qed.      
+Qed.
+
+Lemma rule_frame_consequence : forall H2 H1 Q1 t H Q,
+    H ==> H1 \* H2 ->
+    triple t H1 Q1 ->
+    (forall H, (Q1 \*+ H2) H ==> Q H) ->
+    triple t H Q.
+Proof.
+  introv WH M WQ. applys rule_consequence WH WQ. applys rule_frame M.
+Qed.
+
         
 
 Theorem label_correct: forall v, IsTree v ->
@@ -718,17 +625,18 @@ Proof.
     + applys~ rule_gensym.
     + applys~ rule_extract_hexists; intro fresh.
       applys~ rule_let; [| intros l'; simpl].
-      * apply (rule_consequence (H' := \[] \* \[f = val_sym fresh] \* \s fresh)
-                                (Q' := fun l' => TreeSpec l' \* \[f = val_sym fresh] \* \s fresh)).
+      * apply~ (rule_frame_consequence (H2 :=  \[f = val_sym fresh] \* \s fresh)
+                                       (H1 := \[])
+                                       (Q1 := TreeSpec)).
         -- apply himpl_empty_left.
-        -- applys~ rule_frame.
         -- intros x h q.
            exact q.
       * simpl. applys~ rule_let; [| intros r; simpl].
-        -- apply (rule_consequence (H' := \[] \* TreeSpec l' \* \[f = val_sym fresh] \* \s fresh)
-                                   (Q' := fun r' => TreeSpec r' \* TreeSpec l' \* \[f = val_sym fresh] \* \s fresh)).
+        -- apply~ (rule_frame_consequence (H2 :=  TreeSpec l' \* \[f = val_sym fresh] \* \s fresh)
+                                          (H1 := \[])
+                                          (Q1 := TreeSpec)).
+
            ++ apply himpl_empty_left.
-           ++ applys~ rule_frame.
            ++ intros x h q.
               exact q.
         -- applys~ rule_app_node3.
