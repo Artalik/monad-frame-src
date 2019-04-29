@@ -46,12 +46,12 @@ with trm : Type :=
 
 Definition trm_node (n l r: trm): trm :=
   trm_app
-   (trm_app
-     (trm_app
-       (trm_val (val_node))
-       n)
-     l)
-   r.
+    (trm_app
+       (trm_app
+          (trm_val (val_node))
+          n)
+       l)
+    r.
 
 Coercion val_prim : prim >-> val.
 Coercion val_bool : bool >-> val.
@@ -217,6 +217,13 @@ Proof.
   intros. apply union_spec in H0. destruct H0; intuition.
 Qed.
 
+Lemma disjoint_equal : forall x1 x2 x3, Equal x2 x3 -> \# x1 x2 -> \# x1 x3.
+Proof.
+  intros.
+  intro. intro. destruct H1. destruct (H0 x). split~. now rewrite H.
+Qed.
+
+    
 Lemma union_disjoint : forall x x1 x2,
     disjoint x x1 -> disjoint x x2 -> disjoint x (union x1 x2).
 Proof.
@@ -290,10 +297,10 @@ Fixpoint subst (y:var) (w:val) (t:trm) : trm :=
   let aux t := subst y w t in
   let aux_no_capture x t := if eq_var_dec x y then t else aux t in
   let aux_no_captures xs t := (fix AUX xs := match xs with
-                              | [] => aux t
-                              | x :: xs => if eq_var_dec x y then t
-                                           else AUX xs
-                              end) xs
+                                             | [] => aux t
+                                             | x :: xs => if eq_var_dec x y then t
+                                                          else AUX xs
+                                             end) xs
   in
   match t with
   | trm_val v => trm_val v
@@ -418,7 +425,7 @@ Proof.
   induction m; simpl; intuition.
   pose (IHn m). induction n; intuition.
 Qed.
-*)
+ *)
 
 Definition triple (t:trm) (H:hprop) (Q:val->hprop) :=
   forall H' h,
@@ -432,6 +439,10 @@ Definition pred_incl (A : Type) (P Q : A -> Prop) :=
 
 Notation "P ==> Q" := (pred_incl P Q).
 
+Lemma himpl_refl : forall A (Q : A -> Prop), Q ==> Q.
+Proof using.
+  now intros.
+Qed.
 
 Lemma disjoint_empty : forall (s : structure), \# empty s.
 Proof.
@@ -470,7 +481,7 @@ Proof using.
     exists x0 x1. repeat split; auto.
     { intro. now rewrite H3 in H4. }
     { intro. now rewrite H3. }
-    }
+  }
 Qed.
 
 
@@ -487,17 +498,17 @@ Definition FF := 7.
 
 Definition label (t : trm) :=
   trm_app
-   (val_fix LABEL X
-    (trm_match (trm_var X)
-      val_leaf
-      N L R
-      (trm_let FF (trm_val val_gensym)
-      (trm_let LL (trm_app (trm_var LABEL) (trm_var L))
-      (trm_let RR (trm_app (trm_var LABEL) (trm_var R))
-       (trm_node
-            (trm_var FF)
-            (trm_var LL)
-            (trm_var RR)))))))
+    (val_fix LABEL X
+             (trm_match (trm_var X)
+                        val_leaf
+                        N L R
+                        (trm_let FF (trm_val val_gensym)
+                                 (trm_let LL (trm_app (trm_var LABEL) (trm_var L))
+                                          (trm_let RR (trm_app (trm_var LABEL) (trm_var R))
+                                                   (trm_node
+                                                      (trm_var FF)
+                                                      (trm_var LL)
+                                                      (trm_var RR)))))))
     t.
 
 Fixpoint TreeSpec (v : val) :=
@@ -508,125 +519,230 @@ Fixpoint TreeSpec (v : val) :=
   end.
 
 Inductive IsTree : val -> Prop :=
-  | isLeaf: IsTree val_leaf
-  | isNode: forall n l r, IsTree l -> IsTree r -> IsTree (val_node3 n l r).
+| isLeaf: IsTree val_leaf
+| isNode: forall n l r, IsTree l -> IsTree r -> IsTree (val_node3 n l r).
 
 
 Lemma rule_app_fix : forall f x F V t1 H Q,
     F = (val_fix f x t1) ->
     triple (subst f F (subst x V t1)) H Q ->
     triple (trm_app F V) H Q.
-Proof using.
+Proof.
   introv EF M. subst F. intros HF h N.
   lets~ (h'&v&R&K): (rm M) HF h.
   exists h' v. splits~. { applys~ red_app_fix. }
 Qed.
 
-Lemma rule_match_tree : forall t t1 t2 x y z H Q,
+Lemma rule_match_tree : forall v t t1 t2 x y z H Q,
+    t = trm_val v -> IsTree v ->
     (t = val_leaf -> triple t1 H Q) ->
     (forall n l r, t = val_node3 n l r -> triple (subst x n (subst y l (subst z r t2))) H Q) ->
     triple (trm_match t t1 x y z t2) H Q.
-Admitted.
+Proof.
+  destruct v; intros; inversion H1; subst; intros H' h I.
+  * lets~ (v&h'&P&D) : (rm H2) H' h. exists v h'. splits~.
+    apply (red_match_leaf _ _ _ _ (red_val h val_leaf) P).
+  * lets~ (v&h'&P&D) : (rm H3) H' h. exists v h'.
+    splits~. apply (red_match_node _ _ _ _ _ (red_val h (val_node3 n v2 v3)) P).
+Qed.
+
+Lemma himpl_frame_l : forall H1 H2 H3,
+    H1 ==> H2 ->
+    (H1 \* H3) ==> (H2 \* H3).
+Proof.
+  introv I. intros h H. repeat (destruct H). exists x x0. auto.
+Qed.
+
 
 Lemma rule_val : forall v H Q,
     H ==> Q v ->
     triple (trm_val v) H Q.
-Admitted.
+Proof.
+  introv M. intros HF h N. exists v h. splits~.
+  * apply red_val.
+  * apply (himpl_frame_l M N).
+Qed.
 
 Definition spec_fun (x:var) (t1:trm) (F:val) :=
-  forall X H Q, triple (subst x X t1) H Q -> triple (trm_app F X) H Q.
+  forall X H, triple (subst x X t1) H ==> triple (trm_app F X) H.
+
+Lemma spec_fun_fun : forall x t1, spec_fun x t1 (val_fun x t1).
+Proof.
+  introv M. intros HF h N. lets~ (v&h'&P&D) : (rm M) HF h. exists v h'. split~.
+  now eapply red_app_fun.
+Qed.
 
 Lemma rule_fun_spec : forall x t1 H Q,
-    (forall (F:val), spec_fun x t1 F -> H ==> Q F) ->
+    (forall (F:val), spec_fun x t1 F -> (H ==> Q F)) ->
     triple (trm_fun x t1) H Q.
-Admitted.
+Proof.
+  introv M. intros HF h H0. exists (val_fun x t1) h. split.
+  * apply red_fun.
+  * repeat (destruct H0). exists x0 x1. split~. apply~ M. apply spec_fun_fun.
+Qed.
 
 Lemma rule_app_node : forall F V H Q,
     F = val_node ->
     triple (val_node1 V) H Q ->
     triple (trm_app F V) H Q.
-Admitted.
+Proof.
+  introv P M. subst F. intros HF h P. lets~ (v&h'&X&D) : (rm M) HF h.
+  exists (val_node1 V) h'. split.
+  * apply~ red_app_node.
+  * inversion X. now subst.
+Qed.
 
 Lemma rule_app_node1 : forall F v1 V H Q,
     F = val_node1 v1 ->
     triple (val_node2 v1 V) H Q ->
     triple (trm_app F V) H Q.
-Admitted.
+Proof.
+  introv P M. subst F. intros HF h P. lets~ (v&h'&X&D) : (rm M) HF h.
+  exists (val_node2 v1 V) h'. split.
+  * apply~ red_app_node1.
+  * inversion X. now subst.
+Qed.
+
 
 Lemma rule_app_node2 : forall F v1 v2 V H Q,
     F = val_node2 v1 v2 ->
     triple (val_node3 v1 v2 V) H Q ->
     triple (trm_app F V) H Q.
-Admitted.
+Proof.
+  introv P M. subst F. intros HF h P. lets~ (v&h'&X&D) : (rm M) HF h.
+  exists (val_node3 v1 v2 V) h'. split.
+  * apply~ red_app_node2.
+  * inversion X. now subst.
+Qed.
+
 
 Lemma rule_app_node3 : forall F V1 V2 V3 H Q,
     F = val_node ->
     triple (val_node3 V1 V2 V3) H Q ->
     triple (F V1 V2 V3) H Q.
-Admitted.
+Proof.
+  introv P M. subst F. intros HF h P. lets~ (v&h'&X&D) : (rm M) HF h.
+  exists (val_node3 V1 V2 V3) h. split.
+  * apply (red_node (m1 :=h) (m2 := h)); apply red_val.
+  * inversion X. now subst.
+Qed.
+
 
 Lemma rule_let : forall x t1 t2 H Q Q1,
     triple t1 H Q1 ->
     (forall (X:val), triple (subst x X t2) (Q1 X) Q) ->
     triple (trm_let x t1 t2) H Q.
-Admitted.
+Proof.
+  introv M Hyp. intros HF h P. lets~ (v&h'&X&D) : (rm M) HF h.
+  lets~ (v'&h''&X'&D') : (rm (Hyp v)) HF h'.
+  exists v' h''. split~. apply (red_let _ _ X X').
+Qed.
+
 
 Lemma rule_extract_hexists : forall t (A:Type) (J:A->hprop) Q,
     (forall x, triple t (J x) Q) ->
     triple t (hexists J) Q.
-Admitted.
+Proof.
+  introv M. intros HF h H. repeat (destruct H). lets~ (v&h'&X&D) : (rm (M x1)) HF h.
+  * now exists x x0.
+               * now exists v h'.
+Qed.
 
 Lemma rule_consequence : forall t H' Q' H Q,
     H ==> H' ->
     triple t H' Q' ->
     (forall v, Q' v ==> Q v) ->
     triple t H Q.
-Admitted.
+Proof.
+  introv X M T. intros HF h N. lets~ (v&h'&P&D) : (rm M) HF h.
+  * apply (himpl_frame_l X N).
+  * exists v h'. split~. apply (himpl_frame_l (T v) D).
+Qed.
+
+Lemma rule_extract_hprop : forall t (P:Prop) H Q,
+    (P -> triple t H Q) ->
+    triple t (\[P] \* H) Q.
+Proof.
+  introv M. intros HF h H0. repeat (destruct H0). apply M in H3. destruct H2. destruct H1.
+  destruct H4. destruct H5.
+  lets~ (v&h'&X&D) : (rm H3) HF h.
+  - exists x2 x0. repeat split~; intro.
+    + apply disjoint_sym. apply (equal_disjoint_right H6 H5).
+    + rewrite H0 in H6. rewrite~ empty_union_1 in H6. rewrite H6 in H7. now rewrite H7 in H3.
+    + rewrite H0 in H6. rewrite~ empty_union_1 in H6. rewrite H6 in H7. now rewrite H7.
+  - exists~ v h'.
+Qed.
+
+Lemma himpl_empty_left : forall H, H ==> \[] \* H.
+Proof.
+  introv M. apply hstar_comm. now rewrite <- neutral_elem.
+Qed.
+
+Lemma finish_him : forall r l fresh f h,
+    ((TreeSpec r \* TreeSpec l \* \[f = val_sym fresh] \* \s fresh) h) ->
+    f = val_sym fresh /\ (\s fresh \* TreeSpec l \* TreeSpec r) h.
+Proof.
+  intros. apply hstar_comm in H. repeat (destruct H). repeat (destruct H1). destruct H0. split~. 
+  - exists x4 (x0 \+ x1). destruct H3. destruct H6. destruct H2. destruct H5. 
+    rewrite H1 in H7. rewrite~ empty_union_1 in H7. repeat split~.
+    + exists x1 x0. repeat split~.
+      * apply disjoint_sym. apply disjoint_sym in H5. apply (equal_disjoint_left H8 H5).
+      * now rewrite union_sym.
+      * now rewrite union_sym.            
+    + rewrite H7 in H8. apply union_disjoint.
+      * apply disjoint_sym. apply (equal_disjoint_right H8 H5).
+      * apply disjoint_sym. apply (disjoint_equal H7 H2).
+    + intro. rewrite H9 in H10. rewrite H7 in H8. rewrite H8 in H10. rewrite union_sym.
+      rewrite union_sym in H10. now rewrite union_assoc.
+    + intro. rewrite H9. rewrite H7 in H8. rewrite H8. rewrite union_sym.
+      rewrite union_sym in H10. now rewrite union_assoc in H10.
+Qed.      
+        
 
 Theorem label_correct: forall v, IsTree v ->
-  triple (label (trm_val v)) \[] TreeSpec.
+                                 triple (label (trm_val v)) \[] TreeSpec.
 Proof.
-intros.
-unfold label.
-induction H.
-- (* Case: v ~ val_leaf *)
-  applys~ rule_app_fix; simpl.
-  applys~ rule_match_tree; try discriminate 1; intro.
-  applys~ rule_val; simpl.
-  admit.
-- (* Case: v ~ val_node *)
-  applys~ rule_app_fix; simpl.
-  applys~ rule_match_tree; try discriminate 1; intros.
-  inversion H1; subst; clear H1; simpl.
-  applys~ rule_let; [| intros f; simpl].
-  + applys~ rule_gensym.
-  + applys~ rule_extract_hexists; intro fresh.
-    applys~ rule_let; [| intros l; simpl].
-    * apply (rule_consequence (H' := \[] \* \[f = val_sym fresh] \* \s fresh)
-             (Q' := fun l' => TreeSpec l' \* \[f = val_sym fresh] \* \s fresh)).
-      -- admit.
-      -- applys~ rule_frame.
-      -- intros x h q.
-         exact q.
-    * simpl. applys~ rule_let; [| intros r; simpl].
-      -- apply (rule_consequence (H' := \[] \* TreeSpec l \* \[f = val_sym fresh] \* \s fresh)
-             (Q' := fun r' => TreeSpec r' \* TreeSpec l \* \[f = val_sym fresh] \* \s fresh)).
-         ++ admit.
-         ++ applys~ rule_frame.
-         ++ intros x h q.
-            exact q.
-      -- applys~ rule_app_node3.
-         applys~ rule_val.
-         simpl.
-         intros h.
-         admit.
+  intros.
+  unfold label.
+  induction H.
+  - (* Case: v ~ val_leaf *)
+    applys~ rule_app_fix; simpl.
+    applys~ rule_match_tree; try constructor; try discriminate 1; intro.
+    applys~ rule_val; simpl.
+    apply himpl_refl.
+  - (* Case: v ~ val_node *)
+    applys~ rule_app_fix; simpl.
+    applys~ rule_match_tree; try discriminate 1; intros.
+    now constructor. inversion H1; subst.
+    applys~ rule_let; [| intros f; simpl].
+    + applys~ rule_gensym.
+    + applys~ rule_extract_hexists; intro fresh.
+      applys~ rule_let; [| intros l'; simpl].
+      * apply (rule_consequence (H' := \[] \* \[f = val_sym fresh] \* \s fresh)
+                                (Q' := fun l' => TreeSpec l' \* \[f = val_sym fresh] \* \s fresh)).
+        -- apply himpl_empty_left.
+        -- applys~ rule_frame.
+        -- intros x h q.
+           exact q.
+      * simpl. applys~ rule_let; [| intros r; simpl].
+        -- apply (rule_consequence (H' := \[] \* TreeSpec l' \* \[f = val_sym fresh] \* \s fresh)
+                                   (Q' := fun r' => TreeSpec r' \* TreeSpec l' \* \[f = val_sym fresh] \* \s fresh)).
+           ++ apply himpl_empty_left.
+           ++ applys~ rule_frame.
+           ++ intros x h q.
+              exact q.
+        -- applys~ rule_app_node3.
+           applys~ rule_val.
+           simpl. intro. intro.
+           apply finish_him in H2.
+           destruct H2. now subst f.
 Qed.
 
 (* %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% *)
 
 Inductive tree (X : Type) : Type :=
-  | node : X -> tree X -> tree X -> tree X
-  | leaf : tree X.
+| node : X -> tree X -> tree X -> tree X
+| leaf : tree X.
 
 Arguments leaf {_}.
 Arguments node {_} n l r.
