@@ -223,7 +223,7 @@ Proof.
   intro. intro. destruct H1. destruct (H0 x). split~. now rewrite H.
 Qed.
 
-    
+
 Lemma union_disjoint : forall x x1 x2,
     disjoint x x1 -> disjoint x x2 -> disjoint x (union x1 x2).
 Proof.
@@ -416,7 +416,7 @@ Definition pred_incl (A : Type) (P Q : A -> Prop) :=
 Notation "P ==> Q" := (pred_incl P Q).
 
 Lemma himpl_refl : forall A (Q : A -> Prop), Q ==> Q.
-Proof using.
+Proof.
   now intros.
 Qed.
 
@@ -579,13 +579,13 @@ Lemma finish_him : forall r l fresh f h,
     ((TreeSpec r \* TreeSpec l \* \[f = val_sym fresh] \* \s fresh) h) ->
     f = val_sym fresh /\ (\s fresh \* TreeSpec l \* TreeSpec r) h.
 Proof.
-  intros. apply hstar_comm in H. repeat (destruct H). repeat (destruct H1). destruct H0. split~. 
-  - exists x4 (x0 \+ x1). destruct H3. destruct H6. destruct H2. destruct H5. 
+  intros. apply hstar_comm in H. repeat (destruct H). repeat (destruct H1). destruct H0. split~.
+  - exists x4 (x0 \+ x1). destruct H3. destruct H6. destruct H2. destruct H5.
     rewrite H1 in H7. rewrite~ empty_union_1 in H7. repeat split~.
     + exists x1 x0. repeat split~.
       * apply disjoint_sym. apply disjoint_sym in H5. apply (equal_disjoint_left H8 H5).
       * now rewrite union_sym.
-      * now rewrite union_sym.            
+      * now rewrite union_sym.
     + rewrite H7 in H8. apply union_disjoint.
       * apply disjoint_sym. apply (equal_disjoint_right H8 H5).
       * apply disjoint_sym. apply (disjoint_equal H7 H2).
@@ -604,7 +604,7 @@ Proof.
   introv WH M WQ. applys rule_consequence WH WQ. applys rule_frame M.
 Qed.
 
-        
+
 
 Theorem label_correct: forall v, IsTree v ->
                                  triple (label (trm_val v)) \[] TreeSpec.
@@ -641,7 +641,7 @@ Proof.
               exact q.
         -- applys~ rule_app_node3.
            applys~ rule_val.
-           simpl. intro. intro.
+           simpl. intros x H2.
            apply finish_him in H2.
            destruct H2. now subst f.
 Qed.
@@ -656,9 +656,9 @@ Arguments leaf {_}.
 Arguments node {_} n l r.
 
 Axiom FreshMonad : Type -> Type.
-
+Definition Symb := nat.
 Axiom Sym : Type.
-Axiom gensym : FreshMonad Sym.
+Axiom gensym : FreshMonad Symb.
 
 Axiom ret : forall {X}, X -> FreshMonad X.
 Axiom bind: forall {X Y}, FreshMonad X -> (X -> FreshMonad Y) -> FreshMonad Y.
@@ -666,12 +666,96 @@ Axiom bind: forall {X Y}, FreshMonad X -> (X -> FreshMonad Y) -> FreshMonad Y.
 Notation "'let!' x ':=' e1 'in' e2" := (bind e1 (fun x => e2))
                                          (x ident, at level 90).
 
-Fixpoint label' (t: tree unit): FreshMonad (tree Sym) :=
+Fixpoint labelM (t: tree unit): FreshMonad (tree Symb) :=
   match t with
   | leaf => ret leaf
   | node _ l r =>
     let! f := gensym in
-    let! l' := label' l in
-    let! r' := label' r in
+    let! l' := labelM l in
+    let! r' := labelM r in
     ret (node f l' r')
   end.
+
+Axiom tripleM : forall {X}, FreshMonad X -> hprop -> (X -> hprop) -> Prop.
+
+Axiom ruleM_frame : forall {X} (FMX : FreshMonad X) H Q H',
+    tripleM FMX H Q ->
+    tripleM FMX (H \* H') (Q \*+ H').
+
+Axiom ruleM_gensym :
+  tripleM gensym \[] (fun l => \s l).
+  
+Axiom ruleM_val : forall {X} (val : X) H Q,
+    H ==> Q val ->
+    tripleM (ret val) H Q.
+
+(* Pas compris pourquoi elle ne marche pas *)
+(* Axiom ruleM_let : forall {X Y} (t1 : FreshMonad X) (t2 : FreshMonad Y) H Q Q1, *)
+(*     tripleM t1 H Q1 -> *)
+(*     (forall (X:X), tripleM (t2) (Q1 X) Q) -> *)
+(*     tripleM (let! x := t1 in t2) H Q. *)
+
+Axiom ruleM_let : forall X Y (t1 : FreshMonad X) (t2 : X -> FreshMonad Y) H Q Q1,
+    tripleM t1 H Q1 ->
+    (forall (X:X), tripleM (t2 X) (Q1 X) Q) ->
+    tripleM (bind t1 t2) H Q.
+
+Axiom ruleM_consequence : forall {X} (t : FreshMonad X) H' Q' H Q,
+    H ==> H' ->
+    tripleM t H' Q' ->
+    (forall (v : X), Q' v ==> Q v) ->
+    tripleM t H Q.
+
+Lemma ruleM_frame_consequence : forall {X} H2 H1 Q1 (t : FreshMonad X) H Q,
+    H ==> H1 \* H2 ->
+    tripleM t H1 Q1 ->
+    (forall H, (Q1 \*+ H2) H ==> Q H) ->
+    tripleM t H Q.
+Proof.
+  introv WH M WQ. eapply (ruleM_consequence _ WH). apply ruleM_frame. exact M. exact WQ.
+Qed.
+
+Fixpoint TreeSpecM (t: tree Symb) :=
+  match t with
+  | leaf => \[]
+  | node s l r => (\s s) \* TreeSpecM l \* TreeSpecM r
+  end.
+
+Lemma finishM_him : forall r l fresh h,
+    ((TreeSpecM r \* TreeSpecM l \* \s fresh) h) ->
+    (\s fresh \* TreeSpecM l \* TreeSpecM r) h.
+Proof.
+  intros. apply hstar_comm. rewrite hstar_assoc in H. red in H. destruct H. destruct H. destruct H.
+  destruct H0. exists x x0. repeat split~. apply~ hstar_comm.
+Qed.
+
+Theorem labelM_correct: forall tree0, tripleM (labelM tree0) \[] TreeSpecM.
+Proof.
+  intros.
+  unfold labelM.
+  induction tree0.
+  - (* case node *)
+    apply (ruleM_let _ ruleM_gensym).
+    intros.
+    applys~ ruleM_let.
+    + applys~ (ruleM_frame_consequence (H1 := \[])
+                                       (H2 := \s X0)
+                                       (Q1 := TreeSpecM)).
+      * apply himpl_empty_left.
+      * intros l h q.
+        exact q.
+    + intros.
+      applys~ ruleM_let.
+      * applys~ (ruleM_frame_consequence (H1 := \[])
+                                         (H2 := (TreeSpecM X1 \* \s X0))
+                                         (Q1 := TreeSpecM)).
+        -- apply himpl_empty_left.
+        -- intros l h q.
+           exact q.
+      * intros.
+        applys~ (ruleM_val (X := tree Symb)).
+        simpl. intros l H. apply~ finishM_him.
+  - (* case leaf *)
+    apply ruleM_val.
+    apply himpl_refl.
+Qed.
