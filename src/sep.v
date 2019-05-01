@@ -655,13 +655,23 @@ Inductive tree (X : Type) : Type :=
 Arguments leaf {_}.
 Arguments node {_} n l r.
 
-Axiom FreshMonad : Type -> Type.
 Definition Symb := nat.
-Axiom Sym : Type.
-Axiom gensym : FreshMonad Symb.
 
-Axiom ret : forall {X}, X -> FreshMonad X.
-Axiom bind: forall {X Y}, FreshMonad X -> (X -> FreshMonad Y) -> FreshMonad Y.
+Inductive FreshMonad (X: Type): Type :=
+| ret: X -> FreshMonad X
+| Gensym: (Symb -> FreshMonad X) -> FreshMonad X.
+
+Arguments ret {_} x.
+
+Definition gensym := Gensym ret.
+
+Definition TODO: forall {X}, X.
+Admitted.
+
+Fixpoint bind {X Y} (m: FreshMonad X)(k: X -> FreshMonad Y): FreshMonad Y := TODO.
+
+Fixpoint run {X}(m: FreshMonad X): Symb -> Symb * X :=
+  TODO.
 
 Notation "'let!' x ':=' e1 'in' e2" := (bind e1 (fun x => e2))
                                          (x ident, at level 90).
@@ -676,18 +686,26 @@ Fixpoint labelM (t: tree unit): FreshMonad (tree Symb) :=
     ret (node f l' r')
   end.
 
-Axiom tripleM : forall {X}, FreshMonad X -> hprop -> (X -> hprop) -> Prop.
+Definition tripleM {X} (m: FreshMonad X)(P: hprop)(Q: X -> hprop): Prop :=
+  (* define in terms of 'run' *)
+  TODO.
 
-Axiom ruleM_frame : forall {X} (FMX : FreshMonad X) H Q H',
+Lemma ruleM_frame : forall {X} (FMX : FreshMonad X) H Q H',
     tripleM FMX H Q ->
     tripleM FMX (H \* H') (Q \*+ H').
+exact TODO.
+Admitted.
 
-Axiom ruleM_gensym :
+Lemma ruleM_gensym :
   tripleM gensym \[] (fun l => \s l).
+exact TODO.
+Admitted.
   
-Axiom ruleM_val : forall {X} (val : X) H Q,
+Lemma ruleM_val : forall {X} (val : X) H Q,
     H ==> Q val ->
     tripleM (ret val) H Q.
+exact TODO.
+Admitted.
 
 (* Pas compris pourquoi elle ne marche pas *)
 (* Axiom ruleM_let : forall {X Y} (t1 : FreshMonad X) (t2 : FreshMonad Y) H Q Q1, *)
@@ -695,16 +713,20 @@ Axiom ruleM_val : forall {X} (val : X) H Q,
 (*     (forall (X:X), tripleM (t2) (Q1 X) Q) -> *)
 (*     tripleM (let! x := t1 in t2) H Q. *)
 
-Axiom ruleM_let : forall X Y (t1 : FreshMonad X) (t2 : X -> FreshMonad Y) H Q Q1,
+Lemma ruleM_let : forall X Y (t1 : FreshMonad X) (t2 : X -> FreshMonad Y) H Q Q1,
     tripleM t1 H Q1 ->
     (forall (X:X), tripleM (t2 X) (Q1 X) Q) ->
-    tripleM (bind t1 t2) H Q.
+    tripleM (let! x := t1 in t2 x) H Q.
+exact TODO.
+Admitted.
 
-Axiom ruleM_consequence : forall {X} (t : FreshMonad X) H' Q' H Q,
+Lemma ruleM_consequence : forall {X} (t : FreshMonad X) H' Q' H Q,
     H ==> H' ->
     tripleM t H' Q' ->
     (forall (v : X), Q' v ==> Q v) ->
     tripleM t H Q.
+exact TODO.
+Admitted.
 
 Lemma ruleM_frame_consequence : forall {X} H2 H1 Q1 (t : FreshMonad X) H Q,
     H ==> H1 \* H2 ->
