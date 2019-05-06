@@ -665,16 +665,38 @@ Arguments ret {_} x.
 
 Definition gensym := Gensym ret.
 
-Definition TODO: forall {X}, X.
-Admitted.
+Fixpoint bind {X Y} (m: FreshMonad X)(k: X -> FreshMonad Y): FreshMonad Y :=
+  match m with
+  | ret x => k x
+  | Gensym f => Gensym (fun x => bind (f x) k)
+  end.
 
-Fixpoint bind {X Y} (m: FreshMonad X)(k: X -> FreshMonad Y): FreshMonad Y := TODO.
+Parameter next' : Symb -> Symb.
 
-Fixpoint run {X}(m: FreshMonad X): Symb -> Symb * X :=
-  TODO.
+Definition next (h : heap) :=
+  match max_elt h with
+  | Some s' => (singleton (s' + 1)%nat) \+ h
+  | None => singleton 0
+  end.
+
+Fixpoint run' {X} (m: FreshMonad X) : Symb -> Symb * X :=
+  match m with
+  | ret x => fun s => (s,x)
+  | Gensym f => fun s => run' (f s) (next' s)
+  end.
+
+Fixpoint run {X} (m: FreshMonad X) : heap -> heap * X :=
+  match m with
+  | ret x => fun (s : heap) => (s,x)
+  | Gensym f => fun (s : heap) => let s' := match max_elt s with
+                                            | Some s' => (s' + 1)%nat
+                                            | None => 0
+                                            end in run (f s') (next s)
+  end.
 
 Notation "'let!' x ':=' e1 'in' e2" := (bind e1 (fun x => e2))
                                          (x ident, at level 90).
+
 
 Fixpoint labelM (t: tree unit): FreshMonad (tree Symb) :=
   match t with
@@ -688,45 +710,116 @@ Fixpoint labelM (t: tree unit): FreshMonad (tree Symb) :=
 
 Definition tripleM {X} (m: FreshMonad X)(P: hprop)(Q: X -> hprop): Prop :=
   (* define in terms of 'run' *)
-  TODO.
+  forall H' h, (P \* H') h -> exists v h', run m h = (h',v)
+                                           /\ (Q v \* H') h'.
 
-Lemma ruleM_frame : forall {X} (FMX : FreshMonad X) H Q H',
-    tripleM FMX H Q ->
-    tripleM FMX (H \* H') (Q \*+ H').
-exact TODO.
-Admitted.
+Ltac inversion_star H h P :=
+  match goal with
+  | H : (_ \* _) _ |- _ =>
+    let W := fresh h in
+    let w := fresh P in
+    inversion H as (W&w);
+    let W := fresh h in
+    destruct w as (W&w);
+    do 3 (let w0 := fresh P in
+          destruct w as (w0&w))
+  end.
+
+Lemma heap_max_disjoint : forall a h, max_elt h = Some a -> \# (singleton (a+1)%nat) h.
+Proof.
+  intros. red. intros. intro. destruct H0. apply (max_elt_spec2 H) in H1. destruct H1.
+  apply singleton_spec in H0. omega.
+Qed.
+
+Lemma empty_disjoint : forall h h', Empty h -> \# h' h.
+Proof.
+  intros. red in H. intro. intro. destruct H0. now apply H in H1.
+Qed.
 
 Lemma ruleM_gensym :
   tripleM gensym \[] (fun l => \s l).
-exact TODO.
-Admitted.
+Proof.
+  intros H' h P. inversion_star P h P. red in P1. rewrite P1 in P0.
+  rewrite~ empty_union_1 in P0. simpl.
+  induction (max_elt h) eqn:?.
+  - exists (a+1)%nat (next h).
+    split~.
+    exists (singleton (a+1)%nat) h.
+    split.
+    + red. reflexivity.
+    + split.
+      * apply (same_heap H' P0 P2).
+      * split.
+        -- apply (heap_max_disjoint Heqo).
+        -- unfold next. rewrite Heqo. reflexivity.
+  - exists 0 (next h).
+    split~.
+    exists (singleton 0) h.
+    split.
+    + red. reflexivity.
+    + split.
+      * apply (same_heap H' P0 P2).
+      * split.
+        -- apply max_elt_spec3 in Heqo. apply (empty_disjoint Heqo).
+        -- unfold next. rewrite Heqo. apply max_elt_spec3 in Heqo.
+           intro. split; intro.
+           ++ apply union_spec. left~.
+           ++ apply union_spec in H. destruct~ H.
+              red in Heqo. now apply Heqo in H.
+Qed.       
+
+Lemma test : forall X Y (t1 : FreshMonad X) (t2 : X -> FreshMonad Y) h,
+        run (let! x := t1 in t2 x) h =
+        let (h',s) := run t1 h in run (t2 s) h'.
+Proof.
+  induction t1; intros; simpl in *.
+  * reflexivity.
+  * induction (max_elt h); now rewrite H.
+Qed.
   
-Lemma ruleM_val : forall {X} (val : X) H Q,
-    H ==> Q val ->
-    tripleM (ret val) H Q.
-exact TODO.
-Admitted.
-
-(* Pas compris pourquoi elle ne marche pas *)
-(* Axiom ruleM_let : forall {X Y} (t1 : FreshMonad X) (t2 : FreshMonad Y) H Q Q1, *)
-(*     tripleM t1 H Q1 -> *)
-(*     (forall (X:X), tripleM (t2) (Q1 X) Q) -> *)
-(*     tripleM (let! x := t1 in t2) H Q. *)
-
 Lemma ruleM_let : forall X Y (t1 : FreshMonad X) (t2 : X -> FreshMonad Y) H Q Q1,
     tripleM t1 H Q1 ->
     (forall (X:X), tripleM (t2 X) (Q1 X) Q) ->
     tripleM (let! x := t1 in t2 x) H Q.
-exact TODO.
-Admitted.
+Proof.
+  introv M X. intros H' h P. rewrite test.
+  apply M in P; simpl in P; destruct P as (s&h'&Eq&P);
+    apply X in P; destruct P as (s0&h0&eq0&P).
+  exists s0 h0. split~.
+  rewrite~ Eq.
+Qed.
+
+
+Lemma ruleM_frame : forall {X} (FMX : FreshMonad X) H Q H',
+    tripleM FMX H Q ->
+    tripleM FMX (H \* H') (Q \*+ H').
+Proof.
+  introv M. intros HF h X.
+  rewrite <- hstar_assoc in X.
+  edestruct (M _ _ X). destruct H0.
+  exists x x0. rewrite <- hstar_assoc. exact H0.
+Qed.
+
+Lemma ruleM_val : forall {X} (v : X) H Q,
+    H ==> Q v ->
+    tripleM (ret v) H Q.
+Proof.
+  introv M. intros HF h X.
+  inversion_star X h P. exists v h. split~.
+  exists h0 h1. split~.
+Qed.
 
 Lemma ruleM_consequence : forall {X} (t : FreshMonad X) H' Q' H Q,
     H ==> H' ->
     tripleM t H' Q' ->
     (forall (v : X), Q' v ==> Q v) ->
     tripleM t H Q.
-exact TODO.
-Admitted.
+Proof.
+  introv M X F. intros HF h P. inversion_star s h P. apply M in P1. edestruct (X HF h).
+  * exists h0 h1. split; auto.
+  * destruct H0. exists x x0. destruct H0 as (W&H0). split~. inversion_star H0 h P.
+    exists h2 h3. split~. apply (F _ _ P5).
+Qed.
 
 Lemma ruleM_frame_consequence : forall {X} H2 H1 Q1 (t : FreshMonad X) H Q,
     H ==> H1 \* H2 ->
@@ -759,23 +852,23 @@ Proof.
   - (* case node *)
     apply (ruleM_let _ ruleM_gensym).
     intros.
-    applys~ ruleM_let.
-    + applys~ (ruleM_frame_consequence (H1 := \[])
-                                       (H2 := \s X0)
-                                       (Q1 := TreeSpecM)).
+    eapply ruleM_let.
+    + apply~ (ruleM_frame_consequence (H1 := \[])
+                                      (H2 := \s X0)
+                                      (Q1 := TreeSpecM)).
       * apply himpl_empty_left.
       * intros l h q.
         exact q.
     + intros.
-      applys~ ruleM_let.
-      * applys~ (ruleM_frame_consequence (H1 := \[])
-                                         (H2 := (TreeSpecM X1 \* \s X0))
-                                         (Q1 := TreeSpecM)).
+      eapply ruleM_let.
+      * apply~ (ruleM_frame_consequence (H1 := \[])
+                                        (H2 := (TreeSpecM X1 \* \s X0))
+                                        (Q1 := TreeSpecM)).
         -- apply himpl_empty_left.
         -- intros l h q.
            exact q.
       * intros.
-        applys~ (ruleM_val (X := tree Symb)).
+        apply ruleM_val.
         simpl. intros l H. apply~ finishM_him.
   - (* case leaf *)
     apply ruleM_val.
