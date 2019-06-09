@@ -5,512 +5,7 @@ From stdpp Require Export binders strings.
 From iris.algebra Require Import auth.
 From iris.base_logic.lib Require Export own.
 From iris.proofmode Require Import tactics.
-
-
-Module heap_lang.
-  Open Scope Z_scope.
-
-  Inductive base_lit : Set :=
-  | LitInt (n : Z) | LitBool (b : bool) | LitUnit
-  | LitLoc (l : loc).
-  Inductive un_op : Set :=
-  | NegOp | MinusUnOp.
-  Inductive bin_op : Set :=
-  | PlusOp | MinusOp | MultOp | QuotOp | RemOp (* Arithmetic *)
-  | AndOp | OrOp | XorOp (* Bitwise *)
-  | ShiftLOp | ShiftROp (* Shifts *)
-  | LeOp | LtOp | EqOp. (* Relations *)
-
-
-  Inductive expr :=
-  (* Values *)
-  | Val (v : val)
-  (* Base lambda calculus *)
-  | Var (x : string)
-  | Rec (f x : binder) (e : expr)
-  | App (e1 e2 : expr)
-  (* Base types and their operations *)
-  | UnOp (op : un_op) (e : expr)
-  | BinOp (op : bin_op) (e1 e2 : expr)
-  | If (e0 e1 e2 : expr)
-  (* Products *)
-  | Pair (e1 e2 : expr)
-  | Fst (e : expr)
-  | Snd (e : expr)
-  (* Sums *)
-  | InjL (e : expr)
-  | InjR (e : expr)
-  | Case (e0 : expr) (e1 : expr) (e2 : expr)
-  (* Heap *)
-  | Gensym
-  with val :=
-       | LitV (l : base_lit)
-       | RecV (f x : binder) (e : expr)
-       | PairV (v1 v2 : val)
-       | InjLV (v : val)
-       | InjRV (v : val)
-       | Node (v : val) (t1 : val) (t2 : val)
-       | Leaf.
-
-  Notation of_val := Val (only parsing).
-
-  Definition to_val (e : expr) : option val :=
-    match e with
-    | Val v => Some v
-    | _ => None
-    end.
-
-  Definition heap : Type := gset loc.
-
-
-  (** Evaluation Context *)
-  Inductive ectx_item :=
-  | AppLCtx (v2 : val)
-  | AppRCtx (e1 : expr)
-  | UnOpCtx (op : un_op)
-  | BinOpLCtx (op : bin_op) (v2 : val)
-  | BinOpRCtx (op : bin_op) (e1 : expr)
-  | IfCtx (e1 e2 : expr)
-  | PairLCtx (v2 : val)
-  | PairRCtx (e1 : expr)
-  | FstCtx
-  | SndCtx
-  | InjLCtx
-  | InjRCtx
-  | CaseCtx (e1 : expr) (e2 : expr).
-
-  Definition fill_item (Ki : ectx_item) (e : expr) : expr :=
-    match Ki with
-    | AppLCtx v2 => App e (of_val v2)
-    | AppRCtx e1 => App e1 e
-    | UnOpCtx op => UnOp op e
-    | BinOpLCtx op v2 => BinOp op e (Val v2)
-    | BinOpRCtx op e1 => BinOp op e1 e
-    | IfCtx e1 e2 => If e e1 e2
-    | PairLCtx v2 => Pair e (Val v2)
-    | PairRCtx e1 => Pair e1 e
-    | FstCtx => Fst e
-    | SndCtx => Snd e
-    | InjLCtx => InjL e
-    | InjRCtx => InjR e
-    | CaseCtx e1 e2 => Case e e1 e2
-    end.
-
-
-  Fixpoint subst (x : string) (v : val) (e : expr)  : expr :=
-    match e with
-    | Val _ => e
-    | Var y => if decide (x = y) then Val v else Var y
-    | Rec f y e =>
-      Rec f y $ if decide (BNamed x ≠ f ∧ BNamed x ≠ y) then subst x v e else e
-    | App e1 e2 => App (subst x v e1) (subst x v e2)
-    | UnOp op e => UnOp op (subst x v e)
-    | BinOp op e1 e2 => BinOp op (subst x v e1) (subst x v e2)
-    | If e0 e1 e2 => If (subst x v e0) (subst x v e1) (subst x v e2)
-    | Pair e1 e2 => Pair (subst x v e1) (subst x v e2)
-    | Fst e => Fst (subst x v e)
-    | Snd e => Snd (subst x v e)
-    | InjL e => InjL (subst x v e)
-    | InjR e => InjR (subst x v e)
-    | Case e0 e1 e2 => Case (subst x v e0) (subst x v e1) (subst x v e2)
-    | Gensym => Gensym
-    end.
-
-  Definition subst' (mx : binder) (v : val) : expr → expr :=
-    match mx with BNamed x => subst x v | BAnon => id end.
-
-  Instance base_lit_eq_dec : EqDecision base_lit.
-  Proof. solve_decision. Defined.
-  Instance un_op_eq_dec : EqDecision un_op.
-  Proof. solve_decision. Defined.
-  Instance bin_op_eq_dec : EqDecision bin_op.
-  Proof. solve_decision. Defined.
-
-  Instance expr_eq_dec : EqDecision expr.
-  Proof.
-    refine (
-        fix go (e1 e2 : expr) {struct e1} : Decision (e1 = e2) :=
-          match e1, e2 with
-          | Val v, Val v' => cast_if (decide (v = v'))
-          | Var x, Var x' => cast_if (decide (x = x'))
-          | Rec f x e, Rec f' x' e' =>
-            cast_if_and3 (decide (f = f')) (decide (x = x')) (decide (e = e'))
-          | App e1 e2, App e1' e2' => cast_if_and (decide (e1 = e1')) (decide (e2 = e2'))
-          | UnOp o e, UnOp o' e' => cast_if_and (decide (o = o')) (decide (e = e'))
-          | BinOp o e1 e2, BinOp o' e1' e2' =>
-            cast_if_and3 (decide (o = o')) (decide (e1 = e1')) (decide (e2 = e2'))
-          | If e0 e1 e2, If e0' e1' e2' =>
-            cast_if_and3 (decide (e0 = e0')) (decide (e1 = e1')) (decide (e2 = e2'))
-          | Pair e1 e2, Pair e1' e2' =>
-            cast_if_and (decide (e1 = e1')) (decide (e2 = e2'))
-          | Fst e, Fst e' => cast_if (decide (e = e'))
-          | Snd e, Snd e' => cast_if (decide (e = e'))
-          | InjL e, InjL e' => cast_if (decide (e = e'))
-          | InjR e, InjR e' => cast_if (decide (e = e'))
-          | Case e0 e1 e2, Case e0' e1' e2' =>
-            cast_if_and3 (decide (e0 = e0')) (decide (e1 = e1')) (decide (e2 = e2'))
-          | Gensym, Gensym => left _
-          | _, _ => right _
-          end
-              with gov (v1 v2 : val) {struct v1} : Decision (v1 = v2) :=
-            match v1, v2 with
-            | LitV l, LitV l' => cast_if (decide (l = l'))
-            | RecV f x e, RecV f' x' e' =>
-              cast_if_and3 (decide (f = f')) (decide (x = x')) (decide (e = e'))
-            | PairV e1 e2, PairV e1' e2' =>
-              cast_if_and (decide (e1 = e1')) (decide (e2 = e2'))
-            | InjLV e, InjLV e' => cast_if (decide (e = e'))
-            | InjRV e, InjRV e' => cast_if (decide (e = e'))
-            | Node v t1 t2, Node v' t1' t2' =>
-              cast_if_and3 (decide (v = v')) (decide (t1 = t1')) (decide (t2 = t2'))
-            | Leaf, Leaf => left _
-            | _, _ => right _
-            end
-              for go); try (clear go gov; abstract intuition congruence).
-  Defined.
-  Print expr_eq_dec.
-
-  Instance val_eq_dec : EqDecision val.
-  Proof. solve_decision. Defined.
-
-
-  Definition un_op_eval (op : un_op) (v : val) : option val :=
-    match op, v with
-    | NegOp, LitV (LitBool b) => Some $ LitV $ LitBool (negb b)
-    | NegOp, LitV (LitInt n) => Some $ LitV $ LitInt (Z.lnot n)
-    | MinusUnOp, LitV (LitInt n) => Some $ LitV $ LitInt (- n)
-    | _, _ => None
-    end.
-
-  Definition bin_op_eval_int (op : bin_op) (n1 n2 : Z) : base_lit :=
-    match op with
-    | PlusOp => LitInt (n1 + n2)
-    | MinusOp => LitInt (n1 - n2)
-    | MultOp => LitInt (n1 * n2)
-    | QuotOp => LitInt (n1 `quot` n2)
-    | RemOp => LitInt (n1 `rem` n2)
-    | AndOp => LitInt (Z.land n1 n2)
-    | OrOp => LitInt (Z.lor n1 n2)
-    | XorOp => LitInt (Z.lxor n1 n2)
-    | ShiftLOp => LitInt (n1 ≪ n2)
-    | ShiftROp => LitInt (n1 ≫ n2)
-    | LeOp => LitBool (bool_decide (n1 ≤ n2))
-    | LtOp => LitBool (bool_decide (n1 < n2))
-    | EqOp => LitBool (bool_decide (n1 = n2))
-    end.
-
-  Definition bin_op_eval_bool (op : bin_op) (b1 b2 : bool) : option base_lit :=
-    match op with
-    | PlusOp | MinusOp | MultOp | QuotOp | RemOp => None (* Arithmetic *)
-    | AndOp => Some (LitBool (b1 && b2))
-    | OrOp => Some (LitBool (b1 || b2))
-    | XorOp => Some (LitBool (xorb b1 b2))
-    | ShiftLOp | ShiftROp => None (* Shifts *)
-    | LeOp | LtOp => None (* InEquality *)
-    | EqOp => Some (LitBool (bool_decide (b1 = b2)))
-    end.
-
-  Definition bin_op_eval (op : bin_op) (v1 v2 : val) : option val :=
-    if decide (op = EqOp) then Some $ LitV $ LitBool $ bool_decide (v1 = v2) else
-      match v1, v2 with
-      | LitV (LitInt n1), LitV (LitInt n2) => Some $ LitV $ bin_op_eval_int op n1 n2
-      | LitV (LitBool b1), LitV (LitBool b2) => LitV <$> bin_op_eval_bool op b1 b2
-      | _, _ => None
-      end.
-
-  Definition observation : Set := val.
-
-  Inductive head_step : expr → heap → list observation → expr → heap → list expr → Prop :=
-  | RecS f x e σ :
-      head_step (Rec f x e) σ [] (Val $ RecV f x e) σ []
-  | PairS v1 v2 σ :
-      head_step (Pair (Val v1) (Val v2)) σ [] (Val $ PairV v1 v2) σ []
-  | InjLS v σ :
-      head_step (InjL $ Val v) σ [] (Val $ InjLV v) σ []
-  | InjRS v σ :
-      head_step (InjR $ Val v) σ [] (Val $ InjRV v) σ []
-  | BetaS f x e1 v2 e' σ :
-      e' = subst' x v2 (subst' f (RecV f x e1) e1) →
-      head_step (App (Val $ RecV f x e1) (Val v2)) σ [] e' σ []
-  | UnOpS op v v' σ :
-      un_op_eval op v = Some v' →
-      head_step (UnOp op (Val v)) σ [] (Val v') σ []
-  | BinOpS op v1 v2 v' σ :
-      bin_op_eval op v1 v2 = Some v' →
-      head_step (BinOp op (Val v1) (Val v2)) σ [] (Val v') σ []
-  | IfTrueS e1 e2 σ :
-      head_step (If (Val $ LitV $ LitBool true) e1 e2) σ [] e1 σ []
-  | IfFalseS e1 e2 σ :
-      head_step (If (Val $ LitV $ LitBool false) e1 e2) σ [] e2 σ []
-  | FstS v1 v2 σ :
-      head_step (Fst (Val $ PairV v1 v2)) σ [] (Val v1) σ []
-  | SndS v1 v2 σ :
-      head_step (Snd (Val $ PairV v1 v2)) σ [] (Val v2) σ []
-  | CaseLS v e1 e2 σ :
-      head_step (Case (Val $ InjLV v) e1 e2) σ [] (App e1 (Val v)) σ []
-  | CaseRS v e1 e2 σ :
-      head_step (Case (Val $ InjRV v) e1 e2) σ [] (App e2 (Val v)) σ []
-  | GensymS σ l :
-      l ∉ σ →
-      head_step (Gensym) σ []
-                (Val $ LitV $ LitLoc l) ({[ l ]} ∪ σ) [].
-
-  Lemma to_of_val v : to_val (of_val v) = Some v.
-  Proof. by destruct v. Qed.
-
-  Lemma of_to_val e v : to_val e = Some v → of_val v = e.
-  Proof. destruct e=>//=. by intros [= <-]. Qed.
-  Locate replicate.
-
-  Definition state_init_heap (l : loc) (σ : heap) : heap :=
-    {[l]} ∪ σ.
-  Print fresh_locs.
-  Print dom.
-
-  Definition fresh_locs (ls : gset loc) : loc :=
-    {| loc_car := set_fold (λ k r, (1 + loc_car k) `max` r)%Z 1%Z ls |}.
-
-
-  (* Lemma test (X : gset loc) : forall x, x ∈ X -> (loc_car x) < (loc_car (fresh_locs X)). *)
-  (* Proof. *)
-  (*   elim X using set_ind. *)
-  (*   * repeat red. intros. split; pose (gset_leibniz x); apply e in H; subst; auto. *)
-  (*   * intros. inversion H. *)
-  (*   * intros. *)
-
-
-
-  (* Lemma test x X: loc_car (fresh_locs ({[x]} ∪ X)) = (1 + loc_car x) `max` (loc_car (fresh_locs X)). *)
-  (* Proof. *)
-  (*   simpl. unfold set_fold. *)
-  Lemma fresh_locs_fresh ls: fresh_locs ls ∉ ls.
-  Proof.
-    intros. cut (∀ l, l ∈ ls → loc_car l < loc_car (fresh_locs ls))%Z.
-    { intros help Hf%help. lia. }
-    apply (set_fold_ind_L (λ r ls, ∀ l, l ∈ ls → (loc_car l < r )%Z));
-      set_solver by eauto with lia.
-  Qed.
-
-  Lemma gensym_fresh σ :
-    let l := fresh_locs σ in
-    head_step Gensym σ []
-              (Val $ LitV $ LitLoc l) (state_init_heap l σ) [].
-  Proof.
-    intros.
-    apply GensymS.
-    apply fresh_locs_fresh.
-  Qed.
-
-  Lemma heap_lang_mixin : EctxiLanguageMixin of_val to_val fill_item head_step.
-  Proof.
-    split; eauto.
-    * intros; destruct e; inversion H; eauto.
-    * intros; destruct e1; inversion H; eauto.
-    * unfold Inj; intros; destruct Ki; inversion H; eauto.
-    * intros; destruct Ki; inversion H; inversion H0.
-    * intros; induction Ki1, Ki2; inversion H1; eauto; try(rewrite <- H4 in H0; inversion H0);
-        try(rewrite H4 in H; inversion H); try(rewrite <- H5 in H0; inversion H0);
-          rewrite H5 in H; inversion H.
-    * intros; destruct Ki; inversion H; eauto.
-  Qed.
-
-End heap_lang.
-
-Canonical Structure heap_ectxi_lang := EctxiLanguage heap_lang.heap_lang_mixin.
-Canonical Structure heap_ectx_lang := EctxLanguageOfEctxi heap_ectxi_lang.
-Canonical Structure heap_lang := LanguageOfEctx heap_ectx_lang.
-
-Export heap_lang.
-
-Notation Lam x e := (Rec BAnon x e) (only parsing).
-Notation Let x e1 e2 := (App (Lam x e2) e1) (only parsing).
-Notation Seq e1 e2 := (Let BAnon e1 e2) (only parsing).
-Notation LamV x e := (RecV BAnon x e) (only parsing).
-Notation LetCtx x e2 := (AppRCtx (LamV x e2)) (only parsing).
-Notation SeqCtx e2 := (LetCtx BAnon e2) (only parsing).
-Notation Match e0 x1 e1 x2 e2 := (Case e0 (Lam x1 e1) (Lam x2 e2)) (only parsing).
-Notation MatchTree e0 e1 x1 x2 x3 e2 := (Case e0 e1 (Lam x1 (Lam x2 (Lam x3 e2)))) (only parsing).
-
-(* Skip should be atomic, we sometimes open invariants around
-   it. Hence, we need to explicitly use LamV instead of e.g., Seq. *)
-Notation Skip := (App (Val $ LamV BAnon (Val $ LitV LitUnit)) (Val $ LitV LitUnit)).
-
-
-Module tactics.
-
-  Set Default Proof Using "Type".
-  Import heap_lang.
-
-  (** The tactic [reshape_expr e tac] decomposes the expression [e] into an
-evaluation context [K] and a subexpression [e']. It calls the tactic [tac K e']
-for each possible decomposition until [tac] succeeds. *)
-  Ltac reshape_expr e tac :=
-    let rec go K e :=
-        match e with
-        | _ => tac K e
-        | App ?e (Val ?v) => go (AppLCtx v :: K) e
-        | App ?e1 ?e2 => go (AppRCtx e1 :: K) e2
-        | UnOp ?op ?e => go (UnOpCtx op :: K) e
-        | BinOp ?op ?e (Val ?v) => go (BinOpLCtx op v :: K) e
-        | BinOp ?op ?e1 ?e2 => go (BinOpRCtx op e1 :: K) e2
-        | If ?e0 ?e1 ?e2 => go (IfCtx e1 e2 :: K) e0
-        | Pair ?e (Val ?v) => go (PairLCtx v :: K) e
-        | Pair ?e1 ?e2 => go (PairRCtx e1 :: K) e2
-        | Fst ?e => go (FstCtx :: K) e
-        | Snd ?e => go (SndCtx :: K) e
-        | InjL ?e => go (InjLCtx :: K) e
-        | InjR ?e => go (InjRCtx :: K) e
-        | Case ?e0 ?e1 ?e2 => go (CaseCtx e1 e2 :: K) e0
-        end in go (@nil ectx_item) e.
-End tactics.
-
-Module notation.
-
-  Export heap_lang tactics.
-  Set Default Proof Using "Type".
-
-  Delimit Scope expr_scope with E.
-  Delimit Scope val_scope with V.
-
-  Coercion LitInt : Z >-> base_lit.
-  Coercion LitBool : bool >-> base_lit.
-  Coercion LitLoc : loc >-> base_lit.
-
-  Coercion App : expr >-> Funclass.
-  Coercion Val : val >-> expr.
-
-  Coercion Var : string >-> expr.
-
-  (* No scope for the values, does not conflict and scope is often not inferred
-properly. *)
-  Notation "# l" := (LitV l%Z%V) (at level 8, format "# l").
-
-  (** Syntax inspired by Coq/Ocaml. Constructions with higher precedence come
-      first. *)
-  Notation "( e1 , e2 , .. , en )" := (Pair .. (Pair e1 e2) .. en) : expr_scope.
-  Notation "( e1 , e2 , .. , en )" := (PairV .. (PairV e1 e2) .. en) : val_scope.
-
-  (*
-Using the '[hv' ']' printing box, we make sure that when the notation for match
-does not fit on a single line, line breaks will be inserted for *each* breaking
-point '/'. Note that after each breaking point /, one can put n spaces (for
-example '/  '). That way, when the breaking point is turned into a line break,
-indentation of n spaces will appear after the line break. As such, when the
-match does not fit on one line, it will print it like:
-
-  match: e0 with
-    InjL x1 => e1
-  | InjR x2 => e2
-  end
-
-Moreover, if the branches do not fit on a single line, it will be printed as:
-
-  match: e0 with
-    InjL x1 =>
-    lots of stuff bla bla bla bla bla bla bla bla
-  | InjR x2 =>
-    even more stuff bla bla bla bla bla bla bla bla
-  end
-   *)
-  Notation "'match:' e0 'with' 'InjL' x1 => e1 | 'InjR' x2 => e2 'end'" :=
-    (Match e0 x1%binder e1 x2%binder e2)
-      (e0, x1, e1, x2, e2 at level 200,
-       format "'[hv' 'match:'  e0  'with'  '/  ' '[' 'InjL'  x1  =>  '/  ' e1 ']'  '/' '[' |  'InjR'  x2  =>  '/  ' e2 ']'  '/' 'end' ']'") : expr_scope.
-  Notation "'match:' e0 'with' 'InjR' x1 => e1 | 'InjL' x2 => e2 'end'" :=
-    (Match e0 x2%binder e2 x1%binder e1)
-      (e0, x1, e1, x2, e2 at level 200, only parsing) : expr_scope.
-
-  Notation "()" := LitUnit : val_scope.
-  Notation "- e" := (UnOp MinusUnOp e%E) : expr_scope.
-
-  Notation "e1 + e2" := (BinOp PlusOp e1%E e2%E) : expr_scope.
-  Notation "e1 - e2" := (BinOp MinusOp e1%E e2%E) : expr_scope.
-  Notation "e1 * e2" := (BinOp MultOp e1%E e2%E) : expr_scope.
-  Notation "e1 `quot` e2" := (BinOp QuotOp e1%E e2%E) : expr_scope.
-  Notation "e1 `rem` e2" := (BinOp RemOp e1%E e2%E) : expr_scope.
-  Notation "e1 ≪ e2" := (BinOp ShiftLOp e1%E e2%E) : expr_scope.
-  Notation "e1 ≫ e2" := (BinOp ShiftROp e1%E e2%E) : expr_scope.
-
-  Notation "e1 ≤ e2" := (BinOp LeOp e1%E e2%E) : expr_scope.
-  Notation "e1 < e2" := (BinOp LtOp e1%E e2%E) : expr_scope.
-  Notation "e1 = e2" := (BinOp EqOp e1%E e2%E) : expr_scope.
-  Notation "e1 ≠ e2" := (UnOp NegOp (BinOp EqOp e1%E e2%E)) : expr_scope.
-
-  Notation "~ e" := (UnOp NegOp e%E) (at level 75, right associativity) : expr_scope.
-  (* The unicode ← is already part of the notation "_ ← _; _" for bind. *)
-
-  (* The breaking point '/  ' makes sure that the body of the rec is indented
-by two spaces in case the whole rec does not fit on a single line. *)
-  Notation "'rec:' f x := e" := (Rec f%binder x%binder e%E)
-                                  (at level 200, f at level 1, x at level 1, e at level 200,
-                                   format "'[' 'rec:'  f  x  :=  '/  ' e ']'") : expr_scope.
-  Notation "'rec:' f x := e" := (RecV f%binder x%binder e%E)
-                                  (at level 200, f at level 1, x at level 1, e at level 200,
-                                   format "'[' 'rec:'  f  x  :=  '/  ' e ']'") : val_scope.
-  Notation "'if:' e1 'then' e2 'else' e3" := (If e1%E e2%E e3%E)
-                                               (at level 200, e1, e2, e3 at level 200) : expr_scope.
-
-  (** Derived notions, in order of declaration. The notations for let and seq
-are stated explicitly instead of relying on the Notations Let and Seq as
-defined above. This is needed because App is now a coercion, and these
-notations are otherwise not pretty printed back accordingly. *)
-  Notation "'rec:' f x y .. z := e" := (Rec f%binder x%binder (Lam y%binder .. (Lam z%binder e%E) ..))
-                                         (at level 200, f, x, y, z at level 1, e at level 200,
-                                          format "'[' 'rec:'  f  x  y  ..  z  :=  '/  ' e ']'") : expr_scope.
-  Notation "'rec:' f x y .. z := e" := (RecV f%binder x%binder (Lam y%binder .. (Lam z%binder e%E) ..))
-                                         (at level 200, f, x, y, z at level 1, e at level 200,
-                                          format "'[' 'rec:'  f  x  y  ..  z  :=  '/  ' e ']'") : val_scope.
-
-  (* The breaking point '/  ' makes sure that the body of the λ: is indented
-by two spaces in case the whole λ: does not fit on a single line. *)
-  Notation "λ: x , e" := (Lam x%binder e%E)
-                           (at level 200, x at level 1, e at level 200,
-                            format "'[' 'λ:'  x ,  '/  ' e ']'") : expr_scope.
-  Notation "λ: x y .. z , e" := (Lam x%binder (Lam y%binder .. (Lam z%binder e%E) ..))
-                                  (at level 200, x, y, z at level 1, e at level 200,
-                                   format "'[' 'λ:'  x  y  ..  z ,  '/  ' e ']'") : expr_scope.
-
-  Notation "λ: x , e" := (LamV x%binder e%E)
-                           (at level 200, x at level 1, e at level 200,
-                            format "'[' 'λ:'  x ,  '/  ' e ']'") : val_scope.
-  Notation "λ: x y .. z , e" := (LamV x%binder (Lam y%binder .. (Lam z%binder e%E) .. ))
-                                  (at level 200, x, y, z at level 1, e at level 200,
-                                   format "'[' 'λ:'  x  y  ..  z ,  '/  ' e ']'") : val_scope.
-
-  Notation "'let:' x := e1 'in' e2" := (Lam x%binder e2%E e1%E)
-                                         (at level 200, x at level 1, e1, e2 at level 200,
-                                          format "'[' 'let:'  x  :=  '[' e1 ']'  'in'  '/' e2 ']'") : expr_scope.
-  Notation "e1 ;; e2" := (Lam BAnon e2%E e1%E)
-                           (at level 100, e2 at level 200,
-                            format "'[' '[hv' '[' e1 ']'  ;;  ']' '/' e2 ']'") : expr_scope.
-
-  (* Shortcircuit Boolean connectives *)
-  Notation "e1 && e2" :=
-    (If e1%E e2%E (LitV (LitBool false))) (only parsing) : expr_scope.
-  Notation "e1 || e2" :=
-    (If e1%E (LitV (LitBool true)) e2%E) (only parsing) : expr_scope.
-
-  (** Notations for option *)
-  Notation NONE := (InjL (LitV LitUnit)) (only parsing).
-  Notation NONEV := (InjLV (LitV LitUnit)) (only parsing).
-  Notation SOME x := (InjR x) (only parsing).
-  Notation SOMEV x := (InjRV x) (only parsing).
-
-  Notation "'match:' e0 'with' 'NONE' => e1 | 'SOME' x => e2 'end'" :=
-    (Match e0 BAnon e1 x%binder e2)
-      (e0, e1, x, e2 at level 200, only parsing) : expr_scope.
-  Notation "'match:' e0 'with' 'SOME' x => e2 | 'NONE' => e1 'end'" :=
-    (Match e0 BAnon e1 x%binder e2)
-      (e0, e1, x, e2 at level 200, only parsing) : expr_scope.
-  Notation "'match:' e0 'with' 'LEAF' => e1 | 'NODE' x y z => e2 'end'" :=
-    (MatchTree e0 e1 x%binder y%binder z%binder e2)
-      (e0, e1, x, y, z, e2 at level 200, only parsing) : expr_scope.
-
-End notation.
-
 Set Implicit Arguments.
-
-
 From iris.algebra Require Import auth frac agree gmap.
 From iris.base_logic.lib Require Export own.
 From iris.bi.lib Require Import fractional.
@@ -677,7 +172,6 @@ Module lifting.
   Export gen_heap.
   (* From iris.program_logic Require Export weakestpre. *)
   (* From iris.program_logic Require Import ectx_lifting total_ectx_lifting. *)
-  Export heap_lang.
   Import tactics.
   (* From iris.proofmode Require Import tactics. *)
   (* From stdpp Require Import fin_maps. *)
@@ -689,12 +183,12 @@ Module lifting.
         heapG_gen_heapG :> @gen_heapG loc Σ _ _;
       }.
   Locate irisG.
-
-  Instance heapG_irisG `{!heapG Σ} : irisG heap_lang Σ := {
-                                                           iris_invG := heapG_invG;
-                                                           state_interp σ _ _ := gen_heap_ctx σ%I;
-                                                           fork_post _ := True%I;
-                                                         }.
+  Print irisG.
+  (* Instance heapG_irisG `{!heapG Σ} : irisG heap_lang Σ := { *)
+  (*                                                          iris_invG := heapG_invG; *)
+  (*                                                          state_interp σ _ _ := gen_heap_ctx σ%I; *)
+  (*                                                          fork_post _ := True%I; *)
+  (*                                                        }. *)
 
   (** Override the notations so that scopes and coercions work out *)
   Notation "\s l" := (mapsto (L:=loc) l)
@@ -722,23 +216,23 @@ lemmas. *)
 
   (* [simpl apply] is too stupid, so we need extern hints here. *)
   Local Hint Extern 1 (head_step _ _ _ _ _ _) => econstructor : core.
-  Local Hint Extern 0 (head_step Gensym _ _ _ _ _) => apply gensym_fresh : core.
+  (* Local Hint Extern 0 (head_step Gensym _ _ _ _ _) => apply gensym_fresh : core. *)
   Local Hint Resolve to_of_val : core.
 
-  Instance into_val_val v : IntoVal (Val v) v.
-  Proof. done. Qed.
-  Instance as_val_val v : AsVal (Val v).
-  Proof. by eexists. Qed.
+  (* Instance into_val_val v : IntoVal (Val v) v. *)
+  (* Proof. done. Qed. *)
+  (* Instance as_val_val v : AsVal (Val v). *)
+  (* Proof. by eexists. Qed. *)
 
   Local Ltac solve_atomic :=
     apply strongly_atomic_atomic, ectx_language_atomic;
     [inversion 1; naive_solver
     |apply ectxi_language_sub_redexes_are_values; intros [] **; naive_solver].
 
-  Instance gensym_atomic s : Atomic s Gensym.
-  Proof. solve_atomic. Qed.
-  Instance skip_atomic s  : Atomic s Skip.
-  Proof. solve_atomic. Qed.
+  (* Instance gensym_atomic s : Atomic s Gensym. *)
+  (* Proof. solve_atomic. Qed. *)
+  (* Instance skip_atomic s  : Atomic s Skip. *)
+  (* Proof. solve_atomic. Qed. *)
 
   Local Ltac solve_exec_safe := intros; subst; do 3 eexists; econstructor; eauto.
   Local Ltac solve_exec_puredet := simpl; intros; by inv_head_step.
@@ -760,6 +254,9 @@ not if [v] contains a lambda/rec that is hidden behind a definition.
 
 To make sure that [wp_rec] and [wp_lam] do reduce lambdas/recs that are hidden
 behind a definition, we activate [AsRecV_recv] by hand in these tactics. *)
+  Print PureExec.
+  
+  
   Class AsRecV (v : val) (f x : binder) (erec : expr) :=
     as_recv : v = RecV f x erec.
   Hint Mode AsRecV ! - - - : typeclass_instances.
@@ -813,7 +310,7 @@ behind a definition, we activate [AsRecV_recv] by hand in these tactics. *)
   Instance pure_case_inr v e1 e2 :
     PureExec True 1 (Case (Val $ InjRV v) e1 e2) (App e2 (Val v)).
   Proof. solve_pure_exec. Qed.
-  Print wp.
+
   Section lifting.
     Context `{!heapG Σ}.
     Implicit Types P Q : iProp Σ.
