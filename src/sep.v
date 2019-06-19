@@ -1,10 +1,74 @@
 From iris.program_logic Require Export language ectx_language ectxi_language.
 From iris.heap_lang Require Export locations.
 Require Import iris.algebra.gset.
+Require Import FunctionalExtensionality.
 From stdpp Require Export binders strings.
 From iris.algebra Require Import auth.
 From iris.base_logic.lib Require Export own.
 From iris.proofmode Require Import tactics.
+
+(* Module monad. *)
+
+(*   Definition Symb := loc. *)
+
+(*   Inductive FreshMonad (X : Type) : Type := *)
+(*   | ret : X -> FreshMonad X *)
+(*   | Gensym : (Symb -> FreshMonad X) -> FreshMonad X. *)
+
+(*   Arguments ret {_} x. *)
+(*   Arguments Gensym {_} f. *)
+
+(*   Fixpoint bind {X Y} (m: FreshMonad X) (k: X -> FreshMonad Y) : FreshMonad Y := *)
+(*     match m with *)
+(*     | ret x => k x *)
+(*     | Gensym f => Gensym (fun x => bind (f x) k) *)
+(*     end. *)
+
+(*   Lemma lid : forall X Y (a : X) (f : X -> FreshMonad Y), bind (ret a) f = f a. *)
+(*   Proof. auto. Qed. *)
+
+(*   Lemma rid : forall X (m : FreshMonad X), bind m ret = m. *)
+(*   Proof. induction m; auto. simpl. f_equal. apply functional_extensionality. auto. Qed. *)
+
+(*   Lemma assoc_bind : forall X Y Z (m : FreshMonad X) f (g : Y -> FreshMonad Z), *)
+(*       bind (bind m f) g = bind m (fun x => bind (f x) g). *)
+(*   Proof. induction m; auto. intros. simpl. f_equal. apply functional_extensionality. auto. Qed. *)
+
+(*   Definition to_val {X} (m : FreshMonad X) := *)
+(*     match m with *)
+(*     | ret v => Some v *)
+(*     | _ => None *)
+(*     end. *)
+
+(*   (** Evaluation Context *) *)
+(*   Inductive ectx_item. *)
+
+(*   Definition fill_item {X} (Ki : ectx_item) (e : FreshMonad X) : FreshMonad X := e. *)
+(*   Definition ob := nat. *)
+(*   Definition heap := gset loc. *)
+
+(*   Inductive head_step {X} : FreshMonad X → heap → list ob → FreshMonad X → heap → list (FreshMonad X) → Prop := *)
+(*   | GensymS h f l : *)
+(*       l ∉ h → *)
+(*       head_step (Gensym f) h [] (f l) ({[ l ]} ∪ h) [].  *)
+(*   Lemma heap_lang_mixin : forall X, @EctxiLanguageMixin _ X _ _ _ ret to_val fill_item head_step. *)
+(*   Proof. *)
+(*     split; eauto. *)
+(*     * intros; destruct e; inversion H; eauto. *)
+(*     * intros; destruct e1; inversion H; eauto. *)
+(*     * unfold Inj; auto. *)
+(*     * destruct Ki1,Ki2. reflexivity. *)
+(*     * intros. destruct e; eauto. simpl. inversion H. admit. *)
+
+
+
+
+(* Canonical Structure monad_ectxi_lang := EctxiLanguage heap_lang_mixin. *)
+(* Canonical Structure monad_ectx_lang := EctxLanguageOfEctxi monad_ectxi_lang. *)
+(* Canonical Structure monad_lang := LanguageOfEctx monad_ectx_lang. *)
+
+(* End monad. *)
+
 
 
 Module heap_lang.
@@ -270,19 +334,6 @@ Module heap_lang.
   Definition fresh_locs (ls : gset loc) : loc :=
     {| loc_car := set_fold (λ k r, (1 + loc_car k) `max` r)%Z 1%Z ls |}.
 
-
-  (* Lemma test (X : gset loc) : forall x, x ∈ X -> (loc_car x) < (loc_car (fresh_locs X)). *)
-  (* Proof. *)
-  (*   elim X using set_ind. *)
-  (*   * repeat red. intros. split; pose (gset_leibniz x); apply e in H; subst; auto. *)
-  (*   * intros. inversion H. *)
-  (*   * intros. *)
-
-
-
-  (* Lemma test x X: loc_car (fresh_locs ({[x]} ∪ X)) = (1 + loc_car x) `max` (loc_car (fresh_locs X)). *)
-  (* Proof. *)
-  (*   simpl. unfold set_fold. *)
   Lemma fresh_locs_fresh ls: fresh_locs ls ∉ ls.
   Proof.
     intros. cut (∀ l, l ∈ ls → loc_car l < loc_car (fresh_locs ls))%Z.
@@ -1065,7 +1116,7 @@ the reduction, and finally we clear this new hypothesis. *)
 happens *after* [tac H] got executed. *)
   Tactic Notation "wp_apply_core" open_constr(lem) tactic(tac) :=
     wp_pures;
-    iPoseProofCore lem as false true (fun H =>
+    iPoseProofCore lem as false (fun H =>
                                         lazymatch goal with
                                         | |- envs_entails _ (wp ?s ?E ?e ?Q) =>
                                           reshape_expr e ltac:(fun K e' =>
@@ -1115,7 +1166,7 @@ operation. *)
       let process_single _ :=
           first
             [reshape_expr e ltac:(fun K e' => eapply (tac_wp_gensym _ _ _ _ Htmp K))
-            |fail 1 "wp_alloc: cannot find 'Alloc' in" e];
+            |fail 1 "wp_gensym: cannot find 'Gensym' in" e];
           [iSolveTC
           |finish ()]
       in process_single ()
@@ -1123,27 +1174,837 @@ operation. *)
       let process_single _ :=
           first
             [reshape_expr e ltac:(fun K e' => eapply (tac_twp_gensym _ _ _ Htmp K))
-            |fail 1 "wp_alloc: cannot find 'Alloc' in" e];
+            |fail 1 "wp_gensym: cannot find 'Gensym' in" e];
           finish ()
       in
       process_single ()
-    | _ => fail "wp_alloc: not a 'wp'"
+    | _ => fail "wp_gensym: not a 'wp'"
     end.
 
-  Tactic Notation "wp_alloc" ident(l) :=
+  Tactic Notation "wp_gensym" ident(l) :=
     wp_gensym l as "?".
 End proofmode.
 
+Module monad.
+
+  Section monad_rules.
+    Context {state  : Type}.
+    Context ( M : Type -> Type).
+    Context ( ret : forall X, X -> M X).
+    Context ( bind : forall X Y, M X -> (X -> M Y) -> M Y ).
+    Arguments ret {_} x.
+
+    Class MonadProp :=
+      {
+        left_id (X Y : Type) (a : X) (f : X -> M Y) : bind (ret a) f = f a;
+        right_id (X : Type) (m : M X) : bind m ret = m;
+        assoc_bind (X Y Z : Type) (m : M X) f (g : Y -> M Z) :
+          bind (bind m f) g = bind m (fun x => bind (f x) g)
+      }.
+
+  End monad_rules.
+
+  Structure monad :=
+    Monad {
+        M : Type -> Type;
+        state : Type;
+        ret : forall (X : Type), X -> M X;
+        bind : forall X Y, M X -> (X -> M Y) -> M Y;
+        run : forall X, M X -> state -> state * X;
+        prop : MonadProp M ret bind
+      }.
+  
+End monad.
+
+Module weakestpre.
+  Export monad.
+
+  Class Mwp {X} (Λ : monad) (PROP : Type) :=
+    mwp : ((M Λ) X) → (X → PROP) → PROP.
+  Instance: Params (@Mwp) 7 := {}.
+
+  Notation "'WP' e |{ Φ } |" := (mwp e%E Φ)
+                                      (at level 20, e, Φ at level 200, only parsing) : bi_scope.
+  Notation "'WP' e |{ v , Q } |" := (mwp e%E (λ v, Q))
+  (at level 20, e, Q at level 200,
+   format "'[' 'WP'  e  '[ ' |{  v ,  Q  } | ']' ']'") : bi_scope.
+
+  Notation "'|{{' P } } | e |{{ x .. y , 'RET' pat ; Q } } |" :=
+    ( □ ∀ Φ,
+       P -∗ (∀ x, .. (∀ y, Q -∗ Φ pat%V) .. ) -∗ WP e |{ Φ }|)%I
+         (at level 20, x closed binder, y closed binder,
+          format "'[hv' |{{  P  } } |  '/  ' e  '/'  |{{  x  ..  y ,  RET  pat ;  Q  } } | ']'") : bi_scope.
+
+End weakestpre.
+
+Module gensym.
+  Import monad.
+
+  Definition Symb := loc.
+  Definition state := gset loc.
+  Inductive FreshMonad (X : Type) : Type :=
+  | ret: X -> FreshMonad X
+  | Gensym: (Symb -> FreshMonad X) -> FreshMonad X.
+
+  Arguments ret {_} x.
+
+  Fixpoint bind {X Y} (m: FreshMonad X) (k: X -> FreshMonad Y) : FreshMonad Y :=
+    match m with
+    | ret x => k x
+    | Gensym f => Gensym (fun x => bind (f x) k)
+    end.
+
+  Definition gensym_op := Gensym ret.
+
+  Fixpoint run {X} (m : FreshMonad X) : state -> state * X :=
+    match m with
+    | ret v => fun s => (s,v)
+    | Gensym f =>
+      fun s =>
+        let l := fresh_locs s in
+        run (f l) ({[l]} ∪ s)
+    end.
+
+  Lemma lid : forall X Y (a : X) (f : X -> FreshMonad Y), bind (ret a) f = f a.
+  Proof. auto. Qed.
+
+  Lemma rid : forall X (m : FreshMonad X), bind m ret = m.
+  Proof. induction m; auto. simpl. f_equal. apply functional_extensionality. auto. Qed.
+
+  Lemma ass_bind : forall X Y Z (m : FreshMonad X) f (g : Y -> FreshMonad Z),
+      bind (bind m f) g = bind m (fun x => bind (f x) g).
+  Proof. induction m; auto. intros. simpl. f_equal. apply functional_extensionality. auto. Qed.
+
+  Hint Resolve lid rid ass_bind.
+
+  Instance mP : @MonadProp FreshMonad (@ret) (@bind).
+  Proof. split; eauto. Qed.
+  Canonical Structure gensym_monad :=
+    @Monad FreshMonad (gset loc) (@ret) (@bind) (@run) mP.
+End gensym.
+
+
+Module weakestpre_gensym.
+  Export weakestpre.
+  Export gensym.
+  Export locations.
+  Export gen_heap.
+  Print invG.
+  Class irisG (Σ : gFunctors) :=
+    IrisG {
+        iris_invG :> invG Σ;
+        state_interp : state → iProp Σ;
+      }.
+  Global Opaque iris_invG.
+  
+  Class heapG Σ :=
+    HeapG {
+        heapG_invG : invG Σ;
+        heapG_gen_heapG :> @gen_heapG loc Σ _ _;
+      }.
+  
+  Instance heapG_irisG `{!heapG Σ} : irisG Σ := {
+                                                 iris_invG := heapG_invG;
+                                                 state_interp σ := gen_heap_ctx σ%I;
+                                               }.
+
+  (** Override the notations so that scopes and coercions work out *)
+  Notation "\s l" := (mapsto (L:=loc) l)
+                       (at level 20, format "\s l") : bi_scope.
+  Notation "\s l" :=
+    (mapsto (L:=loc) l) (at level 20) : bi_scope.
+
+  Section mwp.
+    Context {X : Type} `{!heapG Σ}.
+    Implicit Types P : iProp Σ.
+    Implicit Types Φ : X → iProp Σ.
+    Implicit Types v : X.
+    Implicit Types e : FreshMonad X.
+    
+    Fixpoint mwp `{!irisG Σ} (e1 : FreshMonad X) (Q : X -> iProp Σ) : iProp Σ :=
+      match e1 with
+      | ret v => Q v
+      | Gensym f =>
+        ∀ l, (\s l) -∗ mwp (f l) Q
+      end%I.
+
+    Global Instance mwp' `{!irisG Σ} : @Mwp X gensym_monad (iProp Σ) := mwp.
+    
+    Global Instance mwp_ne e n :
+      Proper (pointwise_relation _ (dist n) ==> dist n) (mwp e).
+    Proof.
+      revert e. induction (lt_wf n) as [n _ IH]=> e P P' HP.
+      induction e; simpl.
+      * apply HP.
+      * do 3 f_equiv. apply H.
+    Qed.
+
+    Global Instance mwp_proper e :
+      Proper (pointwise_relation _ (≡) ==> (≡)) (mwp e).
+    Proof.
+        by intros Φ Φ' ?; apply equiv_dist=>n; apply mwp_ne=>v; apply equiv_dist.
+    Qed.
+
+    Lemma mwp_unfold e Φ :
+      WP e |{ Φ }| ⊣⊢ mwp e Φ.
+    Proof. auto. Qed.
+
+    Lemma mwp_value' Φ v : Φ v ⊢ WP ret v |{ Φ }|.
+    Proof. eauto. Qed.
+    Lemma mwp_value_inv' Φ v : WP ret v |{ Φ }| -∗ Φ v.
+    Proof. eauto. Qed.
+  
+    Lemma mwp_mono e Φ Ψ :
+      WP e |{ Φ }| -∗ (∀ v, Φ v -∗ Ψ v) -∗ WP e |{ Ψ }|.
+    Proof.
+      iIntros "HA HB". rewrite !mwp_unfold. iInduction e as [|e] "IH".
+      { iApply "HB". iApply "HA". }
+      { simpl. iIntros (l) "HC". iDestruct ("HA" with "HC") as "HA".
+        iApply ("IH" with "[HA] [HB]"); eauto. }
+      Qed.
+      
+    Lemma mwp_bind e f Φ Φ' :
+      WP e |{ Φ' }| -∗ (∀ v,  Φ' v -∗ WP (f v) |{ Φ }|) -∗ WP bind e f |{ Φ }|%I.
+    Proof.
+      iIntros "HA HB". rewrite !mwp_unfold. iInduction e as [|e] "IH".
+      { iApply "HB". iApply "HA". }
+      { simpl. iIntros (l) "HC". iDestruct ("HA" with "HC") as "HA".
+        iApply ("IH" with "[HA] [HB]"); eauto. }
+    Qed.
+
+    Lemma mwp_frame_l e Φ R : R ∗ WP e |{ Φ }| ⊢ WP e |{ v, R ∗ Φ v }|.
+    Proof. iIntros "[? H]". iApply (mwp_mono with "H"); auto with iFrame. Qed.
+    Lemma mwp_frame_r e Φ R : WP e |{ Φ }| ∗ R ⊢ WP e |{ v, Φ v ∗ R }|.
+    Proof. iIntros "[H ?]". iApply (mwp_mono with "H"); auto with iFrame. Qed.
+
+  End mwp.
+  
+
+End weakestpre_gensym.
+
+Import gensym.
+Import weakestpre_gensym.
+
+Inductive tree (X : Type) : Type :=
+| leaf : tree X
+| node : X -> tree X -> tree X -> tree X.
+
+Fixpoint label (m : tree unit) : FreshMonad (tree Symb) :=
+  match m with
+  | leaf _ => ret (leaf _)
+  | node _ t1 t2 =>
+    bind gensym_op (fun l =>
+     bind (label t1) (fun t =>   
+      bind (label t2) (fun t' =>
+                         ret (node l t t'))))
+  end.
+
+Fixpoint treeSpec `{!heapG Σ} (t : tree Symb) : iProp Σ :=
+  match t with
+  | leaf _ => True
+  | node s t1 t2 => \s s ∗ (treeSpec t1) ∗ (treeSpec t2)
+  end%I.
+
+Open Scope bi_scope.
+
+Lemma correct_label `{!heapG Σ} (m : tree unit) :
+|{{ True }}| (label m) |{{ t, RET t; (@treeSpec Σ _ t) }}|.
+Proof.
+  iModIntro.    
+  iIntros (Φ t) "HA". rewrite mwp_unfold. iInduction m as [|a t1 t2] "IH" forall (Φ).
+  { iApply "HA". eauto. }
+  { simpl. iIntros (l) "HB". iApply (mwp_bind _ _ _ treeSpec with "[] [HA HB]").
+    { iApply "IH". eauto. }
+    { iIntros (v) "HC". iApply (mwp_bind _ _ _ treeSpec with "[] [HA HB HC]").
+      { iApply "IH1". eauto. }
+      { iIntros (v0) "HD". iApply "HA". iFrame. }}}
+Qed.
+Locate invG.
+        
+                        
+
+        
+(* %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%ù *)
+
+Module monad.
+
+  Section monad_rules.
+    Context {state  : Type}.
+    Context ( M : Type -> Type).
+    Context ( ret : forall X, X -> M X).
+    Context ( bind : forall X Y, M X -> (X -> M Y) -> M Y ).
+    (* Context ( to_val : forall X, M X -> option X). *)
+    (* Context ( prim_step : forall X, M X -> state -> M X -> state -> Prop). *)
+    Arguments ret {_} x.
+
+    Class MonadProp :=
+      {
+        left_id (X Y : Type) (a : X) (f : X -> M Y) : bind (ret a) f = f a;
+        right_id (X : Type) (m : M X) : bind m ret = m;
+        assoc_bind (X Y Z : Type) (m : M X) f (g : Y -> M Z) :
+          bind (bind m f) g = bind m (fun x => bind (f x) g)
+        
+        (* to_ret (X : Type) (v : X) : to_val (ret v) = Some v; *)
+        (* to_val_none (X : Type) (e1 e2 : M X) (σ σ' : state) : *)
+        (*   prim_step e1 σ e2 σ' → to_val e1 = None *)
+        (* to_val_ret (X : Type) (v : X) (e : M X) : to_val e = Some v → ret v = e *)
+      }.
+
+  End monad_rules.
+
+  Structure monad :=
+    Monad {
+        M : Type -> Type;
+        (* to_val : forall X, M X -> option X; *)
+        state : Type;
+        ret : forall (X : Type), X -> M X;
+        bind : forall X Y, M X -> (X -> M Y) -> M Y;
+        run : forall X, M X -> state -> state * X;
+        prim_step : forall X, M X -> state -> M X -> state -> Prop;
+        prop : MonadProp M ret bind (* to_val *) (* prim_step *)
+      }.
+
+  Section monad.
+    Context {X : Type} {Λ : monad}.
+    Implicit Types v : X.
+    Implicit Types e : M Λ X.
+
+    Definition reducible e (σ : state Λ) :=
+    ∃ e' σ', prim_step Λ X e σ e' σ'.
+  
+  Definition irreducible e (σ : state Λ) :=
+    ∀ e' σ', ¬prim_step Λ X e σ e' σ'.
+
+  (* Lemma reducible_not_val e σ : reducible e σ → to_val Λ X e = None. *)
+  (* Proof. intro. unfold reducible in H. do 2 (destruct H). *)
+  (*        eapply (@to_val_none (state Λ) (M Λ) (ret Λ) (bind Λ) (to_val Λ) (prim_step Λ) (prop Λ)). *)
+  (*        eauto. *)
+  (* Qed. *)
+
+  
+  End monad.
+End monad.
+
+Module weakestpre.
+  Export monad.
+
+  Class Mwp {X} (Λ : monad) (PROP : Type) :=
+    mwp : coPset → ((M Λ) X) → (X → PROP) → PROP.
+  Instance: Params (@Mwp) 8 := {}.
+
+  Notation "'WP' e @ E |{ Φ } |" := (mwp E e%E Φ)
+                                      (at level 20, e, Φ at level 200, only parsing) : bi_scope.
+  Notation "'WP' e @ E |{ v , Q } |" := (mwp E e%E (λ v, Q))
+  (at level 20, e, Q at level 200,
+   format "'[' 'WP'  e  '/' '[       ' @  E  |{  v ,  Q  } | ']' ']'") : bi_scope.
+
+  Notation "'|{{' P } } | e @ E |{{ x .. y , 'RET' pat ; Q } } |" :=
+    (□ ∀ Φ,
+       P -∗ ▷ (∀ x, .. (∀ y, Q -∗ Φ pat%V) .. ) -∗ WP e @ E |{ Φ }|)%I
+         (at level 20, x closed binder, y closed binder,
+          format "'[hv' |{{  P  } } |  '/  ' e  '/' @ E  |{{  x  ..  y ,  RET  pat ;  Q  } } | ']'") : bi_scope.
+
+End weakestpre.
+
+Module weakestpre_monad.
+  Export weakestpre.
+  Import monad.
+
+  Class irisG (Λ : monad) (Σ : gFunctors) :=
+    IrisG {
+        iris_invG :> invG Σ;
+        state_interp : state Λ → iProp Σ;
+      }.
+  Global Opaque iris_invG.
+  Locate " _ -c> _".
+  Locate FUpd
+  
+  Definition mwp_pre {X} `{!irisG Λ Σ}
+             (mwp : coPset -c> ((M Λ) X) -c> (X -c> iProp Σ) -c> iProp Σ) :
+    coPset -c> ((M Λ) X) -c> (X -c> iProp Σ) -c> iProp Σ :=
+    λ E e1 Φ,
+    match e1 with
+    | ret v => |={E}=> Φ v
+    | None =>
+      ∀ σ1, state_interp σ1 ={E,∅}=∗
+      ∀ e2 σ2, ⌜prim_step Λ X e1 σ1 e2 σ2⌝ ={∅,∅,E}▷=∗
+               state_interp σ2 ∗
+               mwp E e2 Φ
+    end%I.
+
+  Local Instance mwp_pre_contractive {X} `{!irisG Λ Σ} : Contractive (@mwp_pre X Λ Σ _ ).
+  Proof.
+    rewrite /mwp_pre=> n wp wp' Hwp E e1 Φ.
+    repeat (f_contractive || f_equiv); apply Hwp.
+  Qed.
+
+
+  Definition mwp_def {X} `{!irisG Λ Σ} :
+    coPset → (M Λ) X → (X → iProp Σ) → iProp Σ := fixpoint mwp_pre.
+  Definition mwp_aux {X} `{!irisG Λ Σ} : seal (@mwp_def X Λ Σ _). by eexists. Qed.
+  Instance mwp' {X} `{!irisG Λ Σ} : @Mwp X Λ (iProp Σ) := mwp_aux.(unseal).
+  Definition mwp_eq {X} `{!irisG Λ Σ} : mwp = @mwp_def X Λ Σ _ := mwp_aux.(seal_eq).
+
+  Section mwp.
+    Context {X : Type} `{!irisG Λ Σ}.
+    Implicit Types P : iProp Σ.
+    Implicit Types Φ : X → iProp Σ.
+    Implicit Types v : X.
+    Implicit Types e : (M Λ) X.
+
+    Lemma mwp_unfold E e Φ :
+      WP e @ E |{ Φ }| ⊣⊢ mwp_pre (mwp (PROP:=iProp Σ)) E e Φ.
+    Proof. rewrite mwp_eq. apply (fixpoint_unfold mwp_pre). Qed.
+
+    Global Instance mwp_ne E e n :
+      Proper (pointwise_relation _ (dist n) ==> dist n) (mwp (PROP:=iProp Σ) E e).
+    Proof.
+      revert e. induction (lt_wf n) as [n _ IH]=> e P P' HP.
+      rewrite !mwp_unfold /mwp_pre.
+      do 14 (f_contractive || f_equiv). apply IH; first lia.
+      intros v. eapply dist_le; eauto with lia.
+    Qed.
+
+    Global Instance mwp_proper E e :
+      Proper (pointwise_relation _ (≡) ==> (≡)) (mwp (PROP:=iProp Σ) E e).
+    Proof.
+        by intros Φ Φ' ?; apply equiv_dist=>n; apply mwp_ne=>v; apply equiv_dist.
+    Qed.
+
+    Lemma mwp_value' E Φ v : Φ v ⊢ WP (ret Λ) _ v @ E |{ Φ }|.
+    Proof.
+      iIntros "HΦ". rewrite mwp_unfold /mwp_pre. pose (m :=prop Λ). destruct m. rewrite to_ret0.
+      iModIntro. iFrame.
+    Qed.
+    Lemma mwp_value_inv' E Φ v : WP (ret Λ) _ v @ E |{ Φ }| ={E}=∗ Φ v.
+    Proof.
+      rewrite mwp_unfold /mwp_pre. pose (m := prop Λ). destruct m.
+      rewrite to_ret0. iIntros "HP". iFrame.
+    Qed.
+
+    Lemma mwp_strong_mono E1 E2 e Φ Ψ :
+      E1 ⊆ E2 →
+      WP e @ E1 |{ Φ }| -∗ (∀ v, Φ v ={E2}=∗ Ψ v) -∗ WP e @ E2 |{ Ψ }|.
+    Proof.
+      iIntros (H) "HA HB". iLöb as "IH" forall (e E1 E2 H Φ Ψ).
+      rewrite !mwp_unfold /mwp_pre. destruct (to_val Λ _ e) as [v|] eqn:?.
+      { iApply ("HB" with "[> -]"). by iApply (fupd_mask_mono E1 _). }
+      iIntros (h1) "HC". iMod (fupd_intro_mask' E2 E1) as "Hclose"; first done.
+      iMod ("HA" with "[$]") as "HA". iModIntro. iIntros (e2 h2) "HC".
+      iMod ("HA" with "HC") as "HA". iModIntro. iNext. iMod "HA" as "[HA HC]".
+      iMod "Hclose" as "_". iModIntro. iFrame.
+      iApply ("IH" with "[//] [HC] [HB]"); eauto.
+    Qed.
+
+    Lemma fupd_mwp E e Φ : (|={E}=> WP e @ E |{ Φ }|) ⊢ WP e @ E |{ Φ }|.
+    Proof.
+      rewrite mwp_unfold /mwp_pre. iIntros "H". destruct (to_val Λ X e) as [v|] eqn:?.
+      { by iMod "H". }
+      iIntros (σ1) "Hσ1". iMod "H". by iApply "H".
+    Qed.
+
+    Lemma mwp_fupd E e Φ : WP e @ E |{ v, |={E}=> Φ v }| ⊢ WP e @ E |{ Φ }|.
+    Proof. iIntros "H". iApply (mwp_strong_mono with "H"); auto. Qed.
+
+    
+    Lemma mwp_step_fupd E1 E2 e P Φ :
+      to_val Λ X e = None → E2 ⊆ E1 →
+      (|={E1,E2}▷=> P) -∗ WP e @ E2 |{ v, P ={E1}=∗ Φ v }| -∗ WP e @ E1 |{ Φ }|.
+    Proof.      
+      iIntros (a b) "HA HB". rewrite !mwp_unfold /mwp_pre. rewrite a.
+      iIntros (h1) "HC". iMod "HA". iMod ("HB" with "HC") as "HB". iModIntro.
+      iIntros (e1 h2) "ps". iMod ("HB" with "ps") as "HB". iModIntro. iNext. iMod "HB" as "[HB HC]".
+      iFrame. iMod "HA" as "HA". iIntros "!>".
+      iApply (mwp_strong_mono with "HC"); [done..|].
+      iIntros (v) "HB". now iApply "HB".
+    Qed.
+
+    (** Derived rules *)
+
+    Lemma mwp_mono E e Φ Ψ : (∀ v, Φ v ⊢ Ψ v) → WP e @ E |{ Φ }| ⊢ WP e @ E |{ Ψ }|.
+    Proof.
+      iIntros (HΦ) "H"; iApply (mwp_strong_mono with "H"); auto.
+      iIntros (v) "?". by iApply HΦ.
+    Qed.
+
+    Lemma mwp_mask_mono E1 E2 e Φ : E1 ⊆ E2 → WP e @ E1 |{ Φ }| ⊢ WP e @ E2 |{ Φ }|.
+    Proof. iIntros (?) "H"; iApply (mwp_strong_mono with "H"); auto. Qed.
+
+    Global Instance wp_mono' E e :
+      Proper (pointwise_relation _ (⊢) ==> (⊢)) (mwp (PROP:=iProp Σ) E e).
+    Proof. by intros Φ Φ' ?; apply mwp_mono. Qed.
+
+    Class IntoVal (e : M Λ X) (v : X) :=
+      into_val : ret Λ v = e.
+
+
+    Lemma mwp_value E Φ e v : IntoVal e v → Φ v ⊢ WP e @ E |{ Φ }|.
+    Proof. intros <-. by apply mwp_value'. Qed.
+    Lemma mwp_value_fupd' E Φ v : (|={E}=> Φ v) ⊢ WP ret Λ v @ E |{ Φ }|.
+    Proof. intros. by rewrite -mwp_fupd -mwp_value'. Qed.
+
+    Lemma mwp_value_fupd E Φ e v `{!IntoVal e v} :
+      (|={E}=> Φ v) ⊢ WP e @ E |{ Φ }|.
+    Proof. intros. rewrite -mwp_fupd -mwp_value //. Qed.
+    Lemma mwp_value_inv E Φ e v : IntoVal e v → WP e @ E |{ Φ }| ={E}=∗ Φ v.
+    Proof. intros <-. by apply mwp_value_inv'. Qed.
+
+    Lemma mwp_frame_l E e Φ R : R ∗ WP e @ E |{ Φ }| ⊢ WP e @ E |{ v, R ∗ Φ v }|.
+    Proof. iIntros "[? H]". iApply (mwp_strong_mono with "H"); auto with iFrame. Qed.
+    Lemma mwp_frame_r E e Φ R : WP e @ E |{ Φ }| ∗ R ⊢ WP e @ E |{ v, Φ v ∗ R }|.
+    Proof. iIntros "[H ?]". iApply (mwp_strong_mono with "H"); auto with iFrame. Qed.
+
+    
+    Lemma mwp_frame_step_l E1 E2 e Φ R :
+      to_val Λ X e = None → E2 ⊆ E1 →
+      (|={E1,E2}▷=> R) ∗ WP e @ E2 |{ Φ }| ⊢ WP e @ E1 |{ v, R ∗ Φ v }|.
+    Proof.
+      iIntros (??) "[Hu Hwp]". iApply (mwp_step_fupd with "Hu"); try done.
+      iApply (mwp_mono with "Hwp"). by iIntros (?) "$$".
+    Qed.
+    Lemma mwp_frame_step_r E1 E2 e Φ R :
+      to_val Λ X e = None → E2 ⊆ E1 →
+      WP e @ E2 |{ Φ }| ∗ (|={E1,E2}▷=> R) ⊢ WP e @ E1 |{ v, Φ v ∗ R }|.
+    Proof.
+      rewrite [(WP _ @ _ |{ _ }| ∗ _)%I]comm; setoid_rewrite (comm _ _ R).
+      apply mwp_frame_step_l.
+    Qed.
+    Lemma wp_frame_step_l' E e Φ R :
+      to_val Λ X e = None → ▷ R ∗ WP e @ E |{ Φ }| ⊢ WP e @ E |{ v, R ∗ Φ v }|.
+    Proof. iIntros (?) "[??]". iApply mwp_frame_step_l; try iFrame; eauto. Qed.
+    Lemma wp_frame_step_r' E e Φ R :
+      to_val Λ X e = None → WP e @ E |{ Φ }| ∗ ▷ R ⊢ WP e @ E |{ v, Φ v ∗ R }|.
+    Proof. iIntros (?) "[??]". iApply mwp_frame_step_r; try iFrame; eauto. Qed.
+
+    Lemma mwp_wand E e Φ Ψ :
+      WP e @ E |{ Φ }| -∗ (∀ v, Φ v -∗ Ψ v) -∗ WP e @ E |{ Ψ }|.
+    Proof.
+      iIntros "Hwp H". iApply (mwp_strong_mono with "Hwp"); auto.
+      iIntros (?) "?". by iApply "H".
+    Qed.
+    Lemma wp_wand_l E e Φ Ψ :
+      (∀ v, Φ v -∗ Ψ v) ∗ WP e @ E |{ Φ }| ⊢ WP e @ E |{ Ψ }|.
+    Proof. iIntros "[H Hwp]". iApply (mwp_wand with "Hwp H"). Qed.
+    Lemma wp_wand_r E e Φ Ψ :
+      WP e @ E |{ Φ }| ∗ (∀ v, Φ v -∗ Ψ v) ⊢ WP e @ E |{ Ψ }|.
+    Proof. iIntros "[Hwp H]". iApply (mwp_wand with "Hwp H"). Qed.
+    Lemma wp_frame_wand_l E e Q Φ :
+      Q ∗ WP e @ E |{ v, Q -∗ Φ v }| -∗ WP e @ E |{ Φ }|.
+    Proof.
+      iIntros "[HQ HWP]". iApply (mwp_wand with "HWP").
+      iIntros (v) "HΦ". by iApply "HΦ".
+    Qed.
+    
+  End mwp.
+
+  (** Proofmode class instances *)
+  Section proofmode_classes.
+    Context {X : Type} `{!irisG Λ Σ}.
+    Implicit Types P Q : iProp Σ.
+    Implicit Types Φ : X → iProp Σ.
+    
+    Global Instance frame_mwp p E e R Φ Ψ :
+      (∀ v, Frame p R (Φ v) (Ψ v)) →
+      Frame p R (WP e @ E |{ Φ }|) (WP e @ E |{ Ψ }|).
+    Proof. rewrite /Frame=> HR. rewrite mwp_frame_l. apply mwp_mono, HR. Qed.
+    
+    Global Instance is_except_0_mwp E e Φ : IsExcept0 (WP e @ E |{ Φ }|).
+    Proof. by rewrite /IsExcept0 -{2}fupd_mwp -except_0_fupd -fupd_intro. Qed.
+    
+    Global Instance elim_modal_bupd_mwp p E e P Φ :
+      ElimModal True p false (|==> P) P (WP e @ E |{ Φ }|) (WP e @ E |{ Φ }|).
+    Proof.
+        by rewrite /ElimModal intuitionistically_if_elim
+                   (bupd_fupd E) fupd_frame_r wand_elim_r fupd_mwp.
+    Qed.
+
+    Global Instance elim_modal_fupd_mwp p E e P Φ :
+      ElimModal True p false (|={E}=> P) P (WP e @ E |{ Φ }|) (WP e @ E |{ Φ }|).
+    Proof.
+        by rewrite /ElimModal intuitionistically_if_elim
+                   fupd_frame_r wand_elim_r fupd_mwp.
+    Qed.
+
+    (* Print ElimModal. *)
+    
+    (* Global Instance elim_modal_fupd_wp_atomic p E1 E2 e P Φ : *)
+    (*   Atomic (stuckness_to_atomicity s) e → *)
+    (*   ElimModal True p false (|={E1,E2}=> P) P *)
+    (*             (WP e @ s; E1 {{ Φ }}) (WP e @ s; E2 {{ v, |={E2,E1}=> Φ v }})%I. *)
+    (* Proof. *)
+    (*   intros. by rewrite /ElimModal intuitionistically_if_elim *)
+    (*                      fupd_frame_r wand_elim_r wp_atomic. *)
+    (* Qed. *)
+    
+    Global Instance add_modal_fupd_mwp E e P Φ :
+      AddModal (|={E}=> P) P (WP e @ E |{ Φ }|).
+    Proof. by rewrite /AddModal fupd_frame_r wand_elim_r fupd_mwp. Qed.
+
+    (* Global Instance elim_acc_wp {X} E1 E2 α β γ e s Φ : *)
+    (*   Atomic (stuckness_to_atomicity s) e → *)
+    (*   ElimAcc (X:=X) (fupd E1 E2) (fupd E2 E1) *)
+    (*           α β γ (WP e @ s; E1 {{ Φ }}) *)
+    (*           (λ x, WP e @ s; E2 {{ v, |={E2}=> β x ∗ (γ x -∗? Φ v) }})%I. *)
+    (* Proof. *)
+    (*   intros ?. rewrite /ElimAcc. *)
+    (*   iIntros "Hinner >Hacc". iDestruct "Hacc" as (x) "[Hα Hclose]". *)
+    (*   iApply (wp_wand with "(Hinner Hα)"). *)
+    (*   iIntros (v) ">[Hβ HΦ]". iApply "HΦ". by iApply "Hclose". *)
+    (* Qed. *)
+
+    Global Instance elim_acc_mwp_nonatomic {X} E α β γ e Φ :
+      ElimAcc (X:=X) (fupd E E) (fupd E E)
+              α β γ (WP e @ E |{ Φ }|)
+              (λ x, WP e @ E |{ v, |={E}=> β x ∗ (γ x -∗? Φ v) }|)%I.
+    Proof.
+      rewrite /ElimAcc.
+      iIntros "Hinner >Hacc". iDestruct "Hacc" as (x) "[Hα Hclose]".
+      iApply mwp_fupd.
+      iApply (mwp_wand with "(Hinner Hα)").
+      iIntros (v) ">[Hβ HΦ]". iApply "HΦ". by iApply "Hclose".
+    Qed.
+  End proofmode_classes.
+End weakestpre_monad.
+
+Module lifting_monad.
+ 
+  Export weakestpre_monad.
+  Export big_op.
+  Import tactics.
+  Set Default Proof Using "Type".
+
+  Section lifting.
+    Context {X : Type} `{!irisG Λ Σ}.
+    Implicit Types v : X.
+    Implicit Types e : M Λ X.
+    Implicit Types σ : state Λ.
+    Implicit Types P Q : iProp Σ.
+    Implicit Types Φ : X → iProp Σ.
+
+    Hint Resolve reducible_no_obs_reducible : core.
+
+    Lemma mwp_lift_step_fupd E Φ e1 :
+      to_val Λ X e1 = None →
+      (∀ σ1, state_interp σ1 ={E,∅}=∗
+      ∀ e2 σ2, ⌜prim_step Λ X e1 σ1 e2 σ2⌝ ={∅,∅,E}▷=∗
+      state_interp σ2 ∗
+      WP e2 @ E |{ Φ }|)
+      ⊢ WP e1 @ E |{ Φ }|.
+    Proof.
+      rewrite mwp_unfold /mwp_pre=>->. iIntros "H" (σ1) "Hσ".
+      iMod ("H" with "Hσ") as "H". iModIntro. iApply "H".
+    Qed.
+
+    
+    Lemma mwp_lift_step E Φ e1 :
+      to_val Λ X e1 = None →
+      (∀ σ1, state_interp σ1 ={E,∅}=∗
+         ▷ ∀ e2 σ2, ⌜prim_step Λ X e1 σ1 e2 σ2⌝ ={∅,E}=∗
+           state_interp σ2 ∗
+           WP e2 @ E |{ Φ }|)
+       ⊢ WP e1 @ E |{ Φ }|.
+    Proof.
+      rewrite !mwp_unfold /mwp_pre. iIntros (a) "HA". rewrite a.
+      iIntros (h1) "HB". iMod ("HA" with "HB") as "HA". iModIntro.
+      iIntros (e2 h2) "HB". iModIntro. iNext. iMod ("HA" with "HB") as "HA". eauto.
+    Qed.
+
+    (** Derived lifting lemmas. *)
+    Lemma mwp_lift_pure_step_no_fork `{!Inhabited (state Λ)} E Φ e1 :
+      (∀ σ1, reducible e1 σ1) →
+      (∀ σ1 e2 σ2, prim_step Λ X e1 σ1 e2 σ2 → σ2 = σ1 ) →
+      (|={E}=> ∀ e2 σ, ⌜prim_step Λ X e1 σ e2 σ ⌝ → WP e2 @  E |{ Φ }|)
+        ⊢ WP e1 @ E |{ Φ }|.
+    Proof.
+      iIntros (? ?) "HA". iApply mwp_lift_step.
+      { eapply reducible_not_val.
+        eapply (H inhabitant). }
+      { iIntros (h1) "HB". iMod "HA".
+        iMod fupd_intro_mask' as "Hclose"; last iModIntro; first by set_solver.
+        iNext. iIntros (e2 h2 HC). iMod "Hclose". iModIntro. pose (HD := HC).
+        apply H0 in HD. rewrite HD. rewrite HD in HC. 
+        iFrame. iApply "HA". iPureIntro. eapply HC. }
+    Qed.
+
+    (* Atomic steps don't need any mask-changing business here, one can
+   use the generic lemmas here. *)
+(* Atomic steps don't need any mask-changing business here, one can
+   use the generic lemmas here. *)
+    Lemma mwp_lift_atomic_step_fupd {E1 E2 Φ} e1 :
+      to_val Λ X e1 = None →
+      (∀ σ1, state_interp σ1 ={E1}=∗
+        ∀ e2 σ2, ⌜prim_step Λ X e1 σ1 e2 σ2⌝ ={E1,E2}▷=∗
+          state_interp σ2 ∗
+          from_option Φ False (to_val Λ X e2))
+        ⊢ WP e1 @ E1 |{ Φ }|.
+    Proof.
+      iIntros (?) "HA".      
+      iApply (mwp_lift_step_fupd E1 _ e1)=>//; iIntros (h1) "HB".
+      iMod ("HA" $! h1 with "HB") as "HA".
+      iMod (fupd_intro_mask' E1 ∅) as "Hclose"; first set_solver.
+      iIntros "!>" (e2 σ2 ?). iMod "Hclose" as "_".
+      iMod ("HA" $! e2 σ2 with "[#]") as "HA"; [done|].
+      iMod (fupd_intro_mask' E2 ∅) as "Hclose"; [set_solver|]. iIntros "!> !>".
+      iMod "Hclose" as "_". iMod "HA" as "HA".
+      iDestruct "HA" as "[HA HB]".                               
+      iFrame.
+      destruct (to_val Λ X e2) eqn:?; last by iExFalso.
+      iApply mwp_value; last done.
+      now eapply (@to_val_ret (state Λ) (M Λ) (ret Λ) (bind Λ) (to_val Λ) (prim_step Λ) (prop Λ) X x e2).
+    Qed.
+
+    
+    Lemma mwp_lift_atomic_step {E Φ} e1 :
+      to_val Λ X e1 = None →
+      (∀ σ1, state_interp σ1 ={E}=∗
+      ▷ ∀ e2 σ2, ⌜prim_step Λ X e1 σ1 e2 σ2⌝ ={E}=∗
+      state_interp σ2 ∗
+      from_option Φ False (to_val Λ X e2))
+      ⊢ WP e1 @ E |{ Φ }|.
+    Proof.
+      iIntros (?) "H". iApply mwp_lift_atomic_step_fupd; [done|].
+      iIntros (?) "?". iMod ("H" with "[$]") as "H".
+      iIntros "!> *". iIntros (Hstep) "!> !>".
+        by iApply "H".
+    Qed.
+    
+    Lemma mwp_lift_pure_det_step_no_fork `{!Inhabited (state Λ)} {E Φ} e1 e2 :
+      (∀ σ1, reducible e1 σ1) →
+      (∀ σ1 e2' σ2, prim_step Λ X e1 σ1 e2' σ2 →
+                    σ2 = σ1 ∧ e2' = e2) →
+      (|={E}=> WP e2 @ E |{ Φ }|) ⊢ WP e1 @ E |{ Φ }|.
+    Proof.
+      iIntros (H0 H) "HA".
+      iApply (mwp_lift_pure_step_no_fork E); try done.
+      { iIntros (h1 e0 h2 ps). apply H in ps. now destruct ps. }
+      { iMod "HA". iModIntro. iIntros (e0 h ps). apply H in ps. destruct ps. subst. iApply "HA". }
+    Qed.
+  End lifting.
+
+End lifting_monad.
+
+Module gensym.
+  Import monad.
+
+  Definition Symb := loc.
+  Definition state := gset loc.
+  Inductive FreshMonad (X : Type) : Type :=
+  | ret: X -> FreshMonad X
+  | Gensym: (Symb -> FreshMonad X) -> FreshMonad X.
+
+  Arguments ret {_} x.
+
+  Definition to_val {X} (m : FreshMonad X) :=
+    match m with
+    | ret v => Some v
+    | _ => None
+    end.
+
+  Fixpoint bind {X Y} (m: FreshMonad X) (k: X -> FreshMonad Y) : FreshMonad Y :=
+    match m with
+    | ret x => k x
+    | Gensym f => Gensym (fun x => bind (f x) k)
+    end.
+
+  Definition gensym := Gensym ret.
+
+  Fixpoint run {X} (m : FreshMonad X) : state -> state * X :=
+    match m with
+    | ret v => fun s => (s,v)
+    | Gensym f =>
+      fun s =>
+        let l := fresh_locs s in
+        run (f l) ({[l]} ∪ s)
+    end.
+
+  Inductive prim_step {X} : FreshMonad X -> state -> FreshMonad X -> state -> Prop :=
+  | GensymS σ f l :
+      l ∉ σ → prim_step (Gensym f) σ (f l) ({[ l ]} ∪ σ).
+
+  Lemma lid : forall X Y (a : X) (f : X -> FreshMonad Y), bind (ret a) f = f a.
+  Proof. auto. Qed.
+
+  Lemma rid : forall X (m : FreshMonad X), bind m ret = m.
+  Proof. induction m; auto. simpl. f_equal. apply functional_extensionality. auto. Qed.
+
+  Lemma ass_bind : forall X Y Z (m : FreshMonad X) f (g : Y -> FreshMonad Z),
+      bind (bind m f) g = bind m (fun x => bind (f x) g).
+  Proof. induction m; auto. intros. simpl. f_equal. apply functional_extensionality. auto. Qed.
+
+  Lemma prim_none : ∀ (X : Type) (e1 e2 : FreshMonad X) (σ σ' : state), prim_step e1 σ e2 σ' → to_val e1 = None.
+  Proof. intros. induction H. reflexivity. Qed.
+
+  Lemma to_val_some : ∀ (X : Type) (v : X) (e : FreshMonad X), to_val e = Some v → ret v = e.
+  Proof. induction e; intro P; inversion P; auto. Qed.
+
+  Hint Resolve lid rid ass_bind prim_none to_val_some.
+
+  Instance mP : @MonadProp state FreshMonad (@ret) (@bind) (@to_val) (@prim_step).
+  Proof. split; eauto. Qed.
+  Canonical Structure gensym_monad :=
+    @Monad FreshMonad (@to_val) (gset loc) (@ret) (@bind) (@run) (@prim_step) mP.
+End gensym.
+
+Module lifting_gensym.
+  Export gen_heap.
+  Import gensym.
+  Import lifting_monad.
+  Class heapG Σ :=
+    HeapG {
+        heapG_invG : invG Σ;
+        heapG_gen_heapG :> @gen_heapG loc Σ _ _       
+      }.
+  Instance heapG_irisG `{!heapG Σ} : irisG gensym_monad Σ :=
+    {
+      iris_invG := heapG_invG;
+      state_interp σ  := gen_heap_ctx σ
+    }.
+
+  Notation "\s l" := (mapsto (L:=loc) l)
+                       (at level 20, format "\s l") : bi_scope.
+
+  Section lifting.
+    Context {X : Type} `{!heapG Σ}.
+    Implicit Types P Q : iProp Σ.
+    Implicit Types Φ : X → iProp Σ.
+    Implicit Types σ : (state gensym_monad).
+    Open Scope bi_scope.
+    Lemma wp_gensym E :
+      |{{ True }}| gensym @ E |{{ l, RET l; \s l }}|.
+    Proof.
+      iModIntro. iIntros (?) "HA HB". unfold gensym.
+      iApply mwp_lift_atomic_step.
+      * reflexivity.
+      * iIntros (h1) "HC". iModIntro. iIntros (e2 h2 P). inversion P. subst.
+        iNext. iMod ((gen_heap_gensym H0) with "HC") as "HC". iDestruct "HC" as "[HC HD]".
+        iFrame. iModIntro. simpl. iApply "HB". iApply "HD".
+    Qed.
+  End lifting.
+End lifting_gensym.
+
+Import lifting_monad.
+Import gensym lifting_gensym weakestpre.
+
+Definition test (l : loc) := ret gensym_monad l.
+Open Scope bi_scope.
+
+Lemma test_0 `{!heapG Σ} (l : loc) E :
+  |{{ \s l }}| (test l) @ E |{{ n', RET n'; ⌜ l = n'⌝ ∗ \s l}}|.
+Proof.
+  iModIntro. iIntros. unfold test. iApply mwp_value_fupd'.
+  
+  
+  
 
 Import proofmode notation.
 Open Scope expr_scope.
 Definition label : val :=
   (rec: "label" "l" :=
-    match: "l" with
-      NONE => #()
-    | SOME "p" =>
-      #()
-    end)%V.
+     match: "l" with
+       NONE => "l"
+     | SOME "p" =>
+       Gensym
+     end)%V.
 
 
 Definition label : val :=
