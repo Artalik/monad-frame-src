@@ -367,6 +367,8 @@ Module heap_lang.
 
 End heap_lang.
 
+
+
 Canonical Structure heap_ectxi_lang := EctxiLanguage heap_lang.heap_lang_mixin.
 Canonical Structure heap_ectx_lang := EctxLanguageOfEctxi heap_ectxi_lang.
 Canonical Structure heap_lang := LanguageOfEctx heap_ectx_lang.
