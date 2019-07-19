@@ -1,11 +1,7 @@
-From iris.algebra Require Import gmap.
+From iris.program_logic Require Import weakestpre.
 Require Import FunctionalExtensionality.
-From stdpp Require Import binders strings.
-From iris.proofmode Require Import tactics.
-From iris.base_logic.lib Require Import wsat.
 From iris.base_logic.lib Require Import gen_heap.
-From iris.program_logic Require Export  adequacy.
-
+From iris.proofmode Require Import tactics.
 Require Import Ctypes.
 
 Module monad.
@@ -43,28 +39,6 @@ Module monad.
   
 End monad.
 
-(* Module weakestpre. *)
-(*   Export monad. *)
-
-
-(*   Class Mwp {X} (Λ : monad) (PROP : Type) := *)
-(*     mwp : ((M Λ) X) → (X → PROP) → PROP. *)
-(*   Instance: Params (@Mwp) 7 := {}. *)
-
-(*   Notation "'WP' e |{ Φ } |" := (mwp e Φ) *)
-(*                                       (at level 20, e, Φ at level 200, only parsing) : bi_scope. *)
-(*   Notation "'WP' e |{ v , Q } |" := (mwp e (λ v, Q)) *)
-(*   (at level 20, e, Q at level 200, *)
-(*    format "'[' 'WP'  e  '[ ' |{  v ,  Q  } | ']' ']'") : bi_scope. *)
-
-(*   Notation "'|{{' P } } | e |{{ x .. y , 'RET' pat ; Q } } |" := *)
-(*     ( □ ∀ Φ, *)
-(*        P -∗ (∀ x, .. (∀ y, Q -∗ Φ pat) .. ) -∗ WP e |{ Φ }|)%I *)
-(*          (at level 20, x closed binder, y closed binder, *)
-(*           format "'[hv' |{{  P  } } |  '/  ' e  '/'  |{{  x  ..  y ,  RET  pat ;  Q  } } | ']'") : bi_scope. *)
-
-(* End weakestpre. *)
-
 Module gensym.
   Import monad.
   Local Open Scope positive_scope.
@@ -97,28 +71,7 @@ Module gensym.
     end.
 
   Definition error {X} (e : Errors.errmsg) : mon X := op (Err e).
-  Definition gensym (t : type) : mon ident := op (Gensym t ret).
-
-  (* err permet la transition vers transl_function 
-     
-  Definition transl_function (f: Csyntax.function) : res function :=
-    let (s, e) := run (transl_stmt f.(Csyntax.fn_body)) empty in
-    match e with
-    | Erro msg =>
-      Error msg
-    | Res v  =>
-      OK (mkfunction
-          f.(Csyntax.fn_return)
-          f.(Csyntax.fn_callconv)
-          f.(Csyntax.fn_params)
-          f.(Csyntax.fn_vars)
-          (elements s)
-          v)
-     end. 
-
-  Voila, l'idée
-   *)
-  
+  Definition gensym (t : type) : mon ident := op (Gensym t ret).  
 
   Lemma lid : forall X Y (a : X) (f : X -> mon Y), bind (ret a) f = f a.
   Proof. auto. Qed.
@@ -151,7 +104,7 @@ Module gensym.
 
   Arguments Erro [X].
   Arguments Res [X].
-  Open Scope positive_scope.
+  Local Open Scope positive_scope.
 
   Definition fresh (s : state) :=
     map_fold (fun x _ res => Pos.max res (x+1)) 1 s.
@@ -175,6 +128,7 @@ Module weakestpre_gensym.
   Import monad.
   Export gensym.
   Export gen_heap.
+  
   (** Override the notations so that scopes and coercions work out *)
   Notation "l ↦ t" :=
     (mapsto (L:=ident) (V:=type) l 1 t) (at level 20) : bi_scope.
@@ -183,31 +137,21 @@ Module weakestpre_gensym.
     (∃ t, l ↦ t)%I (at level 20) : bi_scope.
 
   Notation "P ⨈ Q" := (((P -∗ False) ∗ (Q -∗ False)) -∗ False)%I (at level 19) : bi_scope.
-  
   Class heapG Σ :=
     HeapG {
+        heap_preG_iris :> invG Σ;
         heapG_gen_heapG :> gen_heapG ident type Σ;
       }.
-  
-  Class irisG (Σ : gFunctors) :=
-    IrisG {
-        state_interp : state → iProp Σ;
-      }.
-  Global Opaque iris_invG.
-  
-  Instance heapG_irisG `{!heapG Σ} : irisG Σ := {
-                                                 state_interp σ := gen_heap_ctx σ%I;
-                                               }.
-  
   Section mwp.
     Context `{!heapG Σ}.
-    Fixpoint mwp {X} (e1 : mon X) (Q : X -> iProp Σ) : iProp Σ :=
+    
+    Fixpoint mwp {X} `{!heapG Σ} (e1 : mon X) (Q : X -> iProp Σ) : iProp Σ :=
       match e1 with
       | ret v => Q v
       | op (Err e) => True
       | op (Gensym t f) =>
-        ∀ l, l ↦ t -∗ mwp (f l) Q
-      end%I.    
+        ∀ σ, gen_heap_ctx σ ==∗ mwp (f (fresh σ)) Q ∗ gen_heap_ctx (<[ fresh σ := t ]>σ)
+      end%I.
   End mwp.
 
   Notation "'WP' e |{ Φ } |" := (mwp e Φ)
@@ -218,268 +162,205 @@ Module weakestpre_gensym.
                                        format "'[' 'WP'  e  '[ ' |{  v ,  Q  } | ']' ']'") : bi_scope.
   
   Notation "'|{{' P } } | e |{{ x .. y , 'RET' pat ; Q } } |" :=
-    ( ∀ Φ,
+    (∀ Φ,
         P -∗ (∀ x, .. (∀ y, Q -∗ Φ pat) .. ) -∗ WP e |{ Φ }|)%I
-                                                             (at level 20, x closed binder, y closed binder,
-                                                              format "'[hv' |{{  P  } } |  '/  ' e  '/'  |{{  x  ..  y ,  RET  pat ;  Q  } } | ']'") : bi_scope.
+        (at level 20, x closed binder, y closed binder,
+        format "'[hv' |{{  P  } } |  '/  ' e  '/'  |{{  x  ..  y ,  RET  pat ;  Q  } } | ']'") : bi_scope.
 
-    
-    Class heapPreG Σ :=
-      HeapPreG {
-          heap_preG_heap :> gen_heapPreG ident type Σ
-        }.
+  Lemma fresh_is_fresh : forall σ, σ !! (fresh σ) = None.
+  Admitted.
 
-    Definition heapΣ : gFunctors := #[gen_heapΣ ident type].
-    Instance subG_heapPreG {Σ} : subG heapΣ Σ → heapPreG Σ.
-    Proof. solve_inG. Qed.
+  Section mwp_proof.
+    Context `{!heapG Σ}.
+    Lemma mwp_value' {X} Φ (v : X) : Φ v ⊢ WP ret v |{ Φ }|.
+    Proof. auto. Qed.
+    Lemma mwp_value_inv' {X} Φ (v : X) : WP ret v |{ Φ }| -∗ Φ v.
+    Proof. auto. Qed.
 
-    Definition adequate `{heapG Σ} {X} (e : mon X) (σ1 : state) (φ : X → state → iProp Σ) :=
-      (match run e σ1 with
-       | Res (σ2,v) => φ v σ2
-       | Erro e => True
-      end)%I.
-
-    
-    
-    Open Scope bi_scope.
-
-    Lemma adequate_step {X} `{heapG Σ} σ φ t m :
-      adequate (op (Gensym t m)) σ (λ (v : X) (_ : state), φ v) ∗-∗
-               adequate (m (fresh σ)) (<[ fresh σ := t ]>σ) (λ (v : X) (_ : state), φ v).
-    Proof. iSplit; eauto. Qed.
-
-    Print gmap.alloc_updateP'.
-
-    Lemma disjointeness_fresh `{heapG Σ} : forall (σ : gmap ident type), σ !! (fresh σ) = None.
+    Lemma mwp_mono {X} e Φ Ψ :
+      WP e |{ Φ }| -∗ (∀ (v : X), Φ v -∗ Ψ v) -∗ WP e |{ Ψ }|.
     Proof.
-      epose fupd_mask_weaken.
-    Admitted.
-
-    (* Lemma soundness `{!heapPreG heapΣ} {X} P Q : forall (e : mon X) σ, *)
-    (*   (state_interp σ -∗ *)
-    (*   |{{ P }}| e |{{ v, RET v; Q v }}|) -> *)
-    (*   adequate e σ (fun v _ => Q v). *)
-    (* Proof. *)
-    (*   fix e 1. *)
-    (*   destruct e0; simpl; intros. *)
-    (*   * unfold adequate. simpl. *)
-    (*     iMod (gen_heap_init σ) as (?) "Hh". *)
-    
-    (* Lemma gen_heap_alloc σ l v : *)
-    (*   σ !! l = None → *)
-    (*   gen_heap_ctx σ -∗ gen_heap_ctx (<[l:=v]>σ) ∗ l ↦ v ∗ meta_token l ⊤. *)
-    (* Proof. *)
-    (*   iIntros (P) "HA". *)
-    (*   rewrite /gen_heap_ctx mapsto_eq /mapsto_def meta_token_eq /meta_token_def /=. *)
-    (*   iDestruct "HA" as  (m) "HA". *)
-    (*   iDestruct "HA" as "[HA [HB HC]]". *)
-    (*   iSplitL "HA HB". *)
-    (*   * iExists (<[l:=v]>m). *)
-    (*     rewrite to_gen_heap_insert. *)
-    (*     iSplit. *)
-    (*     ** *)
-    (*       epose (not_elem_of_dom (D:=gset ident)). *)
-    (*       admit. *)
-    (*     **  *)
-
-    Lemma wp_adequacy {X} `{heapG Σ} (e : mon X) σ (φ : X -> iProp Σ) :
-      ((|==> state_interp σ ∗ WP e |{ v, φ v }|) ->
-                                          |==> adequate e σ (λ v _, φ v) )%I.
-    Proof.
-      revert e σ. fix e 1.
+      iIntros "HA HB". revert e. fix e 1.
       destruct e0.
-      iStartProof.
-      - iIntros (x0 HA).
-        iPoseProof HA as "HA". iMod "HA" as "HA". iDestruct "HA" as "[HA HB]". iApply "HB".
-      - iIntros (σ HA).
-        destruct s.
-        + unfold adequate. simpl. iStartProof. trivial.
-        + iApply adequate_step. iApply e.
-          iPoseProof HA as "HA".
-          iMod "HA" as "HA".
-          iDestruct "HA" as "[HA HB]".
-          simpl. pose disjointeness_fresh. apply (gen_heap_alloc σ _ t)  in e0.
-          iPoseProof e0 as "HC".
-          iDestruct ("HC" with "HA") as "HE".
-          iMod "HE" as "HE".
-          iModIntro.
-          iDestruct "HE" as "[HA [HD HE]]".
-          iFrame. iApply "HB". iFrame.
+      { iApply "HB". iApply "HA". }
+      { destruct s.
+        { simpl. trivial. }
+        { simpl. iIntros (σ) "HC".
+          iDestruct ("HA" with "HC") as "HA".
+          iMod "HA" as "[HA HC]". 
+          iFrame "HC". iModIntro.
+          iPoseProof "HB" as "HB". apply e. }}
     Qed.
 
-    Import uPred.    
-
-    Lemma test `{!heapG Σ} t t' : forall σ l,
-        σ !! l = None ->
-            state_interp σ -∗  state_interp (<[l:=t]> σ) ∗ l ↦ t'.
+    Lemma mwp_bind {X Y} (e : mon X) (f :  X → mon Y) (Φ : Y -> iProp Σ)  (Φ' : X -> iProp Σ) :
+      WP e |{ Φ' }| -∗ (∀ v,  Φ' v -∗ WP (f v) |{ Φ }|) -∗ WP bind e f |{ Φ }|%I.
     Proof.
-      iIntros (σ l P) "HA". unfold state_interp. simpl.
-      rewrite /gen_heap_ctx mapsto_eq /mapsto_def.
-      epose own_valid_2.
-      epose gen_heap_singleton_included.
-      epose auth.auth_both_valid.
-      epose to_gen_heap_insert.
-      epose sep_assoc'.
-      iSplitL. 
-      - iExists m.
-        + iSplitL "HA".
-          * iDestruct "HA" as "%". iPureIntro. apply dom_insert_subseteq_compat_l. apply H.
-          * iSplitL "HB".
-            -- 
-                
-      
-    Lemma next_step `{!heapG Σ} {X} P Q t : forall m σ,
-    state_interp σ ∗ |{{ P }}| op (Gensym t m)  |{{ (v : X), RET v; Q v }}|
-    ∗-∗  state_interp (<[fresh σ:=t]> σ) ∗ |{{ P }}| m (fresh σ)  |{{ (v : X), RET v; Q v }}|.
-    Proof.
-      iIntros (m σ).
-      iSplit.
-      * iIntros "HA". iDestruct "HA" as "[HA HB]".
-
-        
-                         
-        
-
+      iIntros "HA HB". revert e. fix e 1.
+      destruct e0.
+      { iApply "HB". iApply "HA". }
+      { destruct s.
+        { simpl. auto. }
+        { simpl. iIntros (σ) "HC". iDestruct ("HA" with "HC") as "HA".
+          iMod "HA" as "[HA HC]". iFrame "HC".
+          iPoseProof "HB" as "HB". iModIntro. apply e. }}
+    Qed.
     
-    Lemma soundness `{!heapG Σ} {X} P Q (e : mon X) σ:
-      (state_interp σ ∗
-      |{{ P }}| e |{{ v, RET v; Q v }}|) ->
-      match run e σ with
-      | Erro _ => True
-      | Res (σ',x) => P -> Q x
-      end.
-    Proof.
-      revert e σ. fix e 1.
-      destruct e0; intros.
-      - intro. iPoseProof H as "HA". iDestruct "HA" as "[HA HB]".
-        iApply "HB".        
-        + iApply H0.
-        + eauto.
-      - destruct s.
-        + simpl. trivial.
-        + simpl. apply e.
-
-          
-
-
-          epose (gen_heap_init σ).
-      
-    
-    Section mwp.
-      Context `{!heapG heapΣ}.
-      Fixpoint mwp {X} (e1 : mon X) (Q : X -> iProp heapΣ) : iProp heapΣ :=
-        match e1 with
-        | ret v => Q v
-        | op (Err e) => True
-        | op (Gensym t f) =>
-          ∀ l, l ↦ t -∗ mwp (f l) Q
-        end%I.
-
-    End mwp.
-
-    Notation "'WP' e |{ Φ } |" := (mwp e Φ)
-                                    (at level 20, e, Φ at level 200, only parsing) : bi_scope.
-
-    Notation "'WP' e |{ v , Q } |" := (mwp e (λ v, Q))
-                                        (at level 20, e, Q at level 200,
-                                         format "'[' 'WP'  e  '[ ' |{  v ,  Q  } | ']' ']'") : bi_scope.
-
-    Notation "'|{{' P } } | e |{{ x .. y , 'RET' pat ; Q } } |" :=
-      ( ∀ Φ,
-          P -∗ (∀ x, .. (∀ y, Q -∗ Φ pat) .. ) -∗ WP e |{ Φ }|)%I
-                                                               (at level 20, x closed binder, y closed binder,
-                                                                format "'[hv' |{{  P  } } |  '/  ' e  '/'  |{{  x  ..  y ,  RET  pat ;  Q  } } | ']'") : bi_scope.
     Open Scope bi_scope.
-    Print ucmraT. Print iResUR. Print gFunctors. Print fin. Locate Fin. Print Fin.
-    Lemma test `{!heapG heapΣ} {X} P Q (e : mon X) :
-      (state_interp empty_state -∗ |{{ P }}| e |{{ v, RET v; Q v }}|) ->
-    |{{ P }}| e |{{ v, RET v; Q v }}|.
-    Proof. Print heapG. Locate heapG.
-    Admitted.
-
-    Lemma soundness `{!heapG heapΣ} {X} P Q (e : mon X) σ:
-      (state_interp σ -∗
-      |{{ P }}| e |{{ v, RET v; Q v }}|) ->
-      match run e σ with
-      | Erro _ => True
-      | Res (σ',x) => P -> Q x
-      end.
+    Lemma mwp_gensym t : WP gensym t |{ l, l ↦ t }|.
     Proof.
-      revert e σ. fix e 1. destruct e0.
-      - intros. simpl. intro. iApply H.
-        + unfold gen_heap_ctx. iExists empty. iSplit.
-          * iPureIntro. Print subseteq_dom.
-            epose (@subseteq_dom _ _ (gset ident) _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ ∅ σ).
-            apply s.
-            apply map_subseteq_spec.
-            intros. erewrite lookup_empty in H1. inversion H1.
-          *  admit.
-        + iApply H0.
-        + iIntros (v) "HA".
-          iApply "HA".
-      - intros. simpl. destruct s; eauto.
-        apply e. iIntros "HA".
-        iIntros. Print erased_step.
+      simpl. iIntros (σ) "HA". iDestruct (gen_heap_alloc with "HA") as "HA".
+      apply fresh_is_fresh. iMod "HA" as "[HA [HB _]]". iFrame. iModIntro. trivial. Qed.
+
+    Lemma mwp_frame_l {X} (e : mon X) Φ (R : iProp Σ) : R ∗ WP e |{ Φ }| ⊢ WP e |{ v, R ∗ Φ v }|.
+    Proof. iIntros "[? H]". iApply (mwp_mono with "H"). auto with iFrame. Qed.
+    Lemma mwp_frame_r {X} (e : mon X) Φ R : WP e |{ Φ }| ∗ R ⊢ WP e |{ v, Φ v ∗ R }|.
+    Proof. iIntros "[H ?]". iApply (mwp_mono with "H"); auto with iFrame. Qed.
+
+  End mwp_proof.
+  Open Scope bi_scope.
+
+  Section adequacy.
+    Inductive step {X} : mon X -> state -> mon X -> state -> Prop :=
+    | gensym_step : forall σ t m,
+        step (op (Gensym t m)) σ (m (fresh σ)) (<[ fresh σ := t ]>σ).
 
 
+    Inductive nsteps {X} : nat ->  mon X -> state -> mon X -> state -> Prop :=
+    | step_0 : forall e σ, nsteps 0 e σ e σ
+    | step_l : forall e1 σ1 e2 σ2 e3 σ3 n,
+        step e1 σ1 e2 σ2 ->
+        nsteps n e2 σ2 e3 σ3 ->
+        nsteps (S n) e1 σ1 e3 σ3.
 
+    Section step.
+      Context `{!heapG Σ}.
 
-        Section mwp_proof.
-          Context `{!heapG Σ}.
-          Lemma mwp_value' {X} Φ (v : X) : Φ v ⊢ WP ret v |{ Φ }|.
-          Proof. auto. Qed.
-          Lemma mwp_value_inv' {X} Φ (v : X) : WP ret v |{ Φ }| -∗ Φ v.
-          Proof. auto. Qed.
+      Lemma wp_step {X} (e1 : mon X) σ1 e2 σ2 (Φ : X -> iProp Σ) :
+        step e1 σ1 e2 σ2 →
+        gen_heap_ctx σ1 -∗ WP e1 |{ Φ }| ==∗
+        gen_heap_ctx σ2 ∗ WP e2 |{ Φ }|.
+      Proof.
+        iIntros (Hstep) "HA HB".
+        inversion Hstep. subst.
+        simpl.
+        iDestruct ("HB" with "HA") as "HA".
+        iMod "HA" as "[HA HB]". iModIntro. iFrame.
+      Qed.
 
-          Lemma mwp_mono {X} e Φ Ψ :
-            WP e |{ Φ }| -∗ (∀ (v : X), Φ v -∗ Ψ v) -∗ WP e |{ Ψ }|.
-          Proof.
-            iIntros "HA HB". revert e. fix e 1.
-            destruct e0.
-            { iApply "HB". iApply "HA". }
-            { destruct s.
-              { simpl. trivial. }
-              { simpl. iIntros (l) "HC". iDestruct ("HA" with "HC") as "HA".
-                iPoseProof "HB" as "HB". apply e. }}
-          Qed.
+      Lemma wp_steps {X} n (e1 e2 : mon X) σ1 σ2 Φ :
+        nsteps n e1 σ1 e2 σ2 →
+        gen_heap_ctx σ1 -∗ WP e1 |{ Φ }| ==∗ gen_heap_ctx σ2 ∗ WP e2 |{ Φ }|.
+      Proof.
+        revert e1 e2 σ1 σ2 Φ.
+        induction n as [| n IH]=> e1 e2 σ1 σ2 Φ /=.
+        * inversion_clear 1. iIntros "HA HB". iFrame.  trivial.
+        * iIntros (Hsteps) "HA HB". inversion_clear Hsteps.
+          eapply (wp_step _ _ _ _ Φ)in H. iDestruct (H with "HA") as "HA".
+          iMod ("HA" with "HB") as "HC".
+          apply (IH _ _ _ _ Φ) in H0. iDestruct "HC" as "[HA HB]".
+          iDestruct (H0 with "HA") as "HC". iMod ("HC" with "HB") as "HC".
+          iFrame. trivial.
+      Qed.
+    End step.
+    
+    Class heapPreG Σ :=
+    HeapPreG {
+        heappre_preG_iris :> invPreG Σ;
+        heap_preG_heap :> gen_heapPreG ident type Σ;
+      }.
+    
+    Theorem wp_strong_adequacy {X} `{!heapPreG Σ} n (e1 : mon X) σ1 e2 σ2 φ :
+      (∀ `{Hinv : !invG Σ},
+          (|==> ∃ (heap : gen_heapG ident type Σ)
+                  (Φ : X → iProp Σ),
+                let _ : heapG Σ := HeapG Σ _ heap in
+                gen_heap_ctx σ1 ∗
+                WP e1 |{ Φ }| ∗
+                (gen_heap_ctx σ2 ==∗ ⌜ φ ⌝))%I) →
+      nsteps n e1 σ1 e2 σ2 →
+      φ.
+    Proof.
+      intros Hwp ?.
+      epose (step_fupdN_soundness' φ 2).
+      simpl in φ0. apply φ0. intro.
+      iMod Hwp as (heap Φ) "(HA & HB & HC)".
+      iApply step_fupd_intro; eauto. iNext.
+      epose step_fupdN_S_fupd.
+      iApply (e 0%nat).
+      iApply (step_fupdN_wand _ _ _ (gen_heap_ctx σ2)with "[-HC]").
+      - simpl in Hwp. iDestruct (@wp_steps _ (HeapG _ Hinv heap) _ _ _ _ _ _ Φ) as "HC".
+        + apply H.
+        + iDestruct ("HC" with "HA") as "HA".
+          iDestruct ("HA" with "HB") as "HD". iMod "HD" as "[HD HE]". iFrame "HD".
+          iApply step_fupd_mask_mono; eauto.
+      - iIntros "HA". iDestruct ("HC" with "HA") as "HB". iMod "HB" as "HB".
+        iModIntro. iApply "HB".
+    Qed.
 
-          Lemma mwp_bind {X Y} (e : mon X) (f :  X → mon Y) (Φ : Y -> iProp Σ)  (Φ' : X -> iProp Σ) :
-            WP e |{ Φ' }| -∗ (∀ v,  Φ' v -∗ WP (f v) |{ Φ }|) -∗ WP bind e f |{ Φ }|%I.
-          Proof.
-            iIntros "HA HB". revert e. fix e 1.
-            destruct e0.
-            { iApply "HB". iApply "HA". }
-            { destruct s.
-              { simpl. auto. }
-              { simpl. iIntros (l) "HC". iDestruct ("HA" with "HC") as "HA".
-                iPoseProof "HB" as "HB". apply e. }}
-          Qed.
+    Definition adequate {X} (e : mon X) σ (Q : X -> state -> Prop) : Prop :=
+      match run e σ with
+      | Erro e => True
+      | Res (σ', v) => Q v σ'
+      end.
 
-          Open Scope bi_scope.
-          Lemma mwp_gensym t : WP gensym t |{ l, l ↦ t }|.
-          Proof. simpl. iIntros. iFrame. Qed.
+    Corollary wp_adequacy Σ {X} `{!heapPreG Σ} (e : mon X) σ φ :
+      (∀ `{Hinv : !invG Σ}, |==> ∃ (heap : gen_heapG ident type Σ),
+              let _ : heapG Σ := HeapG Σ _ heap in
+              gen_heap_ctx σ ∗ WP e |{ v, ⌜φ v⌝ }|)%I →
+      adequate e σ (λ v _, φ v).
+    Proof.
+      revert e σ φ. fix e 1; intros.
+      unfold adequate.
+      destruct e0; simpl.
+      - eapply (wp_strong_adequacy 0 (ret x)). iIntros.
+        iMod (H $! Hinv) as (heap) "[HA #HB]".
+        iModIntro. iExists heap. iExists (fun x => ⌜ φ x ⌝).
+        iFrame. iSplitL. iFrame "HB". iFrame "HB". eauto. constructor.
+      - destruct s; simpl; auto.
+        eapply (wp_strong_adequacy 1 (op (Gensym t m))).
+        + iIntros. iMod (H $! Hinv) as (heap) "[HA HB]".
+          iIntros. iModIntro. iExists heap. iExists (fun x => ⌜ φ x ⌝).
+          iFrame. iIntros.
+          iModIntro. iPureIntro. apply e.
+          simpl in H. iIntros. iMod (H $! Hinv0) as (heap0) "[HA HB]".
+          iMod ("HB" with "HA") as "[HA HB]".
+          iModIntro. iExists heap0. iFrame.
+        + do 3 econstructor.
+    Qed.
 
-          Lemma mwp_frame_l {X} (e : mon X) Φ R : R ∗ WP e |{ Φ }| ⊢ WP e |{ v, R ∗ Φ v }|.
-          Proof. iIntros "[? H]". iApply (mwp_mono with "H"). auto with iFrame. Qed.
-          Lemma mwp_frame_r {X} (e : mon X) Φ R : WP e |{ Φ }| ∗ R ⊢ WP e |{ v, Φ v ∗ R }|.
-          Proof. iIntros "[H ?]". iApply (mwp_mono with "H"); auto with iFrame. Qed.
+    Lemma step_to_run {X} : forall n (e : mon X) σ v σ',
+        nsteps n e σ (ret v) σ' -> run e σ = Res (σ',v).
+    Proof.
+      induction n; intros.
+      - inversion H. subst. simpl. reflexivity.
+      - inversion H. subst.
+        inversion H1. subst. simpl in *. apply IHn.
+        apply H2.
+    Qed.
 
+    Lemma run_to_step {X} : forall (e : mon X) σ v σ',
+        run e σ = Res (σ',v) -> exists n, nsteps n e σ (ret v) σ' .
+    Proof.
+      fix e 1. destruct e0; intros.
+      - exists (0)%nat. inversion H. subst. constructor.
+      - destruct s.
+        + inversion H.
+        + simpl in *. apply e in H. destruct H. exists (S x). econstructor.
+          * constructor.
+          * apply H.
+    Qed.
 
-
-        End mwp_proof.
-
-        Open Scope bi_scope.
-
-
-        Lemma soundness `{!heapG Σ} {X} P Q (e : mon X) :
-        |{{ P }}| e |{{ v, RET v; Q v }}| ->
-                                          (forall n (s : state), P n s -> Q (run e s)).
-
+    Definition heap_adequacy Σ {X} `{!heapPreG Σ} (e : mon X) σ Q :
+      (∀ `{!heapG Σ}, WP e |{ v, ⌜Q v⌝ }|%I) →
+      adequate e σ (λ v _, Q v).
+    Proof.
+      intros Hwp. eapply (wp_adequacy Σ).
+      iMod (gen_heap_init σ) as (?) "Hh".
+      iIntros. iModIntro. iExists H. iFrame. iApply Hwp.
+    Qed.
+  End adequacy.
 
 End weakestpre_gensym.
-
-From iris.proofmode Require Import coq_tactics reduction.
-From iris.proofmode Require Export tactics.
 
 Module proofmode.
   Export weakestpre_gensym.
@@ -490,7 +371,12 @@ Module proofmode.
     
     Lemma gensym_spec t :
     |{{ True }}| gensym t |{{ l, RET l; l ↦ t }}|.
-    Proof. iIntros (l) "HA HB". iApply "HB". Qed.
+    Proof.
+      iIntros (Φ) "HA HB". simpl.
+      iIntros (σ) "HC". pose mwp_gensym.
+      simpl in u. iMod (u $! σ with "HC") as "[HC HD]".
+      iModIntro. iFrame. iApply "HB". iApply "HC".
+    Qed.
     
     Lemma ret_spec {X} (v : X) :
     |{{ True }}| ret v |{{ v', RET v'; ⌜ v' = v ⌝  }}|.
@@ -743,178 +629,7 @@ Module proofmode.
       iApply mwp_value'. iApply "HB". rewrite H'. iFrame. iApply H.
     Qed.
 
-    Lemma run_spec {X} : forall (e : mon X) (Φ : X -> iProp Σ) (p : state * X) (s : state),
-        run e s = Res p ->
-    |{{ True }}| e |{{ v, RET v; Φ v }}| -> Φ p.2.
-    Proof.
-      fix e 1.
-      destruct e0; intros.
-      - apply ret_spec_bis in H0. inversion H. apply H0.
-      - destruct s.
-        + inversion H.
-        + simpl in H. pose (e _ Φ _ _ H). apply u. simpl in H0. pose (heapG Σ). Print heapG.
-          pose (heapG_gen_heapG (heapG Σ)).
-          
-          Print gFunctors. Print rFunctor. Print heapG.
-          
-          
-          applye in H.
-          unfold mwp in H0. iApply H0. simpl in H0. iApply H0.
-    Qed.        
   End proofmode_divers.
   
 End proofmode.
-
-
-(* (* %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%Old%%%%%%%%%%%%%%%%%%% *) *)
-
-(* Module gensym. *)
-(*   Import monad. *)
-(*   Open Scope positive_scope. *)
-
-(*   Definition ident := positive. *)
-(*   Definition state := gmap ident type. *)
-
-(*   Inductive FreshMonad (X : Type) : Type := *)
-(*   | ret : X -> FreshMonad X *)
-(*   | Gensym: (ident -> FreshMonad X) -> FreshMonad X. *)
-
-(*   Arguments ret {_} x. *)
-(*   Arguments Gensym {_} f. *)
-
-(*   Fixpoint bind {X Y} (m: FreshMonad X) (k: X -> FreshMonad Y) : FreshMonad Y := *)
-(*     match m with *)
-(*     | ret x => k x *)
-(*     | Gensym f => Gensym (fun x => bind (f x) k) *)
-(*     end. *)
-
-(*   Definition gensym := Gensym ret. *)
-
-(*   Definition fresh (s : state) := map_fold (fun x _ res => Pos.max res (x+1)) 1 s. *)
-
-(*   Fixpoint run {X} (m : FreshMonad X) : state -> state * X := *)
-(*     match m with *)
-(*     | ret v => fun s => (s,v) *)
-(*     | Gensym f => *)
-(*       fun s => *)
-(*         let l := fresh s in *)
-(*         run (f l) ({[l := Tvoid]} ∪ s) *)
-(*     end. *)
-
-(*   Lemma lid : forall X Y (a : X) (f : X -> FreshMonad Y), bind (ret a) f = f a. *)
-(*   Proof. auto. Qed. *)
-
-(*   Lemma rid : forall X (m : FreshMonad X), bind m ret = m. *)
-(*   Proof. induction m; auto. simpl. f_equal. apply functional_extensionality. auto. Qed. *)
-
-(*   Lemma ass_bind : forall X Y Z (m : FreshMonad X) f (g : Y -> FreshMonad Z), *)
-(*       bind (bind m f) g = bind m (fun x => bind (f x) g). *)
-(*   Proof. induction m; auto. intros. simpl. f_equal. apply functional_extensionality. auto. Qed. *)
-
-(*   Hint Resolve lid rid ass_bind. *)
-
-(*   Instance mP : @MonadProp FreshMonad (@ret) (@bind). *)
-(*   Proof. split; eauto. Qed. *)
-
-(*   Canonical Structure gensym_monad := @Monad FreshMonad (gmap ident type) (@ret) (@bind) (@run) mP. *)
-
-(* End gensym. *)
-
-
-(* Module weakestpre_gensym. *)
-(*   Export weakestpre. *)
-(*   Export gensym. *)
-(*   Export gen_heap. *)
-
-(*   Class irisG (Σ : gFunctors) := *)
-(*     IrisG { *)
-(*         iris_invG :> invG.invG Σ; *)
-(*         state_interp : state → iProp Σ; *)
-(*       }. *)
-(*   Global Opaque iris_invG. *)
-
-(*   Class heapG Σ := *)
-(*     HeapG { *)
-(*         heapG_invG : invG.invG Σ; *)
-(*         heapG_gen_heapG :> gen_heapG positive type Σ; *)
-(*       }. *)
-
-(*   Instance heapG_irisG `{!heapG Σ} : irisG Σ := { *)
-(*                                                  iris_invG := heapG_invG; *)
-(*                                                  state_interp σ := gen_heap_ctx σ%I; *)
-(*                                                }. *)
-
-(*   (** Override the notations so that scopes and coercions work out *) *)
-(*   Notation "\s l" := (mapsto (L:=ident) (V:=type) l 1 Tvoid) *)
-(*                        (at level 20, format "\s l") : bi_scope. *)
-(*   Notation "\s l" := *)
-(*     (mapsto (L:=ident) (V:=type) l 1 Tvoid) (at level 20) : bi_scope. *)
-
-(*   Section mwp. *)
-(*     Context {X : Type} `{!heapG Σ}. *)
-(*     Implicit Types P : iProp Σ. *)
-(*     Implicit Types Φ : X → iProp Σ. *)
-(*     Implicit Types v : X. *)
-(*     Implicit Types e : FreshMonad X. *)
-
-(*     Fixpoint mwp `{!irisG Σ} (e1 : FreshMonad X) (Q : X -> iProp Σ) : iProp Σ := *)
-(*       match e1 with *)
-(*       | ret v => Q v *)
-(*       | Gensym f => *)
-(*         ∀ l, (\s l) -∗ mwp (f l) Q *)
-(*       end%I. *)
-
-(*     Global Instance mwp' `{!irisG Σ} : @Mwp X gensym_monad (iProp Σ) := mwp. *)
-    
-(*     Global Instance mwp_ne e n : *)
-(*       Proper (pointwise_relation _ (dist n) ==> dist n) (mwp e). *)
-(*     Proof. *)
-(*       revert e. induction (lt_wf n) as [n _ IH]=> e P P' HP. *)
-(*       induction e; simpl. *)
-(*       * apply HP. *)
-(*       * do 3 f_equiv. apply H. *)
-(*     Qed. *)
-
-(*     Global Instance mwp_proper e : *)
-(*       Proper (pointwise_relation _ (≡) ==> (≡)) (mwp e). *)
-(*     Proof. *)
-(*         by intros Φ Φ' ?; apply equiv_dist=>n; apply mwp_ne=>v; apply equiv_dist. *)
-(*     Qed. *)
-
-(*     Lemma mwp_unfold e Φ : *)
-(*       WP e |{ Φ }| ⊣⊢ mwp e Φ. *)
-(*     Proof. auto. Qed. *)
-
-(*     Lemma mwp_value' Φ v : Φ v ⊢ WP ret v |{ Φ }|. *)
-(*     Proof. eauto. Qed. *)
-(*     Lemma mwp_value_inv' Φ v : WP ret v |{ Φ }| -∗ Φ v. *)
-(*     Proof. eauto. Qed. *)
-  
-(*     Lemma mwp_mono e Φ Ψ : *)
-(*       WP e |{ Φ }| -∗ (∀ v, Φ v -∗ Ψ v) -∗ WP e |{ Ψ }|. *)
-(*     Proof. *)
-(*       iIntros "HA HB". rewrite !mwp_unfold. iInduction e as [|e] "IH". *)
-(*       { iApply "HB". iApply "HA". } *)
-(*       { simpl. iIntros (l) "HC". iDestruct ("HA" with "HC") as "HA". *)
-(*         iApply ("IH" with "[HA] [HB]"); eauto. } *)
-(*       Qed. *)
-      
-(*     Lemma mwp_bind e f Φ Φ' : *)
-(*       WP e |{ Φ' }| -∗ (∀ v,  Φ' v -∗ WP (f v) |{ Φ }|) -∗ WP bind e f |{ Φ }|%I. *)
-(*     Proof. *)
-(*       iIntros "HA HB". rewrite !mwp_unfold. iInduction e as [|e] "IH". *)
-(*       { iApply "HB". iApply "HA". } *)
-(*       { simpl. iIntros (l) "HC". iDestruct ("HA" with "HC") as "HA". *)
-(*         iApply ("IH" with "[HA] [HB]"); eauto. } *)
-(*     Qed. *)
-
-(*     Lemma mwp_frame_l e Φ R : R ∗ WP e |{ Φ }| ⊢ WP e |{ v, R ∗ Φ v }|. *)
-(*     Proof. iIntros "[? H]". iApply (mwp_mono with "H"); auto with iFrame. Qed. *)
-(*     Lemma mwp_frame_r e Φ R : WP e |{ Φ }| ∗ R ⊢ WP e |{ v, Φ v ∗ R }|. *)
-(*     Proof. iIntros "[H ?]". iApply (mwp_mono with "H"); auto with iFrame. Qed. *)
-
-(*   End mwp. *)
-  
-
-(* End weakestpre_gensym. *)
 
