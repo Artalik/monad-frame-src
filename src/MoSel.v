@@ -216,8 +216,10 @@ Module ProofModeInstantiate.
 
   Canonical Structure hpropO := leibnizO hprop.
 
+  Definition hprop_emp := hpure True.
+
   Program Canonical Structure hpropI : bi :=
-    Bi hprop _ _ pred_incl hempty hpure_abs hand hor
+    Bi hprop _ _ pred_incl hprop_emp hpure_abs hand hor
        pred_impl (@hforall) (@hexists) hstar hwand hpersistent _ _.
   Next Obligation.
     apply discrete_ofe_mixin, _.
@@ -255,7 +257,8 @@ Module ProofModeInstantiate.
     - intros x W Q P h P0. destruct P0. eapply P. apply H.
     - intros P P' Q Q' A B C D. inversion_star HHH h P. exists h; exists h0. repeat split; auto.
     - intros x W A. exists heap_empty; exists W. repeat split; auto. apply map_disjoint_empty_l.
-    - intros P h Q. inversion_star H H H. inversion H3; subst. rewrite heap_union_empty_l. apply H4.
+    - intros P h Q. inversion_star H H H. inversion H3; inversion H6; subst.
+      rewrite heap_union_empty_l. apply H4.
     - intros P Q h R. inversion_star H H H. exists H2; exists H0. repeat split; auto. subst.
       apply heap_union_comm. apply H5.
     - intros P Q R h P0. rewrite <- hstar_assoc. apply P0.
@@ -274,9 +277,10 @@ Module ProofModeInstantiate.
   Lemma hpure_pure φ : \[φ] = bi_affinely ⌜φ⌝.
   Proof.
     extens. split.
-    - intro. destruct H. split. apply H0. exists heap_empty; exists x. repeat split; auto.
+    - intro. destruct H. split. split; auto. exists heap_empty; exists x. repeat split; auto.
       apply map_disjoint_empty_l.
-    - intros [? Hφ]. repeat split; auto. destruct Hφ as (h1&h2&P0&P1&P2&P3). destruct P0. apply H0.
+    - intros [? Hφ]. destruct Hφ as (h1&h2&P0&P1&P2&P3). destruct P0. repeat split; auto.
+      inversion H. apply H3.      
   Qed.
 
   Open Scope bi_scope.
@@ -339,7 +343,7 @@ Module ProofMode.
 
   Global Instance htop_into_pure : IntoPure \Top True.
   Proof. unfold IntoPure. auto. Qed.
-  Global Instance htrop_from_pure a : FromPure a \Top True.
+  Global Instance htop_from_pure a : FromPure a \Top True.
   Proof. intros ??. red; trivial. Qed.
 
   Global Instance hpure_affine φ : Affine \[φ].
@@ -407,7 +411,7 @@ Module ProofMode.
   Proof.
     rewrite /AsEmpValid. split.
     - intro. eapply H.
-    - intro. intro. intro. inversion H0. apply H. eapply hempty_intro.
+    - intro. intro. intro. inversion H0. apply H. apply H0. 
   Qed.
 
   Global Instance as_emp_valid_emp_valid_bis (P : hprop) :
@@ -667,13 +671,15 @@ Module weakestpre_gensym.
         P -∗ (∀ x, .. (∀ y, Q -∗ Φ pat) .. ) -∗ WP e |{ Φ }|)%I
                                                              (at level 20, x closed binder, y closed binder,
                                                               format "'[hv' {{  P  } }  '/  ' e  '/'  {{  x  ..  y ,  RET  pat ;  Q  } } ']'") : bi_scope.
-
-  Lemma mwp_value' {X} (Φ : X -> iProp) (v : X) : Φ v ⊢ WP ret v |{ Φ }|%I.
+  
+  (** wp rules *)
+  (** Generic rules *)
+  Lemma wp_value' {X} (Φ : X -> iProp) (v : X) : Φ v ⊢ WP ret v |{ Φ }|%I.
   Proof. auto. Qed.
-  Lemma mwp_value_inv' {X} Φ (v : X) : WP ret v |{ Φ }| -∗ Φ v%I.
+  Lemma wp_value_inv' {X} Φ (v : X) : WP ret v |{ Φ }| -∗ Φ v%I.
   Proof. auto. Qed.
 
-  Lemma mwp_mono {X} e (Φ Ψ : X -> iProp) :
+  Lemma wp_mono {X} e (Φ Ψ : X -> iProp) :
     WP e |{ Φ }| -∗ (∀ (v : X), Φ v -∗ Ψ v) -∗ WP e |{ Ψ }|%I.
   Proof.
     iIntros "HA HB". revert e. fix e 1.
@@ -686,7 +692,7 @@ Module weakestpre_gensym.
         iPoseProof "HB" as "HB". apply e. }}
   Qed.
 
-  Lemma mwp_bind {X Y} (e : mon X) (f :  X → mon Y) (Φ : Y -> iProp)  (Φ' : X -> iProp) :
+  Lemma wp_bind {X Y} (e : mon X) (f :  X → mon Y) (Φ : Y -> iProp)  (Φ' : X -> iProp) :
     WP e |{ Φ' }| -∗ (∀ v,  Φ' v -∗ WP (f v) |{ Φ }|) -∗ WP bind e f |{ Φ }|%I.
   Proof.
     iIntros "HA HB". revert e. fix e 1.
@@ -698,22 +704,28 @@ Module weakestpre_gensym.
         iDestruct ("HA" with "HC") as "HA".
         iPoseProof "HB" as "HB". apply e. }}
   Qed.
-
-  Lemma mwp_gensym (t : type) : emp -∗ WP gensym t |{ l, l ↦ t }|.
+  
+  (** Monad rules *)
+  Lemma wp_gensym (t : type) : emp -∗ WP gensym t |{ l, l ↦ t }|.
   Proof.
     simpl. iIntros. iFrame.
   Qed.
+  
+  Lemma wp_frame_l {X} (e : mon X) Φ (R : iProp) : R ∗ WP e |{ Φ }| ⊢ WP e |{ v, R ∗ Φ v }|.
+  Proof. iIntros "[HA HB]". iApply (wp_mono with "HB"). auto with iFrame. Qed.
+  Lemma wp_frame_r {X} (e : mon X) Φ R : WP e |{ Φ }| ∗ R ⊢ WP e |{ v, Φ v ∗ R }|.
+  Proof. iIntros "[H ?]". iApply (wp_mono with "H"); auto with iFrame. Qed.
 
-  Lemma mwp_frame_l {X} (e : mon X) Φ (R : iProp) : R ∗ WP e |{ Φ }| ⊢ WP e |{ v, R ∗ Φ v }|.
-  Proof. iIntros "[HA HB]". iApply (mwp_mono with "HB"). auto with iFrame. Qed.
-  Lemma mwp_frame_r {X} (e : mon X) Φ R : WP e |{ Φ }| ∗ R ⊢ WP e |{ v, Φ v ∗ R }|.
-  Proof. iIntros "[H ?]". iApply (mwp_mono with "H"); auto with iFrame. Qed.
 
-  Lemma gensym_spec t :
-    {{ emp }} gensym t {{ l, RET l; l ↦ t }}.
+  (** triple rules *)
+  (** Generic rules *)
+
+  Lemma ret_spec_complete {X} (v : X) H (Q : X -> iProp) :
+    (H -∗ Q v)
+      -∗
+      {{ H }} ret v {{ v', RET v'; Q v' }}.
   Proof.
-    iIntros (Φ) "HA HB". simpl.
-    iIntros (σ) "HC". iApply "HB". iApply "HC".
+    iIntros "HA" (?) "HB HC". iDestruct ("HA" with "HB") as "HA". iApply "HC". iApply "HA".
   Qed.
 
   Lemma ret_spec {X} (v : X) :
@@ -722,25 +734,19 @@ Module weakestpre_gensym.
 
   Lemma ret_spec_bis {X} (v : X) (Q : X -> iProp) :
     Q v
-      ⊢
+      -∗
       {{ emp }} ret v {{ v', RET v'; Q v' }}.
   Proof.
     iIntros "HA" (?) "HB HC". iApply "HC". iApply "HA".
   Qed.
-
-  Lemma error_spec {X} (Q : X -> iProp) e :
-    {{ emp }} error e {{ v, RET v; Q v }}.
-  Proof.
-    simpl. auto.
-  Qed.
-
+  
   Lemma bind_spec {X Y} (e : mon X) (f : X -> mon Y) Φ' Φ'' H :
     {{ H }} e {{ v, RET v; Φ'' v }} ->
     (∀ v, {{ Φ'' v }} (f v) {{ v', RET v'; Φ' v' }}) ->
     {{ H }} (bind e f) {{ v, RET v; Φ' v}}.
   Proof.
     intros. iIntros (?) "HA HB".
-    iApply (mwp_bind e f _ Φ'' with "[HA]").
+    iApply (wp_bind e f _ Φ'' with "[HA]").
     - iApply (H0 with "[HA]"); auto.
     - iIntros (v) "HC". iApply (H1 with "[HC]"); auto.
   Qed.
@@ -763,7 +769,91 @@ Module weakestpre_gensym.
     iIntros (v) "HC". iApply "HB". iFrame.
   Qed.
 
+  Lemma exists_spec {X Y} v' H (Q : X -> Y -> iProp) (e : mon X) :
+    {{ H }} e {{ v, RET v; Q v v' }} ->
+    {{ H }} e {{ v, RET v; ∃ t, Q v t }}.
+  Proof.
+    iIntros (? ?) "HA HB".
+    iApply (H0 with "HA").
+    iIntros (?) "HA". iApply "HB". iExists v'. iApply "HA".
+  Qed.
 
+  Lemma intro_true_l {X} H Φ' (e : mon X) :
+    {{ H ∗ emp }} e {{ v, RET v; Φ' v }} ->
+    {{ H }} e {{ v, RET v; Φ' v }}.
+  Proof.
+    intro P. iIntros (?) "HA HB". iApply (P with "[HA]").
+    iFrame.
+    iIntros (v) "HA". iApply "HB". iFrame. 
+  Qed.
+
+  Lemma intro_true_r {X} H Φ' (e : mon X) :
+    {{ emp ∗ H }} e {{ v, RET v; Φ' v }} ->
+    {{ H }} e {{ v, RET v; Φ' v }}.
+  Proof.
+    intro P. iIntros (?) "HA HB". iApply (P with "[HA]").
+    iFrame.
+    iIntros (v) "HA". iApply "HB". iFrame. 
+  Qed.
+
+
+  Lemma wand_post {X} H R Φ' (v : X):
+    {{ H ∗ R }} ret v {{ v, RET v; Φ' v }} ->
+    {{ H }} ret v {{ v, RET v; R -∗ Φ' v }}.
+  Proof.
+    iIntros (? ?) "HH HB". iApply "HB". iIntros "HR". iApply (H0 with "[HH HR]"). iFrame.
+    iIntros. iFrame.
+  Qed.
+
+  
+  Lemma assoc_pre {X} H R Q Φ' (e : mon X):
+    {{ H ∗ R ∗ Q }} e {{ v, RET v; Φ' v }} <->
+    {{ (H ∗ R) ∗ Q}} e {{ v, RET v; Φ' v }}.
+  Proof.
+    split; iIntros (? ?) "[HA HC] HB"; iApply (H0 with "[HA HC]"); iFrame. iApply "HC".
+  Qed.
+
+  Lemma assoc_post {X} H R Q P (e : mon X) :
+    {{ P }} e {{ v, RET v; H v ∗ R v ∗ Q v }} <->
+    {{ P }} e {{ v, RET v; (H v ∗ R v) ∗ Q v}}.
+  Proof.
+    split; iIntros (? ?) "HA HB"; iApply (H0 with "HA"); iIntros (?) "[HA HC]"; iApply "HB"; iFrame.
+    iApply "HC".
+  Qed.
+  
+  Lemma comm_pre {X} H R Φ' (e : mon X):
+    {{ H ∗ R }} e {{ v, RET v; Φ' v }} <->
+    {{ R ∗ H }} e {{ v, RET v; Φ' v }}.
+  Proof.
+    split; iIntros (? ?) "[HA HC] HB"; iApply (H0 with "[HA HC]"); iFrame.
+  Qed.
+  
+  Lemma comm_post {X} P H R (e : mon X):
+    {{ P }} e {{ v, RET v; H v ∗ R v }} <->
+    {{ P }} e {{ v, RET v; R v ∗ H v }}.
+  Proof.
+    split; iIntros (? ?) "HA HB"; iApply (H0 with "HA"); iIntros (?) "[HA HC]"; iApply "HB"; iFrame.
+  Qed.    
+  Ltac frameL := apply intro_true_l; apply frame_l.
+  Ltac frameR := apply intro_true_r; apply frame_r.
+
+  
+  
+  (** Monad rules *)
+  Lemma gensym_spec t :
+    {{ emp }} gensym t {{ l, RET l; l ↦ t }}.
+  Proof.
+    iIntros (Φ) "HA HB". simpl.
+    iIntros (σ) "HC". iApply "HB". iApply "HC".
+  Qed.
+  
+  Lemma error_spec {X} (Q : X -> iProp) e :
+    {{ emp }} error e {{ v, RET v; Q v }}.
+  Proof.
+    simpl. auto.
+  Qed.
+
+  
 End weakestpre_gensym.
 
 Module adequacy.
@@ -775,7 +865,7 @@ Module adequacy.
     MonPred.unseal=> -[H]. repeat red in H.
     pose (H i heap_empty).
     simpl in *. edestruct e.
-    - rewrite monPred_at_emp. apply hempty_intro.
+    - rewrite monPred_at_emp. split; auto; apply hempty_intro.
     - repeat red. exists heap_empty; exists heap_empty. repeat split; auto.
     - inversion_star H0 h P.
       inversion P1.
@@ -796,9 +886,10 @@ Module adequacy.
     inversion H0; subst.
     exists heap_empty; exists heap_empty. repeat split; auto.
     + repeat intro. inversion_star H1 h P. inversion P1. subst.
-      exists h; exists ({[l := t]} : heap). repeat split; auto. inversion P0; subst.
+      exists h; exists ({[l := t]} : heap). repeat split; auto. inversion P2; subst.
       rewrite heap_union_empty_l. rewrite insert_union_singleton_r. reflexivity.
       apply (map_disjoint_singleton_r) in H. apply H.
+    + inversion H3. rewrite heap_union_empty_l. reflexivity.
   Qed.
 
   Lemma adequacy {X} : forall (e : mon X) (Φ : X -> iProp) h v h' i,
