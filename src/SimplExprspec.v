@@ -697,7 +697,7 @@ Section SPEC.
   Definition tr_expr_stmt (r : Csyntax.expr) (s : statement) : iProp :=
     ∃ sla, ⌜ s = makeseq sla.1 ⌝ ∗ ∃ le, tr_expr le For_effects r sla.
 
-  Print transl_if.
+  
   Definition tr_if (r : Csyntax.expr) (s0 : statement) (s1: statement) (s2 : statement) : iProp :=
     ∃ sla, ⌜ s2 = makeseq (sla.1 ++ makeif sla.2 s0 s1 :: nil) ⌝ ∗ ∃ le, tr_expr le For_val r sla.
   
@@ -922,12 +922,7 @@ Section SPEC.
       tr_fundef (Internal f) (Internal tf)
   | tr_external: forall ef targs tres cconv,
       tr_fundef (External ef targs tres cconv) (External ef targs tres cconv).
-
   
-  (* Lemma adequacy {X} : forall (e : mon X) (Φ : X -> iProp) h v h' i, *)
-  (*     (heap_ctx h ⊢ WP e |{ Φ }|) -> *)
-  (*     run e h = Res (h', v) -> *)
-  (*     (Φ v) i h'. *)
   Import adequacy.
   Lemma transl_function_spec:
     forall f tf,
@@ -935,11 +930,12 @@ Section SPEC.
       tr_function f tf.
   Proof.
     unfold transl_function; intros.
-    destruct (transl_stmt (Csyntax.fn_body f)) eqn:T; inv H.
-    econstructor; eauto. simpl. eapply (adequacy (transl_stmt (Csyntax.fn_body f))). epose (adequacy (transl_stmt(Csyntax.fn_body f)) (tr_stmt (Csyntax.fn_body f))).
-    eapply m.
-    epose (transl_stmt_meets_spec (Csyntax.fn_body f)).
-    
+    destruct (run (transl_stmt (Csyntax.fn_body f)) ∅) eqn:?. rewrite Heqe in H. inversion H.
+    destruct p.
+    apply (tr_function_intro _ _ 0%nat s); inv H; rewrite Heqe in H1; inversion H1; auto.
+      apply (adequacy_triple (transl_stmt (Csyntax.fn_body f)) _ ∅ s0 s 0%nat emp).
+      2 : apply Heqe.
+      iIntros "HA". iSplitL. iApply (transl_stmt_meets_spec (Csyntax.fn_body f)). trivial.
   Qed.
 
   Lemma transl_fundef_spec:

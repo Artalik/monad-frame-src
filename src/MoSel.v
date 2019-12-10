@@ -910,4 +910,34 @@ Module adequacy.
         iApply (H with "HA HB").
   Qed.
 
+  Lemma adequacy_triple {X} : forall (e : mon X) (Φ : X -> iProp) h v h' i H,
+      (heap_ctx h ⊢ {{ H }} e {{ v, RET v; Φ v }} ∗ H) ->
+      run e h = Res (h', v) ->
+      (Φ v) i h'.
+  Proof.
+    fix e 1. destruct e0; simpl; intros.
+    - apply soundness.
+      inversion H1; subst.
+      iIntros "HA".
+      iDestruct (H0 with "HA") as "HA".
+      iDestruct "HA" as "[HA HB]".
+      iApply ("HA" with "HB"). iIntros. iFrame.
+    - destruct s.
+      + inversion H1.
+      + eapply e.
+        2 : apply H1.
+        iIntros "HA". pose (fresh_ident_spec h).
+        apply (map_disjoint_singleton_r h (fresh_ident h) t) in e0.
+        iDestruct ((heap_ctx_split _ _ _ e0) with "HA") as "[HA HB]".
+        iDestruct (H0 with "HA") as "[HA HC]".
+        iSplitR "HC".
+        iIntros (?) "HC HD". iApply ("HA" with "HC [HD]"); eauto. iApply "HC".
+  Qed.
+
+  Global Instance affine_heap_empty : Affine (heap_ctx ∅).
+  Proof.
+    split. intro. MonPred.unseal. repeat red. intros. split; auto.
+  Qed.
 End adequacy.
+
+       
