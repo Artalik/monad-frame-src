@@ -141,6 +141,14 @@ Module SepBasicCore.
       destruct w as (W&w);
       do 3 (let w0 := fresh P in
             destruct w as (w0&w))
+    (* | H : (_ ∗ _) _ |- _ => *)
+    (*   let W := fresh h in *)
+    (*   let w := fresh P in *)
+    (*   inversion H as (W&w); *)
+    (*   let W := fresh h in *)
+    (*   destruct w as (W&w); *)
+    (*   do 3 (let w0 := fresh P in *)
+    (*         destruct w as (w0&w)) *)
     end.
 
   Ltac extens := apply functional_extensionality; intro; apply prop_extensionality.
@@ -833,7 +841,9 @@ Module weakestpre_gensym.
     {{ P }} e {{ v, RET v; R v ∗ H v }}.
   Proof.
     split; iIntros (? ?) "HA HB"; iApply (H0 with "HA"); iIntros (?) "[HA HC]"; iApply "HB"; iFrame.
-  Qed.    
+  Qed.
+
+  
   Ltac frameL := apply intro_true_l; apply frame_l.
   Ltac frameR := apply intro_true_r; apply frame_r.
 
@@ -854,12 +864,46 @@ Module weakestpre_gensym.
   Qed.
 
   
+  Ltac tac :=
+    match goal with
+    | |- bi_emp_valid ({{ _ }} bind _ (fun _ => _) {{ _, RET _; _ }}) =>
+      eapply bind_spec; [> tac | intro; tac]
+    | |- bi_emp_valid ({{ _ }} ret _ {{ _, RET _; ∃ _, _ }}) => eapply exists_spec; tac
+    | |- bi_emp_valid ({{ emp }} error _ {{ _, RET _; _ }}) => apply error_spec
+    | |- bi_emp_valid ({{ emp }} gensym _ {{ _, RET _; _ }}) => apply gensym_spec
+    | |- bi_emp_valid ({{ ?H }} gensym _ {{ _, RET _; _ }}) => frameR; apply gensym_spec 
+    | |- bi_emp_valid ({{ _ }} ret _ {{ _, RET _; _ -∗ _ }}) => apply wand_post; tac
+    | H :  bi_emp_valid ({{ ?Pre }} ?e {{ _, RET _; _ }})
+      |-  bi_emp_valid ({{ ?Pre }} ?e {{ _, RET _; _ }}) => apply H
+    | H :  (forall x, bi_emp_valid ({{ ?Pre }} ?e x {{ _, RET _; _ }}))
+      |-  bi_emp_valid ({{ ?Pre }} ?e _ {{ _, RET _; _ }}) => apply H
+    | H :  (forall x y, bi_emp_valid ({{ ?Pre }} ?e x y {{ _, RET _; _ }}))
+      |-  bi_emp_valid ({{ ?Pre }} ?e _ _ {{ _, RET _; _ }}) => apply H
+    | H :  (forall x y, bi_emp_valid ({{ ?Pre }} ?e x ?r {{ _, RET _; _ }}))
+      |-  bi_emp_valid ({{ ?Pre }} ?e _ ?r {{ _, RET _; _ }}) => apply H
+    | H :  (forall x y z, bi_emp_valid ({{ ?Pre }} ?e x y z {{ _, RET _; _ }}))
+      |-  bi_emp_valid ({{ ?Pre }} ?e _ _ _ {{ _, RET _; _ }}) => apply H
+    | H :  bi_emp_valid ({{ emp }} ?e {{ _, RET _; _ }}) |-
+      bi_emp_valid ({{ ?Pre }} ?e {{ _, RET _; _ }}) => frameR; apply H
+    | |- bi_emp_valid ({{ emp }} ret ?v {{ v', RET v'; ⌜ v' = ?v ⌝ }}) => apply ret_spec
+    | _ => idtac
+    end.
+
+  
 End weakestpre_gensym.
 
 Module adequacy.
   Export gensym.
   Export weakestpre_gensym.
-
+  Lemma soundness_pure (Φ : Prop) : bi_emp_valid ((⌜ Φ ⌝) : iProp) -> Φ.
+  Proof.
+    MonPred.unseal=> -[H]. repeat red in H.
+    pose (H 0%nat heap_empty).
+    edestruct e as (h1&h2&P0&P1&P2&P3).
+    - rewrite monPred_at_emp. split; auto; apply hempty_intro.
+    - inversion P0. apply H0.
+  Qed.
+  
   Lemma soundness (Φ : iProp) i h : (heap_ctx h -∗ Φ) -> Φ i h.
   Proof.
     MonPred.unseal=> -[H]. repeat red in H.
@@ -938,6 +982,6 @@ Module adequacy.
   Proof.
     split. intro. MonPred.unseal. repeat red. intros. split; auto.
   Qed.
-End adequacy.
 
+End adequacy.
        
