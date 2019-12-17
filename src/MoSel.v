@@ -655,6 +655,33 @@ Module weakestpre_gensym.
   Definition heap_ctx (h : heap) : iProp := MonPred (fun _ => hheap_ctx h) _.
 
 
+  Global Instance affine_heap_empty : Affine (heap_ctx ∅).
+  Proof.
+    split. intro. MonPred.unseal. repeat red. intros. split; auto.
+  Qed.
+
+  Lemma init_heap : bi_emp_valid (heap_ctx ∅).
+  Proof.
+    split. MonPred.unseal. repeat red. intros. inversion H. inversion H1.
+    reflexivity.
+  Qed.
+    
+  Definition pure_empty (P : Prop) : iProp := <affine> ⌜P⌝.
+
+  Global Instance affine_pure (P : Prop) : Affine (pure_empty P).
+  Proof.
+    red.
+    iIntros "HA". trivial.
+  Qed.
+
+  Lemma pureIntro {X} (P0 : X -> iProp) : ∀ a b, P0 a -∗ pure_empty (a = b) -∗ P0 b.
+  Proof.
+    iIntros (a b) "HA %". rewrite a0. iApply "HA".
+  Qed.
+
+  Notation "\⌜ P ⌝" := (pure_empty P)
+                         (at level 0, P at level 99, format "\⌜ P ⌝") : heap_scope.
+  
   Notation "l ↦ t" :=
     (single l t) (at level 20) : bi_scope.
 
@@ -739,6 +766,12 @@ Module weakestpre_gensym.
   Lemma ret_spec {X} (v : X) :
     {{ emp }} ret v {{ v', RET v'; ⌜ v' = v ⌝  }}.
   Proof. iIntros (?) "HA HB". iApply "HB". auto. Qed.
+
+  Lemma ret_spec_pure {X} (v : X) :
+    {{ emp }} ret v {{ v', RET v'; \⌜ v' = v ⌝  }}.
+  Proof.
+    iIntros (?) "HA HB". iApply "HB". auto.
+  Qed.
 
   Lemma ret_spec_bis {X} (v : X) (Q : X -> iProp) :
     Q v
@@ -886,6 +919,7 @@ Module weakestpre_gensym.
     | H :  bi_emp_valid ({{ emp }} ?e {{ _, RET _; _ }}) |-
       bi_emp_valid ({{ ?Pre }} ?e {{ _, RET _; _ }}) => frameR; apply H
     | |- bi_emp_valid ({{ emp }} ret ?v {{ v', RET v'; ⌜ v' = ?v ⌝ }}) => apply ret_spec
+    | |- bi_emp_valid ({{ emp }} ret ?v {{ v', RET v'; \⌜ v' = ?v ⌝ }}) => apply ret_spec_pure
     | _ => idtac
     end.
 
@@ -895,6 +929,14 @@ End weakestpre_gensym.
 Module adequacy.
   Export gensym.
   Export weakestpre_gensym.
+  Lemma soundness1 (Φ : Prop) h : (heap_ctx h ⊢ (⌜ Φ ⌝) : iProp) -> Φ.
+  Proof.
+    MonPred.unseal=> -[H]. repeat red in H.
+    pose (H 0%nat h).
+    edestruct e as (h1&h2&P0&P1&P2&P3).
+    - reflexivity.
+    - inversion P0. apply H0.
+  Qed.
   Lemma soundness_pure (Φ : Prop) : bi_emp_valid ((⌜ Φ ⌝) : iProp) -> Φ.
   Proof.
     MonPred.unseal=> -[H]. repeat red in H.
@@ -904,7 +946,7 @@ Module adequacy.
     - inversion P0. apply H0.
   Qed.
   
-  Lemma soundness (Φ : iProp) i h : (heap_ctx h -∗ Φ) -> Φ i h.
+  Lemma soundness2 (Φ : iProp) i h : (heap_ctx h -∗ Φ) -> Φ i h.
   Proof.
     MonPred.unseal=> -[H]. repeat red in H.
     pose (H i heap_empty).
@@ -918,7 +960,17 @@ Module adequacy.
       inversion H2; subst. rewrite heap_union_empty_r in P; subst.
       repeat split; auto. apply map_disjoint_empty_l.
   Qed.
-
+  
+  Lemma soundness3 (Φ : iProp) h : (forall i, Φ i h) -> heap_ctx h -∗ Φ.
+  Proof.
+    MonPred.unseal. unfold monPred_wand_def. unfold monPred_upclosed. simpl. split.
+    intros. simpl. repeat red. intros. exists emp. exists x; exists heap_empty.
+    repeat split; auto. rewrite monPred_at_emp in H0. apply H0.
+    intros h0 P0. inversion_star H h P. simpl in *. rewrite <- P2 in *. inversion P1. inversion H3.
+    subst. rewrite heap_union_empty_l. rewrite <- P2. apply H.
+    apply map_disjoint_empty_r.
+  Qed.
+  
   Lemma heap_ctx_split h l t : h ##ₘ ({[l := t]}) -> heap_ctx (<[l := t]>h) -∗ heap_ctx h ∗ l ↦ t.
   Proof.
     intro.
@@ -942,7 +994,7 @@ Module adequacy.
       (Φ v) i h'.
   Proof.
     fix e 1. destruct e0; simpl; intros.
-    - inversion H0; subst. apply soundness. iApply H.
+    - inversion H0; subst. apply soundness2. iApply H.
     - destruct s.
       + inversion H0.
       + eapply e.
@@ -960,7 +1012,7 @@ Module adequacy.
       (Φ v) i h'.
   Proof.
     fix e 1. destruct e0; simpl; intros.
-    - apply soundness.
+    - apply soundness2.
       inversion H1; subst.
       iIntros "HA".
       iDestruct (H0 with "HA") as "HA".
@@ -976,11 +1028,6 @@ Module adequacy.
         iDestruct (H0 with "HA") as "[HA HC]".
         iSplitR "HC".
         iIntros (?) "HC HD". iApply ("HA" with "HC [HD]"); eauto. iApply "HC".
-  Qed.
-
-  Global Instance affine_heap_empty : Affine (heap_ctx ∅).
-  Proof.
-    split. intro. MonPred.unseal. repeat red. intros. split; auto.
   Qed.
 
 End adequacy.
