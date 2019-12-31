@@ -456,25 +456,17 @@ Module biInd.
   Import ProofMode.
   Import monpred.
 
-  Instance inhabited_nat : Inhabited nat.
+  Instance inhabited_unit : Inhabited unit.
   Proof.
-    split. apply 0%nat.
+    split. apply ().
   Qed.
 
-  Definition lt (n0 n1 : nat) := n0 <= n1.
-
-  Instance PreOrder_nat : PreOrder lt.
+  Instance PreOrder_unit : PreOrder (fun (_ _ : unit) => true).
   Proof.
-    split; repeat red; intros.
-    - left.
-    - inversion H; inversion H0; subst.
-      + left.
-      + right. apply H2.
-      + right. apply H1.
-      + right. omega.
+    split; repeat red; intros; trivial.
   Qed.
 
-  Program Canonical Structure biInd := BiIndex nat inhabited_nat _ PreOrder_nat.
+  Program Canonical Structure biInd := BiIndex unit inhabited_unit _ PreOrder_unit.
 
 End biInd.
 
@@ -875,8 +867,66 @@ Module weakestpre_gensym.
   Proof.
     split; iIntros (? ?) "HA HB"; iApply (H0 with "HA"); iIntros (?) "[HA HC]"; iApply "HB"; iFrame.
   Qed.
+  
+  Lemma forall_useless_post {X Y} P Q (e : mon X):
+    {{ P }} e {{ v, RET v; Q v }} ->
+    {{ P }} e {{ v, RET v; ∀ (t : Y), Q v }}.
+  Proof.
+    iIntros (? ?) "HA HB". iApply (H with "HA"). iIntros (?) "HA". iApply "HB"; iFrame.
+    iIntros. trivial.
+  Qed.
+
+  Lemma wand_true_pre {X} P (Q : X -> iProp) e :
+    {{ P }} e {{ v, RET v; Q v }} ->
+    {{ \⌜True⌝ -∗ P }} e {{ v, RET v; Q v }}.
+  Proof.
+    iIntros (? ?) "HA HB". iApply (H with "[HA]"). iApply "HA". trivial. iApply "HB".
+  Qed.
+
+  Lemma wand_true_post {X} P (Q : X -> iProp) e :
+    {{ P }} e {{ v, RET v; Q v }} ->
+    {{ P }} e {{ v, RET v; \⌜True⌝ -∗ Q v }}.
+  Proof.
+    iIntros (? ?) "HA HB". iApply (H with "HA"). iIntros (v) "HA". iApply "HB". eauto.
+  Qed.
+
+  Lemma wand_true_pre_l {X} P H (Q : X -> iProp) e :
+    {{ P ∗ H }} e {{ v, RET v; Q v }} ->
+    {{ (\⌜True⌝ -∗ P) ∗ H }} e {{ v, RET v; Q v }}.
+  Proof.
+    iIntros (? ?) "[HA HC] HB". iApply (H0 with "[HA HC]"); eauto. iFrame. iApply "HA". trivial.
+  Qed.
+ 
+  
+  Lemma wand_true_pre_r {X} P H (Q : X -> iProp) e :
+    {{ P ∗ H }} e {{ v, RET v; Q v }} ->
+    {{ P ∗ (\⌜True⌝ -∗ H) }} e {{ v, RET v; Q v }}.
+  Proof.
+    iIntros (? ?) "[HA HC] HB". iApply (H0 with "[HA HC]"); eauto. iFrame. iApply "HC". trivial.
+  Qed.
 
   
+  Lemma wand_true_post_l {X} P H (Q : X -> iProp) e :
+    {{ P }} e {{ v, RET v; Q v ∗ H v }} ->
+    {{ P }} e {{ v, RET v; (\⌜True⌝ -∗ Q v) ∗ H v }}.
+  Proof.
+    iIntros (? ?) "HA HB". iApply (H0 with "HA"). iIntros (v) "[HA HC]". iApply "HB". iFrame. eauto.
+  Qed.
+  
+  Lemma wand_true_post_r {X} P H (Q : X -> iProp) e :
+    {{ P }} e {{ v, RET v; Q v ∗ H v }} ->
+    {{ P }} e {{ v, RET v; Q v ∗ (\⌜True⌝ -∗ H v) }}.
+  Proof.
+    iIntros (? ?) "HA HB". iApply (H0 with "HA"). iIntros (v) "[HA HC]". iApply "HB". iFrame. eauto.
+  Qed.
+  
+  Lemma forall_wand_true_pre {X Y} P (Q : X -> iProp) e :
+    {{ ∀ (y : Y), P y }} e {{ v, RET v; Q v }} ->
+    {{ ∀ (y : Y), \⌜True⌝ -∗ P y }} e {{ v, RET v; Q v }}.
+  Proof.
+    iIntros (? ?) "HA HB". iApply (H with "[HA]"); eauto. iIntros. iApply "HA". trivial.
+  Qed.
+
   Ltac frameL := apply intro_true_l; apply frame_l.
   Ltac frameR := apply intro_true_r; apply frame_r.
 
@@ -896,7 +946,6 @@ Module weakestpre_gensym.
     simpl. auto.
   Qed.
 
-  
   Ltac tac :=
     match goal with
     | |- bi_emp_valid ({{ _ }} bind _ (fun _ => _) {{ _, RET _; _ }}) =>
@@ -906,10 +955,20 @@ Module weakestpre_gensym.
     | |- bi_emp_valid ({{ emp }} gensym _ {{ _, RET _; _ }}) => apply gensym_spec
     | |- bi_emp_valid ({{ ?H }} gensym _ {{ _, RET _; _ }}) => frameR; apply gensym_spec 
     | |- bi_emp_valid ({{ _ }} ret _ {{ _, RET _; _ -∗ _ }}) => apply wand_post; tac
+    | |- bi_emp_valid ({{ emp }} _ {{ v', RET v'; ∀ _, _ }}) => apply forall_useless_post; tac
+    | |- bi_emp_valid ({{ _ }} _ {{ v', RET v'; \⌜True⌝ -∗ _ }}) => apply wand_true_post; tac
+    | |- bi_emp_valid ({{ _ }} _ {{ v', RET v'; (\⌜True⌝ -∗ _) ∗ _ }}) => apply wand_true_post_l; tac
+    | |- bi_emp_valid ({{ _ }} _ {{ v', RET v'; _ ∗ (\⌜True⌝ -∗ _) }}) => apply wand_true_post_r; tac
+    | |- bi_emp_valid ({{ \⌜True⌝ -∗ _ }} _ {{ v', RET v'; _ }}) => apply wand_true_pre; tac
+    | |- bi_emp_valid ({{ (\⌜True⌝ -∗ _) ∗ _ }} _ {{ v', RET v'; _ }}) => apply wand_true_pre_l; tac
+    | |- bi_emp_valid ({{ _ ∗ (\⌜True⌝ -∗ _) }} _ {{ v', RET v'; _ }}) => apply wand_true_pre_r; tac
+    | |- bi_emp_valid ({{ ∀ _, \⌜True⌝ -∗ _ }} _ {{ v', RET v'; _ }}) => apply forall_wand_true_pre; tac
     | H :  bi_emp_valid ({{ ?Pre }} ?e {{ _, RET _; _ }})
       |-  bi_emp_valid ({{ ?Pre }} ?e {{ _, RET _; _ }}) => apply H
     | H :  (forall x, bi_emp_valid ({{ ?Pre }} ?e x {{ _, RET _; _ }}))
       |-  bi_emp_valid ({{ ?Pre }} ?e _ {{ _, RET _; _ }}) => apply H
+    | H :  (forall x, bi_emp_valid ({{ ?Pre }} ?e x ?l {{ _, RET _; _ }}))
+      |-  bi_emp_valid ({{ ?Pre }} ?e _ ?l {{ _, RET _; _ }}) => apply H
     | H :  (forall x y, bi_emp_valid ({{ ?Pre }} ?e x y {{ _, RET _; _ }}))
       |-  bi_emp_valid ({{ ?Pre }} ?e _ _ {{ _, RET _; _ }}) => apply H
     | H :  (forall x y, bi_emp_valid ({{ ?Pre }} ?e x ?r {{ _, RET _; _ }}))
@@ -922,7 +981,7 @@ Module weakestpre_gensym.
     | |- bi_emp_valid ({{ emp }} ret ?v {{ v', RET v'; \⌜ v' = ?v ⌝ }}) => apply ret_spec_pure
     | _ => idtac
     end.
-
+  
   
 End weakestpre_gensym.
 
@@ -932,7 +991,7 @@ Module adequacy.
   Lemma soundness1 (Φ : Prop) h : (heap_ctx h ⊢ (⌜ Φ ⌝) : iProp) -> Φ.
   Proof.
     MonPred.unseal=> -[H]. repeat red in H.
-    pose (H 0%nat h).
+    pose (H () h).
     edestruct e as (h1&h2&P0&P1&P2&P3).
     - reflexivity.
     - inversion P0. apply H0.
@@ -940,16 +999,16 @@ Module adequacy.
   Lemma soundness_pure (Φ : Prop) : bi_emp_valid ((⌜ Φ ⌝) : iProp) -> Φ.
   Proof.
     MonPred.unseal=> -[H]. repeat red in H.
-    pose (H 0%nat heap_empty).
+    pose (H () heap_empty).
     edestruct e as (h1&h2&P0&P1&P2&P3).
     - rewrite monPred_at_emp. split; auto; apply hempty_intro.
     - inversion P0. apply H0.
   Qed.
   
-  Lemma soundness2 (Φ : iProp) i h : (heap_ctx h -∗ Φ) -> Φ i h.
+  Lemma soundness2 (Φ : iProp) h : (heap_ctx h -∗ Φ) -> Φ () h.
   Proof.
     MonPred.unseal=> -[H]. repeat red in H.
-    pose (H i heap_empty).
+    pose (H () heap_empty).
     simpl in *. edestruct e.
     - rewrite monPred_at_emp. split; auto; apply hempty_intro.
     - repeat red. exists heap_empty; exists heap_empty. repeat split; auto.
@@ -961,13 +1020,13 @@ Module adequacy.
       repeat split; auto. apply map_disjoint_empty_l.
   Qed.
   
-  Lemma soundness3 (Φ : iProp) h : (forall i, Φ i h) -> heap_ctx h -∗ Φ.
+  Lemma soundness3 (Φ : iProp) h : Φ () h -> heap_ctx h -∗ Φ.
   Proof.
     MonPred.unseal. unfold monPred_wand_def. unfold monPred_upclosed. simpl. split.
     intros. simpl. repeat red. intros. exists emp. exists x; exists heap_empty.
     repeat split; auto. rewrite monPred_at_emp in H0. apply H0.
     intros h0 P0. inversion_star H h P. simpl in *. rewrite <- P2 in *. inversion P1. inversion H3.
-    subst. rewrite heap_union_empty_l. rewrite <- P2. apply H.
+    subst. rewrite heap_union_empty_l. rewrite <- P2. destruct a. apply H.
     apply map_disjoint_empty_r.
   Qed.
   
@@ -988,10 +1047,10 @@ Module adequacy.
     + inversion H3. rewrite heap_union_empty_l. reflexivity.
   Qed.
 
-  Lemma adequacy {X} : forall (e : mon X) (Φ : X -> iProp) h v h' i,
+  Lemma adequacy {X} : forall (e : mon X) (Φ : X -> iProp) h v h',
       (heap_ctx h ⊢ WP e |{ Φ }|) ->
       run e h = Res (h', v) ->
-      (Φ v) i h'.
+      (Φ v) () h'.
   Proof.
     fix e 1. destruct e0; simpl; intros.
     - inversion H0; subst. apply soundness2. iApply H.
@@ -1006,10 +1065,10 @@ Module adequacy.
         iApply (H with "HA HB").
   Qed.
 
-  Lemma adequacy_triple {X} : forall (e : mon X) (Φ : X -> iProp) h v h' i H,
+  Lemma adequacy_triple {X} : forall (e : mon X) (Φ : X -> iProp) h v h' H,
       (heap_ctx h ⊢ {{ H }} e {{ v, RET v; Φ v }} ∗ H) ->
       run e h = Res (h', v) ->
-      (Φ v) i h'.
+      (Φ v) () h'.
   Proof.
     fix e 1. destruct e0; simpl; intros.
     - apply soundness2.

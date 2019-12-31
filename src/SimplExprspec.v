@@ -183,26 +183,25 @@ Section SPEC.
 | Csyntax.Eassign e1 e2 ty =>
   ∃ sla2 sla3, tr_expr le For_val e1 sla2  ∗
                        tr_expr le For_val e2 sla3  ∗
-                       ((⌜ sla.1 = sla2.1 ++ sla3.1 ++ make_assign sla2.2 sla3.2 :: nil /\  dst = For_effects ⌝ -∗ False) ∗
-                                                                                                                          ((∃ t, \s t ∗ ⌜ sla.1 = sla2.1 ++ sla3.1 ++ Sset t (Ecast sla3.2 (Csyntax.typeof e1)) :: make_assign sla2.2 (Etempvar t (Csyntax.typeof e1)) :: final dst (Etempvar t (Csyntax.typeof e1)) ⌝) -∗ False) -∗ False)
+                       (⌜ sla.1 = sla2.1 ++ sla3.1 ++ make_assign sla2.2 sla3.2 :: nil /\  dst = For_effects ⌝ ∨ (∃ t, \s t ∗ ⌜ sla.1 = sla2.1 ++ sla3.1 ++ Sset t (Ecast sla3.2 (Csyntax.typeof e1)) :: make_assign sla2.2 (Etempvar t (Csyntax.typeof e1)) :: final dst (Etempvar t (Csyntax.typeof e1)) ⌝))
 | Csyntax.Eassignop ope e1 e2 tyres ty =>
   ∃ sla2 sla3 sla4, tr_expr le For_val e1 sla2  ∗
                             tr_expr le For_val e2 sla3  ∗
                             tr_rvalof (Csyntax.typeof e1) sla2.2 sla4  ∗
-                            ((⌜ dst = For_effects /\
-                              sla.1 = sla2.1 ++ sla3.1 ++ sla4.1 ++ make_assign sla2.2 (Ebinop ope sla4.2 sla3.2 tyres) :: nil ⌝ -∗ False) ∗ ((∃ t, \s t ∗ ⌜ sla = (sla2.1 ++ sla3.1 ++ sla4.1 ++ Sset t (Ecast (Ebinop ope sla4.2 sla3.2 tyres) (Csyntax.typeof e1)) :: make_assign sla2.2 (Etempvar t (Csyntax.typeof e1)) :: final dst (Etempvar t (Csyntax.typeof e1)), (Etempvar t (Csyntax.typeof e1))) ⌝) -∗ False) -∗ False)
+                            (⌜ dst = For_effects /\
+                              sla.1 = sla2.1 ++ sla3.1 ++ sla4.1 ++ make_assign sla2.2 (Ebinop ope sla4.2 sla3.2 tyres) :: nil ⌝ ∨ (∃ t, \s t ∗ ⌜ sla = (sla2.1 ++ sla3.1 ++ sla4.1 ++ Sset t (Ecast (Ebinop ope sla4.2 sla3.2 tyres) (Csyntax.typeof e1)) :: make_assign sla2.2 (Etempvar t (Csyntax.typeof e1)) :: final dst (Etempvar t (Csyntax.typeof e1)), (Etempvar t (Csyntax.typeof e1))) ⌝))
 | Csyntax.Epostincr id e1 ty =>
-  (((∃ sla2 sla3,
+  ((∃ sla2 sla3,
         tr_expr le For_val e1 sla2  ∗
                 tr_rvalof (Csyntax.typeof e1) sla2.2 sla3  ∗
                 ⌜ sla.1 = sla2.1 ++ sla3.1 ++
-                                 make_assign sla2.2 (transl_incrdecr id sla3.2 (Csyntax.typeof e1)) :: nil ⌝) -∗ False) ∗
-                                                                                                                        ((∃ sla2 t,
+                                 make_assign sla2.2 (transl_incrdecr id sla3.2 (Csyntax.typeof e1)) :: nil ⌝) ∨
+                                                                                                                        (∃ sla2 t,
                                                                                                                              tr_expr le For_val e1 sla2  ∗
                                                                                                                                      \s t  ∗
                                                                                                                                      ⌜ sla = (sla2.1 ++ make_set t sla2.2 ::
                                                                                                                                                      make_assign sla2.2 (transl_incrdecr id (Etempvar t (Csyntax.typeof e1)) (Csyntax.typeof e1)) ::
-                                                                                                                                                     final dst (Etempvar t (Csyntax.typeof e1)),Etempvar t (Csyntax.typeof e1))⌝) -∗ False) -∗ False)
+                                                                                                                                                     final dst (Etempvar t (Csyntax.typeof e1)),Etempvar t (Csyntax.typeof e1))⌝))
 
 | Csyntax.Ecomma e1 e2 ty =>
   ∃ sla2 sl3,
@@ -293,86 +292,91 @@ Section SPEC.
 
   
   Lemma transl_meets_spec :
-    (forall r dst le,
-        {{ emp }} transl_expr dst r {{ res, RET res; dest_below dst -∗ tr_expr le dst r res}})
+    (forall r dst,
+        {{ emp }} transl_expr dst r {{ res, RET res; (∀ le, dest_below dst -∗ tr_expr le dst r res)}})
     /\
-    (forall rl le,
-        {{ emp }} transl_exprlist rl {{ res, RET res; tr_exprlist le rl res }}).
+    (forall rl,
+        {{ emp }} transl_exprlist rl {{ res, RET res; (∀ le, tr_exprlist le rl res) }}).
   Proof.
     pose transl_valof_meets_spec.
     apply tr_expr_exprlist; intros; rewrite /transl_expr; rewrite /transl_exprlist;
       fold transl_exprlist; fold transl_expr; tac2; rewrite /tr_expr; fold tr_expr; tac2.
     - destruct v; tac2; iApply ret_spec_complete; destruct dst; iIntros; eauto;
-        try (iSplit); eauto; iIntros; iPureIntro; eauto; intros; constructor; intros;
+        try iSplit; eauto; iIntros; iPureIntro; eauto; intros; constructor; intros;
           try constructor; try reflexivity.
     - iApply ret_spec_complete. iIntros "[HA HB]"; iFrame.
       destruct dst; iIntros; iPureIntro; reflexivity.
-    - iApply ret_spec_complete. 
-      iIntros "[HA HB]". iFrame.
-      iSplitL "HA". iApply "HA". trivial. iPureIntro.
+    - apply forall_wand_true_pre. iApply ret_spec_complete. iIntros "HA" (?) "HB".
+      iExists v. iFrame.
+      iSplitL "HA". iApply "HA". iPureIntro.
       destruct dst; simpl; eauto; rewrite app_nil_r; reflexivity.
     - frameR; apply b.
     - iApply ret_spec_complete.
-      iIntros "[[HA HB] HC]". iFrame. iSplitL "HB". iApply "HB". trivial.
+      iIntros "[HA HB]" (?) "HC". iExists v; iExists v0.1. iFrame. iSplitL "HB". iApply "HB". trivial.
       destruct dst; iSimpl; iSplitL "HA"; try(rewrite <- surjective_pairing; iApply "HA");
         iPureIntro; try(rewrite app_nil_r; reflexivity); rewrite app_assoc; reflexivity.
     - iApply ret_spec_complete.
-      iIntros "[HA HB]". iFrame. iSplitL "HA". iApply "HA". trivial. iFrame.
+      iIntros "HA" (le) "HB". iExists v. iSplitL "HA". iApply "HA". trivial. iFrame.
       iPureIntro. destruct dst; simpl; try (rewrite app_nil_r); reflexivity.
     - iApply ret_spec_complete.
-      iIntros "[HA HB]". iFrame. iSplitL "HA". iApply "HA". trivial.
+      iIntros "HA" (le) "HB". iExists v. iFrame. iSplitL "HA". iApply "HA". trivial.
       iPureIntro. destruct dst; simpl; try (rewrite app_nil_r); reflexivity.
     - iApply ret_spec_complete.
-      iIntros "[HA HB]". iSplitL "HA". iApply "HA". trivial. iFrame.
+      iIntros "HA" (le) "HB". iExists v. iSplitL "HA". iApply "HA". trivial. iFrame.
       iPureIntro. destruct dst; simpl; try (rewrite app_nil_r); reflexivity.
     - frameR. apply H0.
     - iApply ret_spec_complete.
-      iIntros "[[HA HC] HB]". iSplitL "HC". iApply "HC". trivial.
-      iSplitL "HA". iApply "HA". trivial. iFrame.
+      iIntros "[HA HC]" (le) "HB".
+      repeat iExists _. iFrame.
+      iSplitL "HC". iApply "HC". trivial.
+      iSplitL "HA". iApply "HA". trivial.
       iPureIntro. destruct dst; simpl; try (rewrite app_nil_r; reflexivity).
       rewrite app_assoc. reflexivity.
     - iApply ret_spec_complete.
-      iIntros "[HA HB]". iSplitL "HA". iApply "HA". trivial. iFrame.
+      iIntros "HA" (le) "HB". iExists _. iSplitL "HA". iApply "HA". trivial. iFrame.
       iPureIntro. destruct dst; simpl; try (rewrite app_nil_r); reflexivity.
     - destruct dst; repeat tac2.
       + frameR. apply H0.
       + iApply ret_spec_complete.
-        iIntros "[[HA [HC HD]] HB]".
-        iSplitL "HD". iApply "HD". trivial. iFrame.
+        iIntros "[HA [HC HD]]" (?) "_". repeat iExists _. iFrame.
+        iSplitL "HD". iApply "HD". trivial.
         iSplitL "HA". iIntros "HB". iApply "HA".  iExists ty. iApply "HB".
         iPureIntro. reflexivity.
       + frameR. apply H0.
       + iApply ret_spec_complete.
-        iIntros "[[HA HC] HB]".
+        iIntros "[HA HC]" (le) "HB". repeat iExists _. 
         iSplitL "HC". iApply "HC". trivial.
         iSplitL "HA". iApply "HA".  trivial.
         iPureIntro. reflexivity.
       + frameR. apply H0.
-      + iApply ret_spec_complete. iIntros "[[HA HC] HB]". iFrame.
+      + iApply ret_spec_complete. iIntros "[HA HC]" (le) "HB". iFrame.
+        repeat iExists _.
         iSplitL "HC". iApply "HC". trivial.
+        iSplitL "HA". iApply "HA". 
         iPureIntro. reflexivity.
     - destruct dst; repeat tac2.
       + frameR. apply H0.
       + iApply ret_spec_complete.
-        iIntros "[[HA [HC HD]] HB]".
-        iSplitL "HD". iApply "HD". trivial. iFrame.
+        iIntros "[HA [HC HD]]" (le) "HB". repeat iExists _. iFrame.
+        iSplitL "HD". iApply "HD". trivial.
         iSplitL "HA". iIntros "HB". iApply "HA".  iExists ty. iApply "HB".
         iPureIntro. reflexivity.
       + frameR. apply H0.
       + iApply ret_spec_complete.
-        iIntros "[[HA HC] HB]".
+        iIntros "[HA HC]" (le) "HB". repeat iExists _.
         iSplitL "HC". iApply "HC". trivial.
         iSplitL "HA". iApply "HA".  trivial.
         iPureIntro. reflexivity.
       + frameR. apply H0.
-      + iApply ret_spec_complete. iIntros "[[HA HC] HB]". iFrame.
+      + iApply ret_spec_complete. iIntros "[HA HC]" (le) "HB". repeat iExists _.
         iSplitL "HC". iApply "HC". trivial.
+        iSplitL "HA". iApply "HA". iFrame.
         iPureIntro. reflexivity.
     - destruct dst; repeat tac2.
       + frameR. apply H0.
       + frameR. apply H1.
       + iApply ret_spec_complete.
-        iIntros "[[HA [HC [HE HD]]] HB]".
+        iIntros "[HA [HC [HE HD]]]" (le) "HB". repeat iExists _.
         iSplitL "HD". iApply "HD". trivial. iFrame.
         iSplitL "HC". iIntros. iApply "HC". iExists ty. iFrame.
         iSplitL "HA". iIntros "HB". iApply "HA".  iExists ty. iApply "HB".
@@ -380,14 +384,14 @@ Section SPEC.
       + frameR. apply H0.
       + frameR. apply H1.
       + iApply ret_spec_complete.
-        iIntros "[[HA [HC HD]] HB]".
+        iIntros "[HA [HC HD]]" (le) "HB". repeat iExists _.
         iSplitL "HD". iApply "HD". trivial.
         iSplitL "HC". iApply "HC". trivial.
         iSplitL "HA". iApply "HA". trivial.
         iPureIntro. reflexivity.
       + frameR. apply H0.
       + frameR. apply H1.
-      + iApply ret_spec_complete. iIntros "[[HA [HD [HE HC]]] HB]". iFrame.
+      + iApply ret_spec_complete. iIntros "[HA [HD [HE HC]]]" (le) "HB". repeat iExists _. iFrame.
         iSplitL "HC". iApply "HC". trivial.
         iSplitL "HD". iIntros "HA". iApply "HD". iExists ty. iFrame.
         iSplitL "HA". iIntros "HB". iApply "HA". iExists ty. iFrame.
@@ -397,163 +401,204 @@ Section SPEC.
     - frameR. eapply H0.
     - destruct dst; tac2.
       + iApply ret_spec_complete.
-        iIntros "[[HA [HD HC]] HB]".
+        iIntros "[HA [HD HC]]" (le) "HB". repeat iExists _.
         iSplitL "HC". iApply "HC". trivial.
         iSplitL "HD". iApply "HD". trivial.
-        iIntros "[HLeft HRight]". iApply "HRight".
-        iExists v1. 
+        iRight. iExists v1. 
         iSplitL "HA". iExists (Csyntax.typeof l). iApply "HA". 
         iPureIntro. reflexivity.
       + iApply ret_spec_complete.
-        iIntros "[[HA HC] HB]".
+        iIntros "[HA HC]" (le) "HB". repeat iExists _.
         iSplitL "HC". iApply "HC". trivial.
         iSplitL "HA". iApply "HA". trivial.
-        iIntros "[HLeft HRight]". iApply "HLeft".
-        iPureIntro. split; reflexivity.
+        iLeft. iPureIntro. split; reflexivity.
       + iApply ret_spec_complete.
-        iIntros "[[HA [HD HC]] HB]".
+        iIntros "[HA [HD HC]]" (le) "HB". repeat iExists _.
         iSplitL "HC". iApply "HC". trivial.
-        iSplitL "HD". iApply "HD". trivial.
-        iIntros "[HLeft HRight]". iApply "HRight".
-        iExists v1.
-        iSplitL "HA". iExists (Csyntax.typeof l). iApply "HA". 
+        iSplitL "HD". iApply "HD". trivial. iRight.
+        iExists v1. iSplitL "HA". iExists (Csyntax.typeof l). iApply "HA". 
         iPureIntro. simpl. admit.
     - frameR. apply H0.
     - frameR. apply transl_valof_meets_spec.
     - destruct dst; tac2.
       + iApply ret_spec_complete.
-        iIntros "[[HA [HD [HE HC]]] HB]".
+        iIntros "[HA [HD [HE HC]]]" (le) "HB". repeat iExists _.
         iSplitL "HC". iApply "HC". trivial.
         iSplitL "HE". iApply "HE". trivial.
         iSplitL "HD". iApply "HD".
-        iIntros "[HLeft HRight]". iApply "HRight".
-        iExists v2.
+        iRight. iExists v2.
         iSplitL "HA". iExists (Csyntax.typeof l). iApply "HA". 
         iPureIntro. reflexivity.
       + iApply ret_spec_complete.
-        iIntros "[[HA [HD HC]] HB]".
+        iIntros "[HA [HD HC]]" (le) "HB". repeat iExists _.
          iSplitL "HC". iApply "HC". trivial.
          iSplitL "HD". iApply "HD". trivial.
-         iFrame.
-         iIntros "[HLeft HRight]". iApply "HLeft".
+         iFrame. iLeft.
          iPureIntro. split; reflexivity.
       + iApply ret_spec_complete.
-        iIntros "[[HA [HD [HE HC]]] HB]".
+        iIntros "[HA [HD [HE HC]]]" (le) "HB". repeat iExists _.
         iSplitL "HC". iApply "HC". trivial.
         iSplitL "HE". iApply "HE". trivial.
         iSplitL "HD". iApply "HD".
-        iIntros "[HLeft HRight]". iApply "HRight".
-        iExists v2.
+        iRight. iExists v2.
         iSplitL "HA". iExists (Csyntax.typeof l). iApply "HA". 
         iPureIntro. simpl. admit.
     - destruct dst; tac2.
       + iApply ret_spec_complete.
-        iIntros "[[HA HC] HB] [HLeft HRight]".
-        iApply "HRight".
-        iExists v. iExists v0.
+        iIntros "[HA HC]" (le) "HB".
+        iRight. iExists v. iExists v0.
         iSplitL "HC". iApply "HC". trivial.
         iSplitL "HA". iExists (Csyntax.typeof l). iApply "HA".
         iPureIntro. reflexivity.
       + frameR. apply b.
       + iApply ret_spec_complete.
-        iIntros "[[HA HC] HB] [HLeft HRight]".
-        iApply "HLeft". iExists v. iExists v0.
+        iIntros "[HA HC]" (le)  "HB".
+        iLeft. iExists v. iExists v0.
         iSplitL "HC". iApply "HC". trivial.
         iFrame.
         iPureIntro. reflexivity.
       + iApply ret_spec_complete.
-        iIntros "[[HA HC] HB] [HLeft HRight]".
-        iApply "HRight".
+        iIntros "[HA HC]" (le) "HB".
+        iRight.
         iExists v. iExists v0.
         iSplitL "HC". iApply "HC". trivial.
         iSplitL "HA". iExists (Csyntax.typeof l). iApply "HA".
         iPureIntro. simpl. admit.
     - frameR. apply H0.
     - iApply ret_spec_complete. 
-      iIntros "[[HA HC] HB]".
+      iIntros "[HA HC]" (le) "HB". repeat iExists _.
       iSplitL "HC". iApply "HC". trivial.
       iSplitL "HA". iIntros "HC". iSimpl. rewrite <- surjective_pairing.
       iApply "HA". iApply "HC".
       iFrame. iPureIntro. reflexivity.
-    - frameL. apply H0.
     - destruct dst; tac2; fold tr_exprlist; fold tr_expr.
       + iApply ret_spec_complete. 
-        iIntros "[[HA [HD HC]] HB]".
-        iSplitL "HD". iApply "HD". trivial.
+        iIntros "[HA [HD HC]]" (le) "HB". repeat iExists _.
+        iSplitL "HC". iApply "HC". trivial.
         iFrame.
-        iSplitL "HA". iExists ty. iApply "HA". 
+        iSplitL "HD". iApply "HD".
+        iSplitL. iExists ty. iApply "HA". 
         iPureIntro. reflexivity.
       + iApply ret_spec_complete. 
-        iIntros "[[HA HD] HB]".
+        iIntros "[HA HD]" (le) "HB". repeat iExists _.
+        iSplitL "HD". iApply "HD". trivial.
         iSplitL "HA". iApply "HA". trivial.
-        iFrame.
-        iPureIntro. reflexivity.
       + iApply ret_spec_complete. 
-        iIntros "[[HA [HD HC]] HB]".
-        iSplitL "HD". iApply "HD". trivial.
-        iFrame "HC".
+        iIntros "[HA [HD HC]]" (le) "HB". repeat iExists _.
+        iSplitL "HC". iApply "HC". trivial.
+        iSplitL "HD". iApply "HD".
         iSplitL "HA". iExists ty. iApply "HA".
         iFrame.
         iPureIntro. simpl. admit. 
-    - apply H.
     - fold tr_exprlist. destruct dst; tac2.
       + iApply ret_spec_complete. 
-        iIntros "[[HA HC] HB]".
-        iFrame.
+        iIntros "[HA HC]" (le) "HB". repeat iExists _.
+        iSplitL "HC". iApply "HC".
         iSplitL "HA". iExists ty. iApply "HA".
+        iFrame.
         iPureIntro. reflexivity.
       + iApply ret_spec_complete.
-        iIntros "[HA HB]".
-        iFrame.
+        iIntros "HA" (le) "HB". repeat iExists _.
+        iSplitL "HA". iApply "HA".
         iPureIntro. reflexivity.
       + iApply ret_spec_complete. 
-        iIntros "[[HA HC] HB]".
-        iFrame "HC".
+        iIntros "[HA HC]" (le) "HB". repeat iExists _.
+        iSplitL "HC". iApply "HC".
         iSplitL "HA". iExists ty. iApply "HA".
         iFrame.
         iPureIntro. simpl. admit. 
-    - apply ret_spec_pure.
-    - frameR. apply H0.
+    - iApply ret_spec_bis. eauto.
     - rewrite /tr_exprlist; fold tr_exprlist; fold tr_expr; tac2.
       iApply ret_spec_complete. 
-      iIntros "[HA HB]".
-      iFrame.
+      iIntros "[HA HB]" (le). repeat iExists _.
       iSplitL "HB". iApply "HB". trivial.
+      iSplitL "HA". iApply "HA".
       iPureIntro. reflexivity.          
   Admitted.
 
+ 
+  
   Section TR_TOP.
 
     Variable ge: genv.
     Variable e: Clight.env.
     Variable le: temp_env.
     Variable m: mem.
+    
+    Definition tr_top_base dst r sl a := tr_expr le dst r (sl,a).
 
-    Definition tr_top_base dst r sla := tr_expr le dst r sla.
-
-    Definition tr_top_val_val (dst : destination) expr (sla : list statement * Clight.expr)  : iProp :=
-      match sla with
-      | (nil,a) => ∃ v ty, ⌜ typeof a = ty /\ eval_expr ge e le m a v /\ dst = For_val
-                  /\ expr = Csyntax.Eval v ty⌝
+    Definition tr_top_val_val (dst : destination) expr (sl : list statement)  : Prop :=
+      match sl with
+      | nil => exists v ty a, typeof a = ty /\ eval_expr ge e le m a v /\ dst = For_val
+                  /\ expr = Csyntax.Eval v ty
       | _ => False
     end.
 
-    Definition tr_top dst expr sla := ((tr_top_base dst expr sla -∗ False)
-                                         ∗ (tr_top_val_val dst expr sla -∗ False)) -∗ False.
-  
+    Definition tr_top dst expr sl a := tr_top_base dst expr sl a ∨ \⌜tr_top_val_val dst expr sl⌝.
+
   End TR_TOP.
 
-  (** ** Translation of statements *)
+    
+(** ** Translation of statements *)
 
-  Definition tr_expression (r : Csyntax.expr) (s : statement) (a: expr) : iProp :=
-    ∃ sl, \⌜ s = makeseq sl ⌝ ∗ ∃ le, tr_expr le For_val r (sl,a).
+  Lemma transl_expr_meets_spec:
+    forall r dst,
+      {{ emp }} transl_expr dst r {{ res, RET res;  dest_below dst -∗ ∀ ge e le m, tr_top  ge e le m dst r res.1 res.2 }}.
+  Proof.
+    intros. exploit (proj1 transl_meets_spec); eauto. intro. iIntros (?) "_ HA".
+    iApply H; eauto. iIntros (res) "HB". iApply "HA". iIntros. rewrite /tr_top.
+    iLeft. rewrite /tr_top_base.
+    rewrite (surjective_pairing res). iApply "HB". iFrame. 
+  Qed.
 
-  Definition tr_expr_stmt (r : Csyntax.expr) (s : statement) : iProp :=
-    ∃ sla, \⌜ s = makeseq sla.1 ⌝ ∗ ∃ le, tr_expr le For_effects r sla.
+      
+  Definition tr_expression r s a : iProp :=
+    ∃ sl, (∀ ge e le m, tr_top ge e le m For_val r sl a) ∗ ⌜ s = makeseq sl ⌝.
+
+  Lemma transl_expression_meets_spec: forall r,
+      {{ emp }} transl_expression r {{ res, RET res; tr_expression r res.1 res.2 }}.
+  Proof.
+    intro. unfold transl_expression. epose transl_meets_spec. destruct a. unfold tr_expression; tac2.
+    - apply (H r For_val).
+    - iApply ret_spec_complete.
+      iIntros "HA". iSplitL.
+      + iIntros. iLeft. unfold tr_top_base. simpl.
+        rewrite <- surjective_pairing.
+        iApply "HA". trivial.
+      + iPureIntro. reflexivity.
+  Qed.
+  
+  Definition tr_expr_stmt r s : iProp :=
+    ∃ sl a, (∀ ge e le m, tr_top ge e le m For_effects r sl a) ∗ ⌜ s = makeseq sl ⌝.
 
   
-  Definition tr_if (r : Csyntax.expr) (s0 : statement) (s1: statement) (s2 : statement) : iProp :=
-    ∃ sla, \⌜ s2 = makeseq (sla.1 ++ makeif sla.2 s0 s1 :: nil) ⌝ ∗ ∃ le, tr_expr le For_val r sla.
+  Lemma transl_expr_stmt_meets_spec: forall r,
+      {{ emp }} transl_expr_stmt r {{ res, RET res; tr_expr_stmt r res }}.
+  Proof.
+    intro. unfold transl_expr_stmt. epose transl_meets_spec. destruct a; unfold tr_expr_stmt; tac2.
+    - apply H.
+    - iApply ret_spec_complete.
+      iIntros "HA". iSplitL; eauto. iIntros.
+      iLeft. unfold tr_top_base.
+      rewrite <- surjective_pairing.
+      iApply "HA". trivial.
+  Qed.
+
+  Definition tr_if r s1 s2 s3 : iProp :=
+    ∃ sl a, (∀ ge e le m, tr_top ge e le m For_val r sl a)
+              ∗ ⌜ s3 = makeseq (sl ++ makeif a s1 s2 :: nil) ⌝.
+  Lemma transl_if_meets_spec: forall r s1 s2,
+      {{ emp }} transl_if r s1 s2 {{ res, RET res; tr_if r s1 s2 res }}.
+  Proof.
+    intros. epose transl_meets_spec. destruct a; unfold transl_if; unfold tr_if; tac2.
+    - apply H.
+    - iApply ret_spec_complete.
+      iIntros "HA". iSplitL; eauto.
+      iIntros. iLeft.
+      unfold tr_top_base.
+      rewrite <- surjective_pairing.
+      iApply "HA". trivial.
+  Qed.
   
   Fixpoint tr_stmt (r : Csyntax.statement) (s : statement) :=
     match r with
@@ -635,38 +680,6 @@ Section SPEC.
             \⌜ls = LScons c ts tls⌝
          end.
 
-  Lemma transl_expression_meets_spec: forall r,
-      {{ emp }} transl_expression r {{ res, RET res; tr_expression r res.1 res.2 }}.
-  Proof.
-    intro. unfold transl_expression. epose transl_meets_spec. destruct a. unfold tr_expression; tac2.
-    - apply (H r For_val Maps.PTree.Leaf).
-    - iApply ret_spec_complete.
-      iIntros "HA". iSplitR.
-      + iPureIntro. reflexivity.
-      + iExists Maps.PTree.Leaf. iSimpl. rewrite <- surjective_pairing.
-        iApply "HA". trivial.
-  Qed.
-
-  Lemma transl_expr_stmt_meets_spec: forall r,
-      {{ emp }} transl_expr_stmt r {{ res, RET res; tr_expr_stmt r res }}.
-  Proof.
-    intro. unfold transl_expr_stmt. epose transl_meets_spec. destruct a; unfold tr_expr_stmt; tac2.
-    - apply (H _ _ Maps.PTree.Leaf).
-    - iApply ret_spec_complete.
-      iIntros "HA". iSplitR; eauto. iExists Maps.PTree.Leaf. iApply "HA". trivial.
-  Qed.
-
-  Lemma transl_if_meets_spec: forall r s1 s2,
-      {{ emp }} transl_if r s1 s2 {{ res, RET res; tr_if r s1 s2 res }}.
-  Proof.
-    intros. epose transl_meets_spec. destruct a; unfold transl_if; unfold tr_if; tac2.
-    - apply (H _ _ Maps.PTree.Leaf).
-    - iApply ret_spec_complete.
-      iIntros "HA". iSplitR.
-      + iPureIntro. reflexivity.
-      + iExists Maps.PTree.Leaf. iApply "HA". trivial.
-  Qed.
-  
   Lemma transl_stmt_meets_spec : forall s,
       {{ emp }} transl_stmt s {{ res, RET res; tr_stmt s res }}
   with transl_lblstmt_meets_spec:
@@ -697,11 +710,10 @@ Section SPEC.
     - destruct (is_Sskip).
       + iApply ret_spec_complete.
         iIntros "[HA [HC [HD HB]]]". iFrame.
-        rewrite e0.
-        iPureIntro. reflexivity.
+        rewrite e0. eauto.
       + iApply ret_spec_complete.
         iIntros "[HA [HC [HD HB]]]". iFrame.
-        iPureIntro. apply n.
+        iPureIntro; eauto.
     - destruct o; tac2. iApply ret_spec_complete. eauto.
     - fold transl_lblstmt. frameR. apply transl_lblstmt_meets_spec.
     -  fold tr_lblstmts. iApply ret_spec_complete. iIntros "[HA HB]". iFrame.
@@ -710,12 +722,14 @@ Section SPEC.
         rewrite /tr_lblstmts; fold tr_lblstmts; fold tr_stmt; tac2.
       apply comm_pre. apply frame_l. frameL. apply ret_spec_pure.
   Qed.
-      
+ 
+  
+  
   (** Relational presentation for the transformation of functions, fundefs, and variables. *)
 
   Inductive tr_function: Csyntax.function -> Clight.function -> Prop :=
-  | tr_function_intro: forall f tf i h,
-      tr_stmt f.(Csyntax.fn_body) tf.(fn_body) i h ->
+  | tr_function_intro: forall f tf h,
+      tr_stmt f.(Csyntax.fn_body) tf.(fn_body) () h ->
       fn_return tf = Csyntax.fn_return f ->
       fn_callconv tf = Csyntax.fn_callconv f ->
       fn_params tf = Csyntax.fn_params f ->
@@ -739,8 +753,8 @@ Section SPEC.
     unfold transl_function; intros.
     destruct (run (transl_stmt (Csyntax.fn_body f)) ∅) eqn:?. rewrite Heqe in H. inversion H.
     destruct p.
-    apply (tr_function_intro _ _ 0%nat s); inv H; rewrite Heqe in H1; inversion H1; auto.
-      apply (adequacy_triple (transl_stmt (Csyntax.fn_body f)) _ ∅ s0 s 0%nat emp).
+    apply (tr_function_intro _ _ s); inv H; rewrite Heqe in H1; inversion H1; auto.
+      apply (adequacy_triple (transl_stmt (Csyntax.fn_body f)) _ ∅ s0 s emp).
       2 : apply Heqe.
       iIntros "HA". iSplitL. iApply (transl_stmt_meets_spec (Csyntax.fn_body f)). trivial.
   Qed.
