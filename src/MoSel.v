@@ -811,6 +811,25 @@ Module weakestpre_gensym.
     iIntros (?) "HA". iApply "HB". iExists v'. iApply "HA".
   Qed.
 
+  Lemma post_weaker {X} H (Q : X -> iProp) (Q' : X -> iProp) (e : mon X) :
+    {{ H }} e {{ v, RET v; Q' v }} ->
+    (forall v, Q' v -∗ Q v) ->
+    {{ H }} e {{ v, RET v; Q v }}.
+  Proof.
+    intros. iIntros (?) "HA HB". iApply (H0 with "HA"). iIntros (?) "HA". iApply "HB".
+    iApply H1. iApply "HA".
+  Qed.
+
+  Lemma pre_stronger {X} H H' (Q : X -> iProp) (e : mon X) :
+    {{ H }} e {{ v, RET v; Q v }} ->
+    (H' -∗ H) ->
+    {{ H' }} e {{ v, RET v; Q v }}.
+  Proof.
+    intros. iIntros (?) "HA HB". iApply (H0 with "[HA]").
+    - iApply H1. iApply "HA".
+    - iApply "HB".
+  Qed.
+
   Lemma intro_true_l {X} H Φ' (e : mon X) :
     {{ H ∗ emp }} e {{ v, RET v; Φ' v }} ->
     {{ H }} e {{ v, RET v; Φ' v }}.
@@ -1029,8 +1048,17 @@ Module adequacy.
     subst. rewrite heap_union_empty_l. rewrite <- P2. destruct a. apply H.
     apply map_disjoint_empty_r.
   Qed.
+
+  Lemma soundness4 (Φ : Prop) h : Φ -> heap_ctx h -∗ ⌜ Φ ⌝.
+  Proof.
+    MonPred.unseal. unfold monPred_wand_def. unfold monPred_upclosed. simpl. split.
+    intros. simpl. repeat red. intros. exists emp. exists x; exists heap_empty.
+    repeat split; auto. rewrite monPred_at_emp in H0. apply H0.
+    apply map_disjoint_empty_r.
+  Qed.
   
-  Lemma heap_ctx_split h l t : h ##ₘ ({[l := t]}) -> heap_ctx (<[l := t]>h) -∗ heap_ctx h ∗ l ↦ t.
+  
+  Lemma heap_ctx_split_sing h l t : h ##ₘ ({[l := t]}) -> heap_ctx (<[l := t]>h) -∗ heap_ctx h ∗ l ↦ t.
   Proof.
     intro.
     MonPred.unseal. repeat red.
@@ -1047,6 +1075,22 @@ Module adequacy.
     + inversion H3. rewrite heap_union_empty_l. reflexivity.
   Qed.
 
+    Lemma heap_ctx_split h h' : h ##ₘ h' -> heap_ctx (h \u h') -∗ heap_ctx h ∗ heap_ctx h'.
+  Proof.
+    intro.
+    MonPred.unseal. repeat red.
+    unfold monPred_wand_def.
+    unfold monPred_sep_def.
+    unfold monPred_upclosed. split. simpl.
+    intro. intro P. intro. repeat red. exists hempty. rewrite monPred_at_emp in H0.
+    inversion H0; subst.
+    exists heap_empty; exists heap_empty. repeat split; auto.
+    + repeat intro. inversion_star H1 h P. inversion P1. subst.
+      exists h; exists h'. repeat split; auto. inversion P2; subst.
+      rewrite heap_union_empty_l. reflexivity.
+    + inversion H3. rewrite heap_union_empty_l. reflexivity.
+  Qed.
+  
   Lemma adequacy {X} : forall (e : mon X) (Φ : X -> iProp) h v h',
       (heap_ctx h ⊢ WP e |{ Φ }|) ->
       run e h = Res (h', v) ->
@@ -1061,7 +1105,7 @@ Module adequacy.
         iIntros "HA".
         pose (fresh_ident_spec h).
         apply (map_disjoint_singleton_r h (fresh_ident h) t) in e0.
-        iDestruct ((heap_ctx_split _ _ _ e0) with "HA") as "[HA HB]".
+        iDestruct ((heap_ctx_split_sing _ _ _ e0) with "HA") as "[HA HB]".
         iApply (H with "HA HB").
   Qed.
 
@@ -1083,11 +1127,35 @@ Module adequacy.
         2 : apply H1.
         iIntros "HA". pose (fresh_ident_spec h).
         apply (map_disjoint_singleton_r h (fresh_ident h) t) in e0.
-        iDestruct ((heap_ctx_split _ _ _ e0) with "HA") as "[HA HB]".
+        iDestruct ((heap_ctx_split_sing _ _ _ e0) with "HA") as "[HA HB]".
         iDestruct (H0 with "HA") as "[HA HC]".
         iSplitR "HC".
         iIntros (?) "HC HD". iApply ("HA" with "HC [HD]"); eauto. iApply "HC".
   Qed.
 
+  Lemma adequacy_pure {X} : forall (e : mon X) (Φ : X -> Prop) h v h' H,
+      (heap_ctx h ⊢ {{ H }} e {{ v, RET v; ⌜ Φ v ⌝}} ∗ H) ->
+      run e h = Res (h', v) ->
+      Φ v.
+  Proof.
+    fix e 1. destruct e0; simpl; intros.
+    - apply (soundness1 _ h).
+      inversion H1; subst.
+      iIntros "HA".
+      iDestruct (H0 with "HA") as "[HA HB]".
+      iDestruct ("HA" $! (fun v => ⌜ Φ v ⌝) with "HB") as "HA".
+      iApply "HA". eauto.
+    - destruct s.
+      + inversion H1.
+      + eapply e.
+        2 : apply H1.
+        iIntros "HA". pose (fresh_ident_spec h).
+        apply (map_disjoint_singleton_r h (fresh_ident h) t) in e0.
+        iDestruct ((heap_ctx_split_sing _ _ _ e0) with "HA") as "[HA HB]".
+        iDestruct (H0 with "HA") as "[HA HC]".
+        iSplitR "HC".
+        iIntros (?) "HC HD". iApply ("HA" with "HC [HD]"); eauto. iApply "HC".
+  Qed.
+    
 End adequacy.
        
