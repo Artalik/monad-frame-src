@@ -18,7 +18,7 @@ Require Import AST Linking.
 Require Import Values Memory Events Globalenvs Smallstep.
 Require Import Ctypes Cop Csyntax Csem Cstrategy Clight.
 Import Maps.PTree.
-Require Import MoSel SimplExpr SimplExprspec.
+Require Import MoSel Locally SimplExpr SimplExprspec.
 
 Local Open Scope gensym_monad_scope.
 Notation "a ! b" := (get b a) (at level 1).
@@ -60,7 +60,7 @@ Section PRESERVATION.
   Lemma symbols_preserved:
     forall (s: ident), Genv.find_symbol tge s = Genv.find_symbol ge s.
   Proof (Genv.find_symbol_match (proj1 TRANSL)).
-
+  
   Lemma senv_preserved:
     Senv.equiv ge tge.
   Proof (Genv.senv_match (proj1 TRANSL)).
@@ -149,94 +149,63 @@ Section PRESERVATION.
   Import adequacy.
 
   Lemma tr_simple_nil:
-    (forall r dst sl le a, tr_expr le dst r (sl,a) -∗
-                              ⌜ dst = For_val \/ dst = For_effects ⌝ -∗ ⌜ simple r = true ⌝ -∗ ⌜sl = nil ⌝)
-    /\(forall rl le sl al, tr_exprlist le rl (sl,al) -∗
-                                 ⌜ simplelist rl = true ⌝ -∗ ⌜ sl = nil ⌝).
+    (forall r dst sl le a, tr_expr le dst r sl a -∗
+    ⌜ dst = For_val \/ dst = For_effects ⌝ -∗ ⌜ simple r = true ⌝ -∗ ⌜sl = nil ⌝)
+    /\(forall rl le sl al, tr_exprlist le rl sl al -∗
+     ⌜ simplelist rl = true ⌝ -∗ ⌜ sl = nil ⌝).
   Proof.
     assert (A: forall dst a, dst = For_val \/ dst = For_effects -> final dst a = nil).
     intros. destruct H; subst dst; auto.
     apply tr_expr_exprlist; intros; simpl in *; try discriminate; auto.
     - destruct dst; eauto.
-      + iIntros "[_ [HA [% %]]] _ _". eauto.
-      + iIntros "[_ %] % _". eauto.
-      + iIntros "[_ HA] % _". destruct a0; discriminate.
-    - iIntros "[_ %] % _". iPureIntro. inversion H. destruct dst; auto.
-    - iIntros "[_ HA] % %". iDestruct "HA" as (sla2) "[HA %]".
-      rewrite (surjective_pairing sla2). iDestruct (H with "HA") as "HC".
-      destruct dst.
-      + iDestruct ("HC" $! a0 a1) as "HA". simpl in *. inversion H0. rewrite app_nil_r. iApply "HA". 
-      + iDestruct ("HC" with "[]") as "HA"; eauto. inversion H0. rewrite app_nil_r.
-        iApply ("HA" $! a1).
-      + destruct a0; discriminate.
-    - iIntros "[_ HA] % %". iDestruct "HA" as (sla2 sl3) "[HA [HB %]]".
-      rewrite (surjective_pairing sla2).
-      iDestruct (H with "HA") as "HD".
-      apply andb_true_iff in a1 as (P0&P1).
+      + iIntros "> [HA [_ %]] _ _ !% //".
+      + iIntros "> HA % _". destruct a0; discriminate.
+    - iIntros ">[% %] % _". subst. destruct a0; auto.
+    - iIntros "> HA % %". iDestruct "HA" as (sl2 a2) "[HA [% %]]".
+      iDestruct (H with "HA [] []") as "%"; auto. subst. destruct a0; eauto.
+    - iIntros "> HA % %". apply andb_true_iff in a1 as (P0&P1).
+      iDestruct "HA" as (sl2 a2 sl3) "[HA [HB %]]".
+      iDestruct (H with "HA [] []") as "%"; auto.
       unfold tr_rvalof. apply negb_true_iff in P1. rewrite P1.
-      iDestruct "HB" as "%". inversion H1; subst. destruct dst; simpl in *; try rewrite app_nil_r.
-      + iApply ("HD" $! a0 P0).
-      + iApply "HD"; eauto.
-      + destruct a0; discriminate.
-    - iIntros "[_ HA] % %". iDestruct "HA" as (sla2) "[HA %]".
-      rewrite (surjective_pairing sla2).
-      iDestruct (H with "HA") as "HD".
-      inversion H0.
-      destruct dst; simpl in *; try (rewrite app_nil_r; iApply "HD";eauto); destruct a0; discriminate.
-    - iIntros "[_ HA] % %". iDestruct "HA" as (sla2) "[HA %]".
-      rewrite (surjective_pairing sla2).
-      iDestruct (H with "HA") as "HD".
-      inversion H0.
-      destruct dst; simpl in *; try (rewrite app_nil_r; iApply "HD";eauto); destruct a0; discriminate.
-    - iIntros "[_ HA] % %". iDestruct "HA" as (sla2) "[HA %]".
-      rewrite (surjective_pairing sla2).
-      iDestruct (H with "HA") as "HD".
-      inversion H0.
-      destruct dst; simpl in *; try (rewrite app_nil_r; iApply "HD";eauto); destruct a0; discriminate.
-    - iIntros "[_ HA] % %". iDestruct "HA" as (sla2 sl3) "[HA [HB %]]".
-      rewrite (surjective_pairing sla2).
-      iDestruct (H with "HA") as "HD".
-      rewrite (surjective_pairing sl3).
-      iDestruct (H0 with "HB") as "HB".
+      iDestruct "HB" as "[% %]". subst. destruct a0; eauto.
+    - iIntros "> HA % %". iDestruct "HA" as (sl2 a2) "[HA [% %]]".
+      iDestruct (H with "HA [] []") as "%"; eauto. subst.
+      destruct a0; eauto.
+    - iIntros "> HA % %". iDestruct "HA" as (sl2 a2) "[HA [% %]]".
+      iDestruct (H with "HA [] []") as "%"; eauto. subst.
+      destruct a0; eauto.
+    - iIntros "> HA % %". iDestruct "HA" as (sl2 a2) "[HA [% %]]".
+      iDestruct (H with "HA [] []") as "%"; eauto. subst.
+      destruct a0; eauto.
+    - iIntros "> HA % %". iDestruct "HA" as (sl2 a2 sl3 a3) "[HA [HB [% %]]]".
       apply andb_true_iff in a1 as (P0&P1).
-      inversion H1.
-      iDestruct ("HD" with "[]") as "%"; eauto.
-      iDestruct ("HB" with "[]") as "%"; eauto.
-      iPureIntro. rewrite (H2 P0). rewrite (H5 P1).
-      destruct a0; subst; auto.
-    - iIntros "[_ HA] % %". iDestruct "HA" as (sla2) "[HA %]".
-      rewrite (surjective_pairing sla2).
-      iDestruct (H with "HA") as "HD".
-      inversion H0.
-      destruct dst; simpl in *; try (rewrite app_nil_r; iApply "HD";eauto); destruct a0; discriminate.
-    - iIntros "[_ %] % %". inversion H.
-      destruct dst; eauto.
-    - iIntros "[_ %] % %". inversion H.
-      destruct dst; eauto.
-    - iIntros "[_ %] %". inversion H.
-    - iIntros "[_ %] %". inversion H; eauto.
-    - iIntros "[_ HA] %". iDestruct "HA" as (sla2 slal3) "[HA [HB %]]".
-      rewrite (surjective_pairing sla2).
-      iDestruct (H with "[HA]") as "HC". iApply "HA".
-      rewrite (surjective_pairing slal3).
-      iDestruct (H0 with "[HB]") as "HA". iApply "HB".
-      iDestruct ("HC" with "[]") as "%"; eauto.
-      apply andb_true_iff in a as (P0&P1).
-      iDestruct ("HA" with "[]") as "%"; eauto.
-      iPureIntro. inversion H1. rewrite (H2 P0). rewrite H3. eauto.
+      iDestruct (H with "HA [] []") as "%"; eauto.
+      iDestruct (H0 with "HB [] []") as "%"; eauto.
+      subst. destruct a0; eauto.
+    - iIntros "> HA % %". iDestruct "HA" as (sl2 a2) "[HA [% %]]".
+      iDestruct (H with "HA [] []") as "%"; eauto. subst.
+      destruct a0; eauto.
+    - iIntros ">[% %] % %". subst.
+      destruct a0; eauto. 
+    - iIntros ">[% %] % %". subst. destruct a0; auto.
+    - iIntros ">[% %] %". auto. 
+    - iIntros "> HA %". apply andb_true_iff in a as (P0&P1). 
+      iDestruct "HA" as (sl2 a2 sl3 al3) "[HA [HB [% %]]]".
+      iDestruct (H with "HA [] []") as "%"; auto. 
+      iDestruct (H0 with "HB []") as "%"; auto. subst. auto.
   Qed.
 
   Lemma tr_simple_expr_nil:
     (forall r dst sl le a,
-        tr_expr le dst r (sl,a) -∗
-                ⌜ dst = For_val \/ dst = For_effects ⌝ -∗
-                                                    ⌜ simple r = true ⌝ -∗
-                                                                      ⌜sl = nil ⌝).
+    tr_expr le dst r sl a -∗
+    ⌜ dst = For_val \/ dst = For_effects ⌝ -∗
+    ⌜ simple r = true ⌝ -∗
+    ⌜sl = nil ⌝).
   Proof. apply (proj1 tr_simple_nil). Qed.
 
   Lemma tr_simple_exprlist_nil:
-    (forall rl le sl al, tr_exprlist le rl (sl,al) -∗
-                                ⌜ simplelist rl = true ⌝ -∗ ⌜ sl = nil ⌝).
+    (forall rl le sl al, tr_exprlist le rl sl al -∗
+    ⌜ simplelist rl = true ⌝ -∗ ⌜ sl = nil ⌝).
   Proof. apply (proj2 tr_simple_nil). Qed.
   
 
@@ -286,122 +255,116 @@ Section PRESERVATION.
       (forall r v,
           eval_simple_rvalue ge e m r v ->
           forall le dst sl a,
-            (tr_expr le dst r (sl,a)) -∗
-                                      ⌜ match dst with
-                                        | For_val => sl = nil /\ Csyntax.typeof r = typeof a /\ eval_expr tge e le m a v
-                                        | For_effects => sl = nil
-                                        | For_set sd =>
-                                          exists b, sl = do_set sd b
-                                                    /\ Csyntax.typeof r = typeof b
-                                                    /\ eval_expr tge e le m b v
-                                        end⌝)
+            tr_expr le dst r sl a -∗
+            ⌜ match dst with
+              | For_val => sl = nil /\ Csyntax.typeof r = typeof a /\ eval_expr tge e le m a v
+              | For_effects => sl = nil
+              | For_set sd =>
+                exists b, sl = do_set sd b /\ Csyntax.typeof r = typeof b /\ eval_expr tge e le m b v
+              end⌝)
       /\
       (forall l b ofs,
           eval_simple_lvalue ge e m l b ofs ->
-          forall le sl a, tr_expr le For_val l (sl,a) -∗                                               
-                                  ⌜ sl = nil /\ Csyntax.typeof l = typeof a /\ eval_lvalue tge e le m a b ofs ⌝).
+          forall le sl a, tr_expr le For_val l sl a -∗                                               
+          ⌜ sl = nil /\ Csyntax.typeof l = typeof a /\ eval_lvalue tge e le m a b ofs ⌝).
   Proof.
     Opaque makeif.
     intros e m.
     apply (eval_simple_rvalue_lvalue_ind ge e m); intros; simpl.
     (* value *)
     - destruct dst; simpl in *; auto.
-      + iIntros "[_ [HA [% %]]]". repeat (iSplit; auto). iApply "HA". eauto.
-      + iIntros "[_ HA]"; auto. 
-      + iIntros "[_ HA]". iDestruct "HA" as (a0) "[HA [% %]]". subst. iExists a0. repeat iSplit; eauto.
-        iApply "HA". auto.
+      + iIntros "> [HA [% %]]". repeat (iSplit; auto). iDestruct (locally_delete with "HA") as "HA".
+        iFrame.
+      + iIntros ">HA". iDestruct "HA" as (a0) "[HA [% %]]". subst.
+        iExists _. repeat iSplit; auto. iDestruct (locally_delete with "HA") as "HA". iFrame.
+        
     (* rvalof *)
     - destruct dst; subst; simpl in *.
-      + iIntros "[_ HA]". iDestruct "HA" as (sla2 sl3) "[HA [HB %]]".
-        rewrite (surjective_pairing sla2).
+      + iIntros ">HA". iDestruct "HA" as (sl2 a2 sl3) "[HA [HB %]]".
         iDestruct (H0 with "HA") as "[% [% %]]".
-        unfold tr_rvalof. rewrite H2. iDestruct "HB" as "%". inversion H7; subst.
-        iPureIntro. repeat split; auto. do 2 rewrite app_nil_r. apply H4.
+        unfold tr_rvalof. rewrite H2. iDestruct "HB" as "[% %]". subst.
+        iPureIntro. repeat split; auto. 
         eapply eval_Elvalue; eauto.
         exploit deref_loc_translated; eauto. unfold chunk_for_volatile_type; rewrite H2.
         intros (P0&P1). rewrite <- H5. assumption.
-      + iIntros "[_ HA]". iDestruct "HA" as (sla2 sl3) "[HA [HB %]]".
-        rewrite (surjective_pairing sla2).
+      + iIntros ">HA". iDestruct "HA" as (sl2 a2 sl3) "[HA [HB %]]".
         iDestruct (H0 with "HA") as "[% [% %]]".
-        unfold tr_rvalof. rewrite H2. iDestruct "HB" as "%". inversion H7; subst.
-        iPureIntro. do 2 rewrite app_nil_r. apply H4.
-      + iIntros "[_ HA]". iDestruct "HA" as (sla2 sl3) "[HA [HB %]]". iExists a.
-        rewrite (surjective_pairing sla2).
+        unfold tr_rvalof. rewrite H2. iDestruct "HB" as "[% %]". subst. auto.
+      + iIntros ">HA". iDestruct "HA" as (sl2 a2 sl3) "[HA [HB %]]". iExists a.
         iDestruct (H0 with "HA") as "[% [% %]]".
-        unfold tr_rvalof. rewrite H2. iDestruct "HB" as "%". inversion H7; subst.
-        iPureIntro. repeat split; auto. rewrite H4. do 2 rewrite app_nil_l. reflexivity.
+        unfold tr_rvalof. rewrite H2. iDestruct "HB" as "[% %]". subst. repeat iSplit; eauto.
+        iPureIntro. 
         eapply eval_Elvalue; eauto.
         exploit deref_loc_translated; eauto. unfold chunk_for_volatile_type; rewrite H2.
         intros (P0&P1). rewrite <- H5. apply P1.
-    - iIntros "[_ HA]". iDestruct "HA" as (sla2) "[HA %]". rewrite (surjective_pairing sla2).
-      iDestruct (H0 with "HA") as "[% [% %]]". inversion H1.
-      destruct dst; simpl in *; subst.
-      + iPureIntro. repeat split; auto.
-        * rewrite app_nil_r. apply H2.
-        * rewrite (typeof_Eaddrof' sla2.2 ty). reflexivity.
+    - iIntros ">HA". iDestruct "HA" as (sl2 a2) "[HA [% %]]". 
+      iDestruct (H0 with "HA") as "[% [% %]]". 
+      destruct dst; simpl in *; subst; auto.
+      + iPureIntro. repeat split; eauto. 
+        * rewrite (typeof_Eaddrof' a2 ty). reflexivity.
         * apply eval_Eaddrof'; auto.
-      + iPureIntro. rewrite app_nil_r. apply H2.
-      + iExists (Eaddrof' sla2.2 ty). iPureIntro. repeat split.
-        * rewrite H2. rewrite app_nil_l. reflexivity.
-        * rewrite (typeof_Eaddrof' sla2.2 ty). reflexivity.
+      + iExists (Eaddrof' a2 ty). iPureIntro. repeat split; auto.
+        * rewrite (typeof_Eaddrof' a2 ty). reflexivity.
         * apply eval_Eaddrof'; auto.
-    - iIntros "[_ HA]". iDestruct "HA" as (sla2) "[HA %]". rewrite (surjective_pairing sla2).
-      iDestruct (H0 with "HA") as "[% [% %]]". inversion H2.
-      destruct dst; simpl in *; subst.
-      + iPureIntro. repeat split; auto.
-        * rewrite app_nil_r. apply H3.
-        * rewrite H4 in H1. econstructor; eauto.
-      + iPureIntro. rewrite app_nil_r. apply H3.
-      + iExists (Eunop op0 sla2.2 ty). iPureIntro. repeat split.
-        * rewrite H3. rewrite app_nil_l. reflexivity.
-        * rewrite H4 in H1. econstructor; eauto.
-    - iIntros "[_ HA]". iDestruct "HA" as (sla2 sla3) "[HA [HB %]]". rewrite (surjective_pairing sla2).
-      iDestruct (H0 with "HA") as "[% [% %]]". rewrite (surjective_pairing sla3).
-      iDestruct (H2 with "HB") as "[% [% %]]". inversion H4.
-      destruct dst; simpl in *; subst; rewrite H5 H8; try iExists (Ebinop op0 sla2.2 sla3.2 ty);
-        do 2 rewrite app_nil_l; iPureIntro; repeat split; auto; econstructor; eauto; rewrite <- H6;
-          auto; rewrite <- H9; rewrite comp_env_preserved; apply H3.
-    - iIntros "[_ HA]". iDestruct "HA" as (sla2)  "[HA %]". rewrite (surjective_pairing sla2).
-      iDestruct (H0 with "HA") as "[% [% %]]". inversion H2.
-      destruct dst; simpl in *; subst; rewrite H3; try iExists (Ecast sla2.2 ty); iPureIntro;
-        rewrite app_nil_l; repeat split; auto; econstructor; eauto; rewrite <- H4; auto.
-    - iIntros "[_ %]". inversion H.
-      destruct dst; simpl in *; subst; try iExists (Esizeof ty1 ty); iPureIntro; repeat split; eauto;
-        pose (P := comp_env_preserved); simpl in P; rewrite <- P; apply eval_Esizeof.
-    - iIntros "[_ %]". inversion H.
-      destruct dst; simpl in *; subst; try iExists (Ealignof ty1 ty); iPureIntro; repeat split; eauto;
+    - iIntros "> HA". iDestruct "HA" as (sl2 a2) "[HA [% %]]". 
+      iDestruct (H0 with "HA") as "[% [% %]]".
+      destruct dst; simpl in *; subst; auto.
+      + iPureIntro. repeat split; auto. rewrite H5 in H1. econstructor; eauto.
+      + iExists (Eunop op0 a2 ty). iPureIntro. repeat split. rewrite H5 in H1. econstructor; eauto.
+    - iIntros ">HA". iDestruct "HA" as (sl2 a2 sl3 a3) "[HA [HB [% %]]]". 
+      iDestruct (H0 with "HA") as "[% [% %]]". 
+      iDestruct (H2 with "HB") as "[% [% %]]". subst.
+      rewrite <- comp_env_preserved in H3. rewrite H7 in H3. rewrite H10 in H3.
+      destruct dst; simpl; simpl_list; auto.
+      + repeat iSplit; auto. iPureIntro. econstructor; eauto. 
+      + iExists _. repeat iSplit; auto. iPureIntro. econstructor; eauto. 
+    - iIntros ">HA". iDestruct "HA" as (sl2 a2) "[HA [% %]]".
+      iDestruct (H0 with "HA") as "[% [% %]]". subst. rewrite H5 in H1.
+      destruct dst; simpl in *; auto.
+      + repeat iSplit; auto. iPureIntro. econstructor; eauto.
+      + iExists _. repeat iSplit; eauto. iPureIntro. econstructor; eauto.
+    - iIntros ">[% %]". subst.
+      destruct dst; simpl in *; simpl_list; auto.
+      + repeat iSplit; auto. iPureIntro. pose (P := comp_env_preserved). simpl in P.
+        rewrite <- P. apply eval_Esizeof.
+      + iExists _. repeat iSplit; auto. iPureIntro. pose (P := comp_env_preserved). simpl in P.
+        rewrite <- P. apply eval_Esizeof.
+    - iIntros ">[% %]". subst.
+      destruct dst; simpl in *; auto.
+      + repeat iSplit; auto. iPureIntro.
         pose (P := comp_env_preserved); simpl in P; rewrite <- P; constructor.
-    - iIntros "[_ %]". contradiction H.
-    - iIntros "[_ %]". inversion H0. iPureIntro. repeat split; auto. constructor. apply H.
-    - iIntros "[_ %]". inversion H1. iPureIntro. repeat split; auto.
+      + iExists _; iPureIntro; repeat split; eauto;
+        pose (P := comp_env_preserved); simpl in P; rewrite <- P; constructor.
+    - iIntros "> %". contradiction H.
+    - iIntros ">[% %]". subst. iPureIntro. repeat split; auto. constructor. apply H.
+    - iIntros ">[% %]". subst. iPureIntro. repeat split; auto.
       apply eval_Evar_global; auto.
       rewrite symbols_preserved; auto.
-    - iIntros "[_ HA]". iDestruct "HA" as (sla2)  "[HA %]". rewrite (surjective_pairing sla2).
-      iDestruct (H0 with "HA") as "[% [% %]]". inversion H1. iPureIntro. subst. repeat split.
-      rewrite app_nil_r. apply H2. rewrite typeof_Ederef'; auto. apply eval_Ederef'; auto. 
-    - iIntros "[_ HA]". iDestruct "HA" as (sla2)  "[HA %]". rewrite (surjective_pairing sla2).
-      iDestruct (H0 with "HA") as "[% [% %]]". inversion H4. subst. iPureIntro. repeat split.
-      rewrite app_nil_r. apply H5. rewrite <- comp_env_preserved in *. rewrite H6 in H1.
+    - iIntros ">HA". iDestruct "HA" as (sl2 a2)  "[HA [% %]]". 
+      iDestruct (H0 with "HA") as "[% [% %]]". subst.
+      iPureIntro. repeat split. rewrite typeof_Ederef'. auto. apply eval_Ederef'; auto. 
+    - iIntros ">HA". iDestruct "HA" as (sl2 a2) "[HA [% %]]". 
+      iDestruct (H0 with "HA") as "[% [% %]]". subst. iPureIntro. repeat split.
+      rewrite <- comp_env_preserved in *. rewrite H7 in H1.
       eapply eval_Efield_struct; eauto.
-    - iIntros "[_ HA]". iDestruct "HA" as (sla2)  "[HA %]". rewrite (surjective_pairing sla2).
-      iDestruct (H0 with "HA") as "[% [% %]]". inversion H3. subst. iPureIntro. repeat split.
-      rewrite app_nil_r. apply H4. rewrite <- comp_env_preserved in *. rewrite H5 in H1.
-      eapply eval_Efield_union; eauto.
+    - iIntros ">HA". iDestruct "HA" as (sl2 a2)  "[HA [% %]]". 
+      iDestruct (H0 with "HA") as "[% [% %]]". subst. iPureIntro. repeat split.
+      rewrite <- comp_env_preserved in *. rewrite H6 in H1. eapply eval_Efield_union; eauto.
   Qed.
   
   Lemma tr_simple_rvalue:
     forall e m r v,
       eval_simple_rvalue ge e m r v ->
       forall le dst sl a,
-        (tr_expr le dst r (sl,a)) -∗
-                                  ⌜match dst with
-                                   | For_val => sl = nil /\ Csyntax.typeof r = typeof a /\ eval_expr tge e le m a v
-                                   | For_effects => sl = nil
-                                   | For_set sd =>
-                                     exists b, sl = do_set sd b
-                                               /\ Csyntax.typeof r = typeof b
-                                               /\ eval_expr tge e le m b v
-                                   end⌝.
+        tr_expr le dst r sl a -∗
+        ⌜match dst with
+         | For_val => sl = nil /\ Csyntax.typeof r = typeof a /\ eval_expr tge e le m a v
+         | For_effects => sl = nil
+         | For_set sd =>
+           exists b, sl = do_set sd b
+                /\ Csyntax.typeof r = typeof b
+                /\ eval_expr tge e le m b v
+         end⌝.
   Proof.
     intros e m. exact (proj1 (tr_simple e m)).
   Qed.
@@ -409,234 +372,456 @@ Section PRESERVATION.
   Lemma tr_simple_lvalue:
     forall e m l b ofs,
       eval_simple_lvalue ge e m l b ofs ->
-      forall le sl a, tr_expr le For_val l (sl,a) -∗                                               
-                              ⌜ sl = nil /\ Csyntax.typeof l = typeof a /\ eval_lvalue tge e le m a b ofs ⌝.
+      forall le sl a, tr_expr le For_val l sl a -∗                                               
+      ⌜ sl = nil /\ Csyntax.typeof l = typeof a /\ eval_lvalue tge e le m a b ofs ⌝.
   Proof.
     intros e m. exact (proj2 (tr_simple e m)).
   Qed.
 
   Lemma tr_simple_exprlist:
     forall le rl sl al,
-      tr_exprlist le rl (sl,al) -∗
-                  ∀ e m tyl vl,
-                    ⌜ eval_simple_list ge e m rl tyl vl ⌝ -∗
-                      ⌜ sl = nil /\ eval_exprlist tge e le m al tyl vl ⌝.
+      tr_exprlist le rl sl al -∗
+      ∀ e m tyl vl,
+      ⌜ eval_simple_list ge e m rl tyl vl ⌝ -∗
+      ⌜ sl = nil /\ eval_exprlist tge e le m al tyl vl ⌝.
   Proof.
     induction rl.
-    - iIntros. destruct a. inversion H0.
-      iPureIntro. repeat split; eauto. inversion a0. constructor.
-    - simpl. iIntros (? ?) "[_ HA]". iIntros (? ? ? ?) "%". iDestruct "HA" as (sla2 slal3) "[HA [HB %]]".
-      rewrite (surjective_pairing slal3).
-      iDestruct (IHrl with "HB") as "HC".
-      inversion a3. subst.
-      iDestruct ("HC" with "[]") as "[% %]"; eauto.
-      epose (P := tr_simple_rvalue _ _ _ _ H2).
-      rewrite (surjective_pairing sla2).
+    - iIntros. inversion a. 
+      iPureIntro. repeat split; eauto. inversion a0. subst. constructor.
+    - simpl. iIntros "*>HA * %". iDestruct "HA" as (sl2 a2 sl3 al3) "[HA [HB [% %]]]".
+      inversion a. subst.
+      iDestruct (IHrl with "HB []") as "[% %]"; eauto.
+      pose (P:= tr_simple_rvalue _ _ _ _ H3). 
       iDestruct (P with "HA") as "[% [% %]]".
-      iPureIntro. inversion H. subst. split.
-      + rewrite H4 H0; auto.
-      + econstructor; eauto. rewrite <- H5. eauto.
+      iPureIntro. subst. split; auto. econstructor; eauto. simpl. rewrite <- H2. eauto.
   Qed.
 
   (** Commutation between the translation of expressions and left contexts. *)
 
   Lemma typeof_context:
     forall k1 k2 C, leftcontext k1 k2 C ->
-                    forall e1 e2, Csyntax.typeof e1 = Csyntax.typeof e2 ->
-                                  Csyntax.typeof (C e1) = Csyntax.typeof (C e2).
+    forall e1 e2, Csyntax.typeof e1 = Csyntax.typeof e2 ->
+    Csyntax.typeof (C e1) = Csyntax.typeof (C e2).
   Proof.
     induction 1; intros; auto.
   Qed.
-
+  
   Lemma test3 (P Q : iProp) : (emp ⊢ P -∗ Q) -> (P ⊢ Q).
-  Proof. intro.
-         iIntros "HA". iDestruct H as "HB". iApply "HB"; eauto.
+  Proof. intro. iIntros "HA". iDestruct H as "HB". iApply "HB"; eauto. Qed.
+    
+Lemma tr_expr_invariant :
+  (forall r dst sl a le,  tr_expr le dst r sl a -∗ locally le (fun le' =>tr_expr le' dst r sl a))
+  /\
+  (forall rl le sl al, tr_exprlist le rl sl al -∗ locally le (fun le' => tr_exprlist le' rl sl al)).
+  Proof.
+    apply tr_expr_exprlist; intros; iIntros "* HA"; simpl; iApply locally_modout;
+      iDestruct "HA" as ">HA".
+    - destruct dst. 
+      + iDestruct "HA" as "[HA [% %]]". iModIntro. iApply locally_sep_indep_r.
+        iSplitL; auto. do 3 (iApply locally_forall; iIntros). iApply locally_doublon. iApply "HA".
+      + iModIntro. iApply locally_indep. auto.
+      + iDestruct "HA" as (a0) "[HA [% %]]". iModIntro.
+        iApply locally_exists. iApply locally_sep_indep_r. iSplitL; auto.
+         do 3 (iApply locally_forall; iIntros). iApply locally_doublon. iApply "HA".
+    - iModIntro. iApply locally_indep. iFrame.
+    - iDestruct "HA" as (sl2 a2) "[HA [% %]]". iModIntro.
+      repeat iApply locally_exists. iApply locally_sep_indep_r. iSplitL; auto. iApply H. iFrame.
+    - iDestruct "HA" as (sl2 a2 sl3) "[HA [HB %]]". iModIntro.
+      repeat iApply locally_exists. iApply locally_sep_indep_r. iSplitL "HA"; auto.
+      iApply H. iFrame.
+    - iDestruct "HA" as (sl2 a2) "[HA [% %]]". iModIntro. repeat iApply locally_exists.
+      iApply locally_sep_indep_r. iSplitL; auto. iApply H. iFrame.
+    - iDestruct "HA" as (sl2 a2) "[HA [% %]]". iModIntro. repeat iApply locally_exists.
+      iApply locally_sep_indep_r. iSplitL; auto. iApply H. iFrame.
+    - iDestruct "HA" as (sl2 a2) "[HA [% %]]". iModIntro. repeat iApply locally_exists.
+      iApply locally_sep_indep_r. iSplitL; auto. iApply H. iFrame.
+    - iDestruct "HA" as (sl2 a2 sl3 a3) "[HA [HB [% %]]]". iModIntro. repeat iApply locally_exists.
+      iDestruct (H with "HA") as "HA". iDestruct (H0 with "HB") as "HB".
+      iApply (locally_delete_2 with "HA HB"). iIntros "* HA HB". iFrame. eauto.
+    - iDestruct "HA" as (sl2 a2) "[HA [% %]]". iModIntro. repeat iApply locally_exists.
+      iApply locally_sep_indep_r. iSplitL; auto. iApply H. iFrame.
+    - destruct dst.
+      + iDestruct "HA" as (sl2 a2 sl3 a3 t0) "[HC [HA [HB [% %]]]]". iModIntro.
+        repeat iApply locally_exists.
+        iDestruct (H with "HA") as "HA". iDestruct (H0 with "HB") as "HB".
+        iApply (locally_delete_2 with "HA HB"). iIntros "* HA HB". iFrame. eauto.
+      + iDestruct "HA" as (sl2 a2 sl3 a3) "[HA [HB %]]". iModIntro.
+        repeat iApply locally_exists.
+        iDestruct (H with "HA") as "HA". iDestruct (H0 with "HB") as "HB".
+        iApply (locally_delete_2 with "HA HB"). iIntros "* HA HB". iFrame. eauto.
+      + iDestruct "HA" as (sl2 a2 sl3 a3) "[HA [HB %]]". iModIntro.
+        repeat iApply locally_exists.
+        iDestruct (H with "HA") as "HA". iDestruct (H0 with "HB") as "HB".
+        iApply (locally_delete_2 with "HA HB"). iIntros "* HA HB". iFrame. eauto.
+    - destruct dst.
+      + iDestruct "HA" as (sl2 a2 sl3 a3 t0) "[HC [HA [HB [% %]]]]". iModIntro.
+        repeat iApply locally_exists.
+        iDestruct (H with "HA") as "HA". iDestruct (H0 with "HB") as "HB".
+        iApply (locally_delete_2 with "HA HB"). iIntros "* HA HB". iFrame. eauto.
+      + iDestruct "HA" as (sl2 a2 sl3 a3) "[HA [HB %]]". iModIntro.
+        repeat iApply locally_exists.
+        iDestruct (H with "HA") as "HA". iDestruct (H0 with "HB") as "HB".
+        iApply (locally_delete_2 with "HA HB"). iIntros "* HA HB". iFrame. eauto.
+      + iDestruct "HA" as (sl2 a2 sl3 a3) "[HA [HB %]]". iModIntro.
+        repeat iApply locally_exists.
+        iDestruct (H with "HA") as "HA". iDestruct (H0 with "HB") as "HB".
+        iApply (locally_delete_2 with "HA HB"). iIntros "* HA HB". iFrame. eauto.
+    - destruct dst.
+      + iDestruct "HA" as (sl2 a2 sl3 a3 sl4 a4 t0) "[HD [HA [HB [HC [% %]]]]]".
+        iDestruct (H with "HA") as "HA". iDestruct (H0 with "HB") as "HB".
+        iDestruct (H1 with "HC") as "HC". iModIntro. repeat iApply locally_exists.
+        iApply (locally_delete_3 with "HA HB HC"). iIntros "* HA HB HC".
+        iFrame. eauto.
+      + iDestruct "HA" as (sl2 a2 sl3 a3 sl4 a4) "[HA [HB [HC %]]]".
+        iDestruct (H with "HA") as "HA". iDestruct (H0 with "HB") as "HB".
+        iDestruct (H1 with "HC") as "HC". iModIntro. repeat iApply locally_exists.
+        iApply (locally_delete_3 with "HA HB HC"). iIntros "* HA HB HC".
+        iFrame. eauto.
+      + iDestruct "HA" as (sl2 a2 sl3 a3 sl4 a4 t0) "[HD [HA [HB [HC %]]]]".
+        iDestruct (H with "HA") as "HA". iDestruct (H0 with "HB") as "HB".
+        iDestruct (H1 with "HC") as "HC". iModIntro. repeat iApply locally_exists.
+        iApply (locally_delete_3 with "HA HB HC"). iIntros "* HA HB HC".
+        iFrame. eauto.
+    - iModIntro. iApply locally_indep. iFrame.
+    - iModIntro. iApply locally_indep. iFrame.
+    - destruct dst.
+      + iDestruct "HA" as (sl2 a2 sl3 a3 t0) "[HA [HB [HC %]]]". iModIntro.
+        repeat iApply locally_exists.
+        iDestruct (H with "HA") as "HA". iDestruct (H0 with "HB") as "HB".
+        iApply (locally_delete_2 with "HA HB"). iIntros "* HA HB". iFrame. eauto.
+      + iDestruct "HA" as (sl2 a2 sl3 a3) "[HA [HB %]]". iModIntro.
+        repeat iApply locally_exists.
+        iDestruct (H with "HA") as "HA". iDestruct (H0 with "HB") as "HB".
+        iApply (locally_delete_2 with "HA HB"). iIntros "* HA HB". iFrame. eauto.      
+      + iDestruct "HA" as (sl2 a2 sl3 a3 t0) "[HA [HB [HC %]]]". iModIntro.
+        repeat iApply locally_exists.
+        iDestruct (H with "HA") as "HA". iDestruct (H0 with "HB") as "HB".
+        iApply (locally_delete_2 with "HA HB"). iIntros "* HA HB". iFrame. eauto.
+    - destruct dst.
+      + iDestruct "HA" as (sl2 a2 sl3 a3 sl4 a4 t0) "[HA [HB [HC [HD [% %]]]]]".
+        iDestruct (H with "HA") as "HA". iDestruct (H0 with "HB") as "HB".
+        iModIntro. repeat iApply locally_exists.
+        iApply (locally_delete_2 with "HA HB"). iIntros "* HA HB". iFrame. eauto.
+      + iDestruct "HA" as (sl2 a2 sl3 a3 sl4 a4) "[HA [HB [HC %]]]".
+        iDestruct (H with "HA") as "HA". iDestruct (H0 with "HB") as "HB".
+        iModIntro. repeat iApply locally_exists.
+        iApply (locally_delete_2 with "HA HB"). iIntros "* HA HB". iFrame. eauto.
+      + iDestruct "HA" as (sl2 a2 sl3 a3 sl4 a4 t0) "[HA [HB [HC [HD %]]]]".
+        iDestruct (H with "HA") as "HA". iDestruct (H0 with "HB") as "HB".
+        iModIntro. repeat iApply locally_exists.
+        iApply (locally_delete_2 with "HA HB"). iIntros "* HA HB".
+        iFrame. eauto.
+    - iDestruct "HA" as (sl2 a2) "[HA HB]".
+      destruct dst.
+      + iDestruct "HB" as (t0) "[HB %]". iModIntro. repeat iApply locally_exists.
+        iDestruct (H with "HA") as "HA". iApply locally_sep_indep_r. iFrame.
+        iExists t0. iFrame. eauto.
+      + iDestruct "HB" as (sl3 a3) "[HB %]". iModIntro. repeat iApply locally_exists.
+        iDestruct (H with "HA") as "HA". iApply locally_sep_indep_r. iFrame.
+        iExists sl3, a3. iFrame. eauto.
+      + iDestruct "HB" as (t0) "[HB [% %]]". iModIntro. repeat iApply locally_exists.
+        iDestruct (H with "HA") as "HA". iApply locally_sep_indep_r. iFrame.
+        iExists t0. iFrame. eauto.
+    - iDestruct "HA" as (sl2 a2 sl3) "[HA [HB %]]".
+      iDestruct (H with "HA") as "HA". iDestruct (H0 with "HB") as "HB".
+      iModIntro. repeat iApply locally_exists. iApply (locally_delete_2 with "HA HB").
+      iIntros "* HA HB". iFrame. eauto.
+    - destruct dst.
+      + iDestruct "HA" as (sl2 a2 sl3 a3 t0) "[HC [HA [HB %]]]". iModIntro.
+        repeat iApply locally_exists.
+        iDestruct (H with "HA") as "HA". iDestruct (H0 with "HB") as "HB".
+        iApply (locally_delete_2 with "HA HB"). iIntros "* HA HB". iFrame. eauto.
+      + iDestruct "HA" as (sl2 a2 sl3 al3) "[HA [HB %]]". iModIntro.
+        repeat iApply locally_exists.
+        iDestruct (H with "HA") as "HA". iDestruct (H0 with "HB") as "HB".
+        iApply (locally_delete_2 with "HA HB"). iIntros "* HA HB". iFrame. eauto.
+      + iDestruct "HA" as (sl2 a2 sl3 a3 t0) "[HC [HA [HB %]]]". iModIntro.
+        repeat iApply locally_exists.
+        iDestruct (H with "HA") as "HA". iDestruct (H0 with "HB") as "HB".
+        iApply (locally_delete_2 with "HA HB"). iIntros "* HA HB". iFrame. eauto.
+    - destruct dst.
+      + iDestruct "HA" as (sl2 a2 t0) "[HA [HB [% %]]]". iDestruct (H with "HA") as "HA".
+        iModIntro. repeat iApply locally_exists. iApply locally_sep_indep_r. iFrame.
+        eauto.
+      + iDestruct "HA" as (sl2 a2) "[HA %]". iDestruct (H with "HA") as "HA".
+        iModIntro. repeat iApply locally_exists. iApply locally_sep_indep_r. iFrame.
+        eauto.
+      + iDestruct "HA" as (sl2 a2 t0) "[HA [HB [% %]]]". iDestruct (H with "HA") as "HA".
+        iModIntro. repeat iApply locally_exists. iApply locally_sep_indep_r. iFrame.
+        eauto.
+    - iExFalso; auto.
+    - destruct dst.
+      + iDestruct "HA" as (a2 t0) "[HA [HB HC]]". iModIntro. iDestruct (H with "HB") as "HB".
+        repeat iApply locally_exists. iApply (locally_consequence with "[HA HC] HB").
+        iIntros. iFrame.
+      + iDestruct "HA" as (a2) "HA". iModIntro. iDestruct (H with "HA") as "HA".
+        iApply locally_exists. iFrame.
+      + iDestruct "HA" as (a2 t0) "[HA HB]". iModIntro. 
+        repeat iApply locally_exists. iDestruct (H with "HB") as "HB".
+        iApply locally_sep_indep_l. iFrame.
+    - iModIntro. iApply locally_indep. iFrame.
+    - iDestruct "HA" as (sl2 a2 sl3 al3) "[HA [HB %]]". iModIntro.
+      repeat iApply locally_exists.
+      iDestruct (H with "HA") as "HA". iDestruct (H0 with "HB") as "HB".
+      iApply (locally_delete_2 with "HA HB"). iIntros "* HA HB". iFrame. eauto.
   Qed.
 
-  Lemma test4 : forall (P Q : iProp) tmps,
-      (P ∗ Q) () tmps -> exists (tmp0 tmp1 : heap),
-      P () tmp0 /\ Q () tmp1 /\ tmp0  ##ₘ tmp1 /\ tmps = tmp0 \u tmp1.
-Proof.
-  MonPred.unseal. intros. destruct H as (h0&h1&P0&P1&P2&P3). repeat eexists; eauto.
-Qed.
-
-Lemma test7 : forall (P Q : iProp), (P ∧ Q) -∗ ∃ tmp, ⌜P tt tmp /\ Q tt tmp⌝.
-Proof.
-  MonPred.unseal. repeat red. split. MonPred.unseal. intros. red. intro. intro. 
-  repeat intro. inversion H. inversion H2. subst. repeat red. exists emp.
-  exists heap_empty, heap_empty. repeat split; auto. repeat intro. repeat red.
-  inversion_star h P. destruct P2.
-  exists h0. repeat red. exists h, h0. inversion P1. inversion H7. subst. destruct a. repeat split; auto.
-Qed.
-
-Notation "\s l" := (∃ t, l ↦ t) (at level 10).
-
-(* Lemma tr_expr_invariant : *)
-(*   (forall r (le : temp_env) (dst : destination) sla le', *)
-(*      (tr_expr le dst r sla ∧ *)
-(*        (∀ x : ident, \s x -∗ ⌜le' ! x = le ! x⌝)) -∗ tr_expr le' dst r sla) *)
-(* /\ *)
-(*   (forall rl le slal le', (tr_exprlist le rl slal ∧ (∀ x, \s x -∗ ⌜ le'!x = le!x ⌝)) -∗ *)
-(*   tr_exprlist le' rl slal). *)
-(* Proof. *)
-(*   apply tr_expr_exprlist; intros; iIntros "HA"; iDestruct (test7 with "HA") as (tmp) "[% %]"; *)
-(*   iDestruct "HA" as "[[_ HA] _]"; iSplitR; eauto. *)
-(*   - destruct dst; eauto. *)
-(*     + iDestruct "HA" as "[HA [% %]]". iSplitL; eauto. *)
-(*       iIntros "* HC". iApply "HA". iIntros "* HA". *)
-(*       iStopProof. apply test3. apply test2. intros. *)
-(*       iDestruct ("HC" with "HA") as "%". *)
-(*       iPureIntro. apply (soundness1 _ tmp).  *)
-(*   iIntros "* HA * HB". *)
   
-Scheme leftcontext_ind2 := Minimality for leftcontext Sort Prop
-  with leftcontextlist_ind2 := Minimality for leftcontextlist Sort Prop.
-Combined Scheme leftcontext_leftcontextlist_ind from leftcontext_ind2, leftcontextlist_ind2.
+  Scheme leftcontext_ind2 := Minimality for leftcontext Sort Prop
+    with leftcontextlist_ind2 := Minimality for leftcontextlist Sort Prop.
+  Combined Scheme leftcontext_leftcontextlist_ind from leftcontext_ind2, leftcontextlist_ind2.
+  
+  Lemma tr_expr_leftcontext_rec:
+    (forall from to C, leftcontext from to C ->
+    forall le e dst sl a,
+    tr_expr le dst (C e) sl a -∗
+    ∃ dst' sl1 sl2 a',
+    tr_expr le dst' e sl1 a'
+    ∗ ⌜ sl = sl1 ++ sl2 ⌝
+    ∗ (∀ e',
+    \⌜ Csyntax.typeof e' = Csyntax.typeof e ⌝ -∗
+    (∀ sl3,
+        locally le (fun le' => tr_expr le' dst' e' sl3 a' -∗ tr_expr le' dst (C e') (sl3 ++ sl2) a)))
+    )
+    /\ (
+    forall from C, leftcontextlist from C ->
+    forall le e sl a,
+    tr_exprlist le (C e) sl a -∗
+    ∃ dst' sl1 sl2 a',
+    tr_expr le dst' e sl1 a'
+    ∗ ⌜sl = sl1 ++ sl2⌝
+    ∗ (∀ e',
+    \⌜ Csyntax.typeof e' = Csyntax.typeof e ⌝ -∗
+    (∀ sl3,
+        locally le (fun le' => tr_expr le' dst' e' sl3 a' -∗ tr_exprlist le' (C e') (sl3 ++ sl2) a)))
+    ).
+  Proof.
 
-Lemma tr_expr_leftcontext_rec:
- (
-  forall from to C, leftcontext from to C ->
-  forall le e dst sl a,
-  tr_expr le dst (C e) (sl,a) -∗
-  ∃ dst' sl1 sl2 a',
-  tr_expr le dst' e (sl1,a')
-  ∗ ⌜ sl = sl1 ++ sl2 ⌝
-  ∗ (∀ le' e' sl3,
-        (tr_expr le' dst' e' (sl3,a') ∧
-        (∀ id, (\s id -∗ False) -∗ ⌜ le'!id = le!id ⌝)) -∗
-        \⌜ Csyntax.typeof e' = Csyntax.typeof e ⌝ -∗
-        tr_expr le' dst (C e') ((sl3 ++ sl2),a))
- ) /\ (
-  forall from C, leftcontextlist from C ->
-  forall le e sl a,
-  tr_exprlist le (C e) (sl,a) -∗
-  ∃ dst' sl1 sl2 a',
-  tr_expr le dst' e (sl1,a')
-  ∗ ⌜sl = sl1 ++ sl2⌝
-  ∗ (∀ le' e' sl3,
-        (tr_expr le' dst' e' (sl3,a') ∧
-        (∀ id, (\s id -∗ False) -∗ ⌜ le'!id = le!id⌝)) -∗
-        \⌜ Csyntax.typeof e' = Csyntax.typeof e ⌝ -∗
-        tr_exprlist le' (C e') ((sl3 ++ sl2),a))
-).
-Proof.
-  apply leftcontext_leftcontextlist_ind; intros; iIntros "HA".
-  (*base*)
-  - repeat iExists _. iSplitL; eauto. iSplit. iPureIntro; apply app_nil_end.
-    iIntros "* HA %". rewrite <- app_nil_end. iDestruct "HA" as "[HA _]"; eauto.
-
+    Ltac init H0 e' :=
+      iDestruct (H0 with "HA") as (dst' sl1 sl0 a') "[HA [% HHHHH]]"; subst;
+        repeat iExists _; iSplitL "HA"; eauto; iSplit;
+        [iPureIntro; simpl; try rewrite <- app_assoc; auto |
+         iIntros "* % *"; iDestruct ("HHHHH" $! e' with "[]") as "HHHHH"; auto;
+        iApply (locally_conseq with "HHHHH")].
+    
+    Ltac finish_him := iIntros; iModIntro; repeat iExists _; iFrame;
+                       try rewrite <- app_assoc; eauto.
+    
+    apply leftcontext_leftcontextlist_ind; intros; iIntros "HA".
+    (*base*)
+    - repeat iExists _. iSplitL; eauto. iSplit. iPureIntro; apply app_nil_end.
+      iIntros "* % *". iApply locally_simpl. rewrite <- app_nil_end. eauto.
+      
     (* deref *)
-  - simpl. iDestruct "HA" as "[_ HA]". iDestruct "HA" as (sla2) "[HA %]". inv H1.
-    rewrite (surjective_pairing sla2).
-    iDestruct (H0 with "HA") as (dst' sl1 sl2 a') "[HA [% HB]]".
-    repeat iExists _. iSplitL "HA"; eauto. iSplit.
-    iPureIntro; simpl. rewrite H1. rewrite <- app_assoc. reflexivity.
-    iIntros "* HA %". iSplitR; eauto. iExists (sl3 ++ sl2, sla2.2).
-    iSplitL. iApply ("HB" with "HA"); eauto. iPureIntro. simpl. rewrite app_assoc. reflexivity.
-    
+    - simpl. iDestruct "HA" as (sl2 a2) ">[HA [% %]]". init H0 e'. iApply locally_simpl. finish_him.
+      
     (* field *)
-  - simpl. iDestruct "HA" as "[_ HA]". iDestruct "HA" as (sla2) "[HA %]". inv H1.
-    rewrite (surjective_pairing sla2).
-    iDestruct (H0 with "HA") as (dst' sl1 sl2 a') "[HA [% HB]]".
-    repeat iExists _. iSplitL "HA"; eauto. iSplit.
-    rewrite H1. iPureIntro. simpl. rewrite <- app_assoc. reflexivity.
-    iIntros "* HA %". iSplitR; eauto. iDestruct ("HB" with "HA") as "HA".
-    iExists _. iSplitL. iApply "HA"; eauto. iPureIntro. simpl. rewrite <- app_assoc.
-    reflexivity.
-    
-(* rvalof *)
-  - simpl. iDestruct "HA" as "[_ HA]". iDestruct "HA" as (sla2 sl3) "[HA [HB %]]". inv H1.
-    rewrite (surjective_pairing sla2). iDestruct (H0 with "HA") as (dst' sl1 sl2 a') "[HA [% HC]]".
-    rewrite H1. repeat iExists _.
-    iSplitL "HA"; eauto. iSplit. iPureIntro. simpl. rewrite <- app_assoc. reflexivity.
-    iIntros "* HA %". iDestruct ("HC" with "HA") as "HA". iSplitR; eauto. do 2 iExists _.
-    iSplitL "HA". iApply "HA"; eauto. simpl. iSplitL; eauto.
-    exploit typeof_context; eauto. intro. rewrite H2. iApply "HB".
-    iPureIntro. rewrite <- app_assoc. reflexivity.
+    - simpl. iDestruct "HA" as (sl2 a2) ">[HA [% %]]". init H0 e'. iApply locally_simpl. finish_him.
 
+    (* rvalof *)
+    - simpl. iDestruct "HA" as (sl2 a2 sl3) ">[HA [HB %]]". init H0 e'.
+      rewrite (typeof_context _ _ _ H _ _ a0). iApply locally_simpl. finish_him.
+      
     (* addrof *)
-  - simpl. iDestruct "HA" as "[_ HA]". iDestruct "HA" as (sla2) "[HA %]". inv H1.
-    rewrite (surjective_pairing sla2). iDestruct (H0 with "HA") as (dst' sl1 sl2 a') "[HA [% HC]]".
-    rewrite H1. repeat iExists _.
-    iSplitL "HA"; eauto. iSplit. iPureIntro. simpl. rewrite <- app_assoc. reflexivity.
-    iIntros "* HA %". iDestruct ("HC" with "HA") as "HA". iSplitR; eauto. iExists _.
-    iSplitL. iApply "HA"; eauto. iPureIntro. simpl. rewrite <- app_assoc. reflexivity.
-    
-(* unop *)
-  - simpl. iDestruct "HA" as "[_ HA]". iDestruct "HA" as (sla2) "[HA %]". inv H1.
-    rewrite (surjective_pairing sla2). iDestruct (H0 with "HA") as (dst' sl1 sl2 a') "[HA [% HC]]".
-    rewrite H1. repeat iExists _.
-    iSplitL "HA"; eauto. iSplit. iPureIntro. simpl. rewrite <- app_assoc. reflexivity.
-    iIntros "* HA %". iDestruct ("HC" with "HA") as "HA". iSplitR; eauto. iExists _.
-    iSplitL. iApply "HA"; eauto. iPureIntro. simpl. rewrite <- app_assoc. reflexivity.
-
+    - simpl. iDestruct "HA" as (sl2 a2) ">[HA [% %]]". init H0 e'. iApply locally_simpl. finish_him.
+      
+    (* unop *)
+    - simpl. iDestruct "HA" as (sl2 a2) ">[HA [% %]]". init H0 e'. iApply locally_simpl. finish_him.
+              
     (* binop left *)
-  - simpl. iDestruct "HA" as "[_ HA]". iDestruct "HA" as (sla2 sla3) "[HA [HB %]]". inv H1.
-    rewrite (surjective_pairing sla2). iDestruct (H0 with "HA") as (dst' sl1 sl2 a') "[HA [% HC]]".
-    rewrite H1. repeat iExists _.
-    iSplitL "HA"; eauto. iSplit. iPureIntro. simpl. rewrite <- app_assoc. reflexivity.
-    iIntros "* HA %". iSplitR; eauto. iDestruct (test7 with "HA") as (tmp) "[% %]".
-    repeat iExists _. iDestruct ("HC" with "HA") as "HA". 
-    iSplitL "HA". iApply "HA"; eauto. 
-    
-    eapply tr_expr_invariant; eauto.
-    iPureIntro. simpl. rewrite <- app_assoc. reflexivity.
-    eapply tr_expr_invariant; eauto. UNCHANGED.
+    - simpl. iDestruct "HA" as (sl2 a2 sl3 a3) ">[HA [HB [% %]]]".
+      iDestruct (proj1 tr_expr_invariant with "HB") as "HB".
+      init H0 e'. iApply (locally_consequence with "[] HB"). finish_him.        
+      
+    (* binop right *)
+    - simpl. iDestruct "HA" as (sl2 a2 sl3 a3) ">[HB [HA [% %]]]".
+      iAssert (⌜sl2 = nil⌝) as "%". iApply (tr_simple_expr_nil with "HB"); eauto. init H1 e'.
+      iDestruct (proj1 tr_expr_invariant with "HB") as "HB".
+      iApply (locally_consequence with "[] HB"). finish_him.
+      
+    (* cast *)
+    - simpl. iDestruct "HA" as (sl2 a2) ">[HA [% %]]". init H0 e'.
+      iApply locally_simpl. finish_him.
+      
+    (* seqand *)
+    - simpl. iDestruct "HA" as ">HA". destruct dst.
+      + iDestruct "HA" as (sl2 a2 sl3 a3 t0) "[HB [HA [HC [% %]]]]". init H0 e'.
+        iDestruct (proj1 tr_expr_invariant with "HC") as "HC".
+        iApply (locally_consequence with "[HB] HC"). finish_him.
 
-    
-Theorem tr_expr_leftcontext:
-  forall C le r dst sl a,
-  leftcontext RV RV C ->
-  tr_expr le dst (C r) (sl,a) -∗
-  ∃ dst' sl1 sl2 a',
-  tr_expr le dst' r (sl1,a')
-  ∗ ⌜ sl = sl1 ++ sl2 ⌝
-  ∗ (∀ le' r' sl3,
-        (tr_expr le' dst' r' (sl3,a') ∧
-        (∀ id, (\s id -∗ False) -∗ ⌜ le'!id = le!id ⌝)) -∗
-        \⌜ Csyntax.typeof r' = Csyntax.typeof r ⌝ -∗
-        tr_expr le' dst (C r') ((sl3 ++ sl2),a)).
-Proof.
-  intros. eapply (proj1 tr_expr_leftcontext_rec); eauto.
-Qed.
+      + iDestruct "HA" as (sl2 a2 sl3 a3) "[HA [HB %]]". init H0 e'.
+        iDestruct (proj1 tr_expr_invariant with "HB") as "HB".
+        iApply (locally_consequence with "[] HB"). finish_him.
+      + iDestruct "HA" as (sl2 a2 sl3 a3) "[HA [HB %]]". init H0 e'.
+        iDestruct (proj1 tr_expr_invariant with "HB") as "HB".
+        iApply (locally_consequence with "[] HB"). finish_him.
+        
+    (* seqor *)
+    - simpl. iDestruct "HA" as ">HA". destruct dst.
+      + iDestruct "HA" as (sl2 a2 sl3 a3 t0) "[HC [HA [HB [% %]]]]". init H0 e'.
+        iDestruct (proj1 tr_expr_invariant with "HB") as "HB".
+        iApply (locally_consequence with "[HC] HB"). finish_him.
+      + iDestruct "HA" as (sl2 a2 sl3 a3) "[HA [HB %]]". init H0 e'.
+        iDestruct (proj1 tr_expr_invariant with "HB") as "HB".
+        iApply (locally_consequence with "[] HB"). finish_him.
+      + iDestruct "HA" as (sl2 a2 sl3 a3) "[HA [HB %]]". init H0 e'.
+        iDestruct (proj1 tr_expr_invariant with "HB") as "HB".
+        iApply (locally_consequence with "[] HB"). finish_him.
+        
+    (* condition *)
+    - simpl. iDestruct "HA" as ">HA". destruct dst.
+      + iDestruct "HA" as (sl2 a2 sl3 a3 sl4 a4 t0) "[HB [HA [HC [HD [% %]]]]]". init H0 e'.
+        iDestruct (proj1 tr_expr_invariant with "HC") as "HC".
+        iDestruct (proj1 tr_expr_invariant with "HD") as "HD".
+        iApply (locally_delete_2 with "HC HD"). finish_him.
+      + iDestruct "HA" as (sl2 a2 sl3 a3 sl4 a4) "[HA [HB [HC %]]]". init H0 e'.
+        iDestruct (proj1 tr_expr_invariant with "HC") as "HC".
+        iDestruct (proj1 tr_expr_invariant with "HB") as "HB".
+        iApply (locally_delete_2 with "HC HB"). finish_him.
+      + iDestruct "HA" as (sl2 a2 sl3 a3 sl4 a4 t0) "[HB [HA [HC [HD %]]]]". init H0 e'.
+        iDestruct (proj1 tr_expr_invariant with "HC") as "HC".
+        iDestruct (proj1 tr_expr_invariant with "HD") as "HD".
+        iApply (locally_delete_2 with "HC HD"). finish_him.
+        
+    - simpl. iDestruct "HA" as ">HA". destruct dst.
+      + iDestruct "HA" as (sl2 a2 sl3 a3 t0) "[HA [HB [HC [% %]]]]". init H0 e'.
+        iDestruct (proj1 tr_expr_invariant with "HB") as "HB".
+        iApply (locally_consequence with "[HC] HB").
+        rewrite (typeof_context _ _ _ H _ _ a). 
+        finish_him.
+      + iDestruct "HA" as (sl2 a2 sl3 a3) "[HA [HB %]]". init H0 e'.
+        iDestruct (proj1 tr_expr_invariant with "HB") as "HB".
+        iApply (locally_consequence with "[] HB"). finish_him.
+      + iDestruct "HA" as (sl2 a2 sl3 a3 t0) "[HA [HB [HC [% %]]]]". init H0 e'.
+        iDestruct (proj1 tr_expr_invariant with "HB") as "HB".
+        iApply (locally_consequence with "[HC] HB").
+        rewrite (typeof_context _ _ _ H _ _ a). finish_him.
+        
+    - simpl. iDestruct "HA" as ">HA". destruct dst.
+      + iDestruct "HA" as (sl2 a2 sl3 a3 t0) "[HB [HA [HC [% %]]]]".
+        iAssert (⌜ sl2 = nil ⌝) as "%". iApply (tr_simple_expr_nil with "HB"); eauto. 
+        init H1 e'. iDestruct (proj1 tr_expr_invariant with "HB") as "HB".
+        iApply (locally_consequence with "[HC] HB"). finish_him.
+      + iDestruct "HA" as (sl2 a2 sl3 a3) "[HB [HA %]]".
+        iAssert (⌜ sl2 = nil ⌝) as "%". iApply (tr_simple_expr_nil with "HB"); eauto. 
+        init H1 e'. iDestruct (proj1 tr_expr_invariant with "HB") as "HB".
+        iApply (locally_consequence with "[] HB"). finish_him.
+      + iDestruct "HA" as (sl2 a2 sl3 a3 t0) "[HB [HA [HC [% %]]]]".
+        iAssert (⌜ sl2 = nil ⌝) as "%". iApply (tr_simple_expr_nil with "HB"); eauto. 
+        init H1 e'. iDestruct (proj1 tr_expr_invariant with "HB") as "HB".
+        iApply (locally_consequence with "[HC] HB"). finish_him.
+        
+    - simpl. iDestruct "HA" as ">HA". destruct dst.
+      + iDestruct "HA" as (sl2 a2 sl3 a3 sl4 a4 t0) "[HA [HB [HC [HD [% %]]]]]". init H0 e'.
+        rewrite (typeof_context _ _ _ H _ _ a).
+        iDestruct (proj1 tr_expr_invariant with "HB") as "HB".
+        iApply (locally_consequence with "[HC HD] HB"). finish_him.
+      + iDestruct "HA" as (sl2 a2 sl3 a3 sl4 a4) "[HA [HB [HC %]]]". init H0 e'.
+        rewrite (typeof_context _ _ _ H _ _ a0).
+        iDestruct (proj1 tr_expr_invariant with "HB") as "HB".
+        iApply (locally_consequence with "[HC] HB"). finish_him.
+      + iDestruct "HA" as (sl2 a2 sl3 a3 sl4 a4 t0) "[HA [HB [HC [HD [% %]]]]]". init H0 e'.
+        rewrite (typeof_context _ _ _ H _ _ a).
+        iDestruct (proj1 tr_expr_invariant with "HB") as "HB".
+        iApply (locally_consequence with "[HC HD] HB"). finish_him.
+        
+    - simpl. iDestruct "HA" as ">HA". destruct dst.
+      + iDestruct "HA" as (sl2 a2 sl3 a3 sl4 a4 t0) "[HB [HA [HC [HD [% %]]]]]". 
+        iAssert (⌜ sl2 = nil ⌝) as "%". iApply (tr_simple_expr_nil with "HB"); eauto.
+        init H1 e'. iDestruct (proj1 tr_expr_invariant with "HB") as "HB".
+        iApply (locally_consequence with "[HC HD] HB"). finish_him.
+      + iDestruct "HA" as (sl2 a2 sl3 a3 sl4 a4) "[HB [HA [HC %]]]".
+        iAssert (⌜ sl2 = nil ⌝) as "%". iApply (tr_simple_expr_nil with "HB"); eauto.
+        init H1 e'. iDestruct (proj1 tr_expr_invariant with "HB") as "HB".
+        iApply (locally_consequence with "[HC] HB"). finish_him.
+      + iDestruct "HA" as (sl2 a2 sl3 a3 sl4 a4 t0) "[HB [HA [HC [HD [% %]]]]]".
+        iAssert (⌜ sl2 = nil ⌝) as "%". iApply (tr_simple_expr_nil with "HB"); eauto.
+        init H1 e'. iDestruct (proj1 tr_expr_invariant with "HB") as "HB".
+        iApply (locally_consequence with "[HC HD] HB"). finish_him.
+        
+    - simpl. iDestruct "HA" as (sl2 a2) ">[HA HB]". destruct dst.
+      + iDestruct "HB" as (t0) "[HB [% %]]". init H0 e'.
+        iApply locally_simpl. iIntros "* HA !>".
+        repeat iExists _. iFrame. iExists t0. iFrame. rewrite app_ass.
+        rewrite (typeof_context _ _ _ H _ _ a). eauto.
+      + iDestruct "HB" as (sl3 a3) "[HB %]". init H0 e'.
+        rewrite (typeof_context _ _ _ H _ _ a0). iApply locally_simpl.
+        iIntros "* HA !>". repeat iExists _. iFrame. repeat iExists _. iFrame.
+        rewrite app_ass. auto.
+      + iDestruct "HB" as (t0) "[HB [% %]]". init H0 e'.
+        iApply locally_simpl. iIntros "* HA !>".
+        repeat iExists _. iFrame. iExists t0. iFrame. rewrite app_ass.
+        rewrite (typeof_context _ _ _ H _ _ a). eauto.
+        
+    - simpl. iDestruct "HA" as ">HA". destruct dst.
+      + iDestruct "HA" as (sl2 a2 sl3 al3 t0) "[HB [HA [HC [% %]]]]". init H0 e'.
+        iDestruct (proj2 tr_expr_invariant with "HC") as "HC".
+        iApply (locally_consequence with "[HB] HC"). finish_him.
+      + iDestruct "HA" as (sl2 a2 sl3 al3) "[HA [HB %]]". init H0 e'.
+        iDestruct (proj2 tr_expr_invariant with "HB") as "HB".
+        iApply (locally_consequence with "[] HB"). finish_him.
+      + iDestruct "HA" as (sl2 a2 sl3 al3 t0) "[HB [HA [HC [% %]]]]". init H0 e'.
+        iDestruct (proj2 tr_expr_invariant with "HC") as "HC".
+        iApply (locally_consequence with "[HB] HC"). finish_him.
 
-Theorem tr_top_leftcontext:
-  forall e le m dst rtop sl a,
-  tr_top tge e le m dst rtop sl a -∗
-  ∀ r C,
-  ⌜ rtop = C r ⌝ -∗
-  ⌜ leftcontext RV RV C ⌝ -∗
-  ∃ dst' sl1 sl2 a',
-  tr_top tge e le m dst' r sl1 a'
-  ∗ ⌜ sl = sl1 ++ sl2 ⌝
-  ∗ (∀ le' m' r' sl3,
-        (tr_expr le' dst' r' (sl3,a') ∧
-        (∀ id, (\s id -∗ False) -∗ ⌜le'!id = le!id ⌝)) -∗
-        \⌜ Csyntax.typeof r' = Csyntax.typeof r ⌝ -∗
-        tr_top tge e le' m' dst (C r') (sl3 ++ sl2) a).
-Proof.
-  iIntros (? ? ? ? ? ? ?) "HA".
-  iDestruct "HA" as "[HA|%]". iIntros (r C H0 H1).
-  - subst. exploit tr_expr_leftcontext; eauto. intro.
-    iDestruct (H with "HA") as (dst' sl1 sl2 a') "[HA [% HC]]".
-    iExists dst', sl1, sl2, a'.
-    iSplitL "HA". iLeft.
-    + iApply "HA".
-    + iSplit; eauto. iIntros "* HA HB". iLeft. unfold tr_top_base.
-      iApply ("HC" with "[HA] [HB]"); eauto.
-  - iIntros (r C H0 H1). unfold tr_top_val_val in H.
-    destruct sl; auto. destruct H as (v&ty&P0&P1&P2&P3). subst.
-    inv H1; inv H0.
-    + iExists For_val, _, _, _. repeat iSplitL.
-      * iRight. iPureIntro. unfold tr_top_val_val. instantiate (3 := nil). simpl.
-        exists v, (typeof a). split; eauto.
-      * eauto.
-      * iIntros "* HA %".
-        rewrite <- app_nil_end. iLeft. unfold tr_top_base.
-        destruct r'; simpl; iDestruct "HA" as "[HA _]";
-          iDestruct "HA" as "[HC HA]"; iSplitL "HC"; eauto.
-    + inversion H.
-Qed.
+    - simpl. iDestruct "HA" as ">HA". destruct dst.
+      + iDestruct "HA" as (sl2 a2 sl3 al3 t0) "[HC [HB [HA [% %]]]]".
+        iAssert (⌜ sl2 = nil ⌝) as "%". iApply (tr_simple_expr_nil with "HB"); eauto.
+        init H1 e'. iDestruct (proj1 tr_expr_invariant with "HB") as "HB".
+        iApply (locally_consequence with "[HC] HB"). finish_him.
+      + iDestruct "HA" as (sl2 a2 sl3 al3) "[HB [HA %]]".
+        iAssert (⌜ sl2 = nil ⌝) as "%". iApply (tr_simple_expr_nil with "HB"); eauto. init H1 e'.
+        iDestruct (proj1 tr_expr_invariant with "HB") as "HB".
+        iApply (locally_consequence with "[] HB"). finish_him.
+      + iDestruct "HA" as (sl2 a2 sl3 al3 t0) "[HC [HB [HA [% %]]]]".
+        iAssert (⌜ sl2 = nil ⌝) as "%". iApply (tr_simple_expr_nil with "HB"); eauto.
+        init H1 e'. iDestruct (proj1 tr_expr_invariant with "HB") as "HB".
+        iApply (locally_consequence with "[HC] HB"). finish_him.
+        
+    - simpl. iDestruct "HA" as ">HA". destruct dst.
+      + iDestruct "HA" as (sl2 al2 t0) "[HA [HB [% %]]]". init H0 e'.
+        iApply locally_simpl. finish_him.
+      + iDestruct "HA" as (sl2 al2) "[HA %]". init H0 e'.
+        iApply locally_simpl. finish_him.
+      + iDestruct "HA" as (sl2 al2 t0) "[HA [HB [% %]]]". init H0 e'.
+        iApply locally_simpl. finish_him.
+        
+    - simpl. iDestruct "HA" as (sl2 a2 sl3) ">[HA [HB %]]". init H0 e'.
+      iDestruct (proj1 tr_expr_invariant with "HB") as "HB".
+      iApply (locally_consequence with "[] HB"). finish_him.
+              
+    - simpl. iDestruct "HA" as ">HA". destruct dst.
+      + iDestruct "HA" as (a2 t0) "[HB [HA %]]". init H0 e'.
+        iApply locally_simpl. finish_him.
+      + iDestruct "HA" as (a2) "HA". init H0 e'.
+        iApply locally_simpl. finish_him.
+      + iDestruct "HA" as (a2 t0) "[HB HA]". init H0 e'.
+         iApply locally_simpl. finish_him.
+    - simpl. iDestruct "HA" as (sl2 a2 sl3 al3) ">[HA [HB [% %]]]". init H0 e'.
+      iDestruct (proj2 tr_expr_invariant with "HB") as "HB".
+      iApply (locally_consequence with "[] HB"). finish_him.        
+    - simpl. iDestruct "HA" as (sl2 a2 sl3 al3) ">[HB [HA [% %]]]".
+      iAssert (⌜sl2 = nil⌝) as "%". iApply (tr_simple_expr_nil with "HB"); auto. 
+      init H1 e'. iDestruct (proj1 tr_expr_invariant with "HB") as "HB".
+      iApply (locally_consequence with "[] HB"). iIntros "* HA HB !>". repeat iExists _.
+      iFrame. rewrite app_nil_l. eauto.
+  Qed.
+  
+  Theorem tr_expr_leftcontext:
+    (forall from to C, leftcontext from to C ->
+    forall le e dst sl a,
+    tr_expr le dst (C e) sl a -∗
+    ∃ dst' sl1 sl2 a',
+    tr_expr le dst' e sl1 a'
+    ∗ ⌜ sl = sl1 ++ sl2 ⌝
+    ∗ (∀ e',
+    \⌜ Csyntax.typeof e' = Csyntax.typeof e ⌝ -∗
+    (∀ sl3,
+        locally le (fun le' => tr_expr le' dst' e' sl3 a' -∗ tr_expr le' dst (C e') (sl3 ++ sl2) a)))
+    ).
+  Proof.
+      intros. eapply (proj1 tr_expr_leftcontext_rec); eauto.
+  Qed.
 
 (** Semantics of smart constructors *)
 
@@ -654,6 +839,9 @@ Proof.
   auto.
 - destruct v; try congruence. 
   destruct (negb Archi.ptr64); try discriminate.
+  destruct (Mem.weak_valid_pointer m1 b (Ptrofs.unsigned i)); inv H.
+  destruct (Mem.weak_valid_pointer m2 b (Ptrofs.unsigned i)); inv H0.
+  auto.
   destruct (Mem.weak_valid_pointer m1 b (Ptrofs.unsigned i)); inv H.
   destruct (Mem.weak_valid_pointer m2 b (Ptrofs.unsigned i)); inv H0.
   auto.
@@ -769,36 +957,28 @@ Lemma step_tr_rvalof:
   forall ty m b ofs t v e le a sl a' f k,
   Csem.deref_loc ge ty m b ofs t v ->
   eval_lvalue tge e le m a b ofs ->
-  tr_rvalof ty a (sl,a') -∗
-  ⌜ typeof a = ty ⌝ -∗
+  typeof a = ty ->
+  tr_rvalof ty a sl a' -∗
   ∃ le',
     ⌜star step1 tge (State f Sskip (Kseqlist sl k) e le m)
                  t (State f Sskip k e le' m)
   /\ eval_expr tge e le' m a' v
-  /\ typeof a' = typeof a ⌝
-  ∗ ∀ x, (\s x -∗ False) -∗ ⌜ le'!x = le!x ⌝.
+  /\ typeof a' = typeof a ⌝.
 Proof.
-  iIntros (? ? ? ? ? ? ? ? ? ? ? ? ? H0 H1) "HA %". unfold tr_rvalof.
+  iIntros "* % % % HA". unfold tr_rvalof.
   destruct (type_is_volatile ty) eqn:?.
-  - iDestruct "HA" as  (t1) "[% HA]". inversion H. subst. clear H.
+  - iDestruct "HA" as  (t1) "[[% %] HA]". subst. 
     iExists (Maps.PTree.set t1 v le). iSplitR.
-    + iPureIntro. simpl. split. eapply star_two. econstructor. eapply step_make_set; eauto. traceEq.
-      split. constructor. apply Maps.PTree.gss.
+    + iPureIntro. simpl. eapply star_two. econstructor. eapply step_make_set; eauto. traceEq.
+    + iStopProof. apply test3. apply test2. intros. split. constructor. apply Maps.PTree.gss.
       reflexivity.
-    + iIntros (x) "HB". iStopProof. apply test3. apply test2. intros. apply Maps.PTree.gso.
-      intro. apply (soundness1 _ tmps). iIntros "HA". apply soundness3 in H.
-      iDestruct (H with "HA") as "[HA HB]". iDestruct ("HB" with "[HA]") as "HA".
-      iExists (typeof a). rewrite H2. iApply "HA". iApply "HA".
-  - iDestruct "HA" as "%". inversion H; subst. clear H.
+  - iDestruct "HA" as "[% %]". subst.
     exploit deref_loc_translated; eauto. intro.
-    unfold chunk_for_volatile_type in H. rewrite Heqb0 in H. destruct H. subst.
+    unfold chunk_for_volatile_type in H1. rewrite Heqb0 in H1. destruct H1. subst.
     iExists le. iSplit; eauto.
-    iPureIntro. split.  apply star_refl.
-    split. eapply eval_Elvalue; eauto.
+    iPureIntro. apply star_refl. iPureIntro. split. eapply eval_Elvalue; eauto.
     reflexivity.
 Qed.
-    
-    
 
     
 (** Matching between continuations *)
@@ -842,7 +1022,7 @@ Inductive match_cont : Csem.cont -> cont -> Prop :=
   | match_Kcall: forall f e C ty k optid tf le sl tk a dest tmps,
       tr_function f tf ->
       leftcontext RV RV C ->
-      (forall v m, tr_top tge e (set_opttemp optid v le) m dest (C (Csyntax.Eval v ty)) sl a () tmps) ->
+      (forall v m, tr_top tge e (set_opttemp optid v le) m dest (C (Csyntax.Eval v ty)) sl a tmps) ->
       match_cont_exp dest a k tk ->
       match_cont (Csem.Kcall f e C ty k)
                  (Kcall optid tf e le (Kseqlist sl tk))
@@ -914,7 +1094,7 @@ Qed.
 Inductive match_states: Csem.state -> Clight.state -> Prop :=
   | match_exprstates: forall f r k e m tf sl tk le dest a tmps,
       tr_function f tf ->
-      tr_top tge e le m dest r sl a () tmps ->
+      tr_top tge e le m dest r sl a tmps ->
       match_cont_exp dest a k tk ->
       match_states (Csem.ExprState f r k e m)
                    (State tf Sskip (Kseqlist sl tk) e le m)
@@ -1028,7 +1208,7 @@ Proof.
 Qed.
 
 Lemma tr_rvalof_nolabel:
-  forall ty a sl a', tr_rvalof ty a (sl,a') -∗ ⌜ nolabel_list sl ⌝.
+  forall ty a sl a', tr_rvalof ty a sl a' -∗ ⌜ nolabel_list sl ⌝.
 Proof.
   iIntros (ty a sl a') "HA". unfold tr_rvalof. destruct (type_is_volatile ty) eqn:?.
   - iDestruct "HA" as (t0) "[% HA]". inversion H; subst. clear H.
@@ -1061,416 +1241,152 @@ Ltac NoLabelTac :=
   | [ |- nolabel (make_set _ _) ] => apply make_set_nolabel
   | [ |- nolabel (make_assign _ _) ] => apply make_assign_nolabel
   | [ |- nolabel_list (do_set _ _) ] => apply nolabel_do_set
-  | [ |- nolabel _ ] => iIntros; simpl; auto
+  | [ |- nolabel _ ] => intro; simpl; auto
   | [ |- _ /\ _ ] => split; NoLabelTac
   | _ => auto
   end.
 
-Lemma test5 : forall (P Q : iProp) tmps, ((P ∧ Q) : iProp) () tmps -> (P () tmps ∧ Q () tmps).
-Proof.
-  MonPred.unseal. intros. destruct H. split; auto. 
-Qed.
-
 Lemma tr_find_label_expr:
-  (forall r le dst sl a, tr_expr le dst r (sl,a) -∗ ⌜ nolabel_list sl ⌝)
-/\(forall rl le sl al, tr_exprlist le rl (sl,al) -∗ ⌜ nolabel_list sl ⌝).
+  (forall r le dst sl a, tr_expr le dst r sl a -∗ ⌜ nolabel_list sl ⌝)
+/\(forall rl le sl al, tr_exprlist le rl sl al -∗ ⌜ nolabel_list sl ⌝).
 Proof.
   apply tr_expr_exprlist; intros; iIntros "HA".
-  - destruct dst.
-    1-2 : iDestruct (tr_simple_expr_nil with "HA") as "HA";
-      iDestruct ("HA" with "[]") as "HA"; eauto;
-        iDestruct ("HA" with "[]") as "%"; eauto; rewrite H; auto.
-    iDestruct "HA" as "[_ HA]". iDestruct "HA" as (a0) "[_ [_ %]]".
-    simpl in *. rewrite H. iPureIntro. apply nolabel_do_set.
-  - destruct dst.
-    1-2 : iDestruct (tr_simple_expr_nil with "HA") as "HA";
-      iDestruct ("HA" with "[]") as "HA"; eauto;
-        iDestruct ("HA" with "[]") as "%"; eauto; rewrite H; auto.
-    iDestruct "HA" as "[_ [HA %]]".
-    simpl in *. inversion H; subst. iPureIntro. apply nolabel_do_set.
-  - destruct dst.
-    + iDestruct "HA" as "[_ HA]"; fold tr_expr. 
-      iDestruct "HA" as (sla2) "[HB [HA %]]". rewrite (surjective_pairing sla2).
-      iDestruct (H with "HB") as "%". inversion H0; subst. clear H0.
-      iPureIntro. NoLabelTac.
-    + iDestruct "HA" as "[_ HA]"; fold tr_expr. 
-      iDestruct "HA" as (sla2) "[HB [HA %]]". rewrite (surjective_pairing sla2).
-      iDestruct (H with "HB") as "%". inversion H0; subst. clear H0.
-      iPureIntro. NoLabelTac.
-    + iDestruct "HA" as "[_ HA]"; fold tr_expr. 
-      iDestruct "HA" as (sla2) "[HB [HA %]]". rewrite (surjective_pairing sla2).
-      iDestruct (H with "HB") as "%". inversion H0; subst. clear H0.
+  - destruct dst; simpl.
+    + iDestruct "HA" as ">[HA [_ %]]"; subst; NoLabelTac.
+    + iDestruct "HA" as ">%"; subst; NoLabelTac.
+    + iDestruct "HA" as (a0) ">[HA [_ %]]"; subst; NoLabelTac. iPureIntro. apply nolabel_do_set.
+  - simpl. iDestruct "HA" as ">[% %]". subst. iPureIntro. NoLabelTac.
+  - simpl. iDestruct "HA" as (sl2 a2) ">[HA [% _]]". 
+    iDestruct (H with "HA") as "%". subst. iPureIntro. NoLabelTac.
+  - simpl. iDestruct "HA" as (sl2 a2 sl3) ">[HA [HC %]]". iDestruct (H with "HA") as "%".
+    iDestruct (tr_rvalof_nolabel with "HC") as "%". subst. iPureIntro. NoLabelTac.
+  - simpl. iDestruct "HA" as (sl2 a2) ">[HA [% %]]". iDestruct (H with "HA") as "%".
+    iPureIntro. subst. NoLabelTac.
+  - simpl. iDestruct "HA" as (sl2 a2) ">[HA [% %]]". iDestruct (H with "HA") as "%". subst.
+    iPureIntro. NoLabelTac.
+  - simpl. iDestruct "HA" as (sl2 a2) ">[HA [% _]]". iDestruct (H with "HA") as "%". subst.
+    iPureIntro. NoLabelTac.
+  - simpl. iDestruct "HA" as (sl2 a2 sl3 a3) ">[HA [HC [% _]]]". 
+    iDestruct (H with "HA") as "%". iDestruct (H0 with "HC") as "%". subst.
+    iPureIntro. NoLabelTac.
+  - simpl. iDestruct "HA" as (sl2 a2) ">[HA [% %]]". iDestruct (H with "HA") as "%". subst.
+    iPureIntro. NoLabelTac.
+  - destruct dst; simpl.
+    + iDestruct "HA" as (sl2 a2 sl3 a3 t0) ">[HA [HD [HC [% %]]]]".
+      iDestruct (H with "HD") as "%". iDestruct (H0 with "HC") as "%". subst.
       iPureIntro. NoLabelTac. 
-  - destruct dst.
-    + iDestruct "HA" as "[_ HA]"; fold tr_expr. 
-      iDestruct "HA" as (sla2 sl3) "[HB [HA [_ %]]]". rewrite (surjective_pairing sla2).
-      iDestruct (H with "HB") as "%". simpl in *. rewrite H0.
-      iDestruct (tr_rvalof_nolabel with "HA") as "%".
+    + simpl. iDestruct "HA" as (sl2 a2 sl3 a3) ">[HA [HD %]]". 
+      iDestruct (H with "HA") as "%". iDestruct (H0 with "HD") as "%". subst.
+      iPureIntro. NoLabelTac. 
+    + iDestruct "HA" as (sl2 a2 sl3 a3) ">[HA [HC %]]". 
+      iDestruct (H with "HA") as "%". iDestruct (H0 with "HC") as "%". subst.
+      iPureIntro. NoLabelTac. 
+  - destruct dst; simpl.
+    + iDestruct "HA" as (sl2 a2 sl3 a3 t0) ">[HA [HD [HC [% _]]]]".
+      iDestruct (H with "HD") as "%". iDestruct (H0 with "HC") as "%". subst.
+      iPureIntro. NoLabelTac. 
+    + simpl. iDestruct "HA" as (sl2 a2 sl3 a3) ">[HA [HD %]]". 
+      iDestruct (H with "HA") as "%". iDestruct (H0 with "HD") as "%". subst.
+      iPureIntro. NoLabelTac. 
+    + iDestruct "HA" as (sl2 a2 sl3 a3) ">[HA [HC %]]". 
+      iDestruct (H with "HA") as "%". iDestruct (H0 with "HC") as "%". subst.
       iPureIntro. NoLabelTac.
-    + iDestruct "HA" as "[_ HA]"; fold tr_expr. 
-      iDestruct "HA" as (sla2 sl3) "[HB [HA [_ %]]]". rewrite (surjective_pairing sla2).
-      iDestruct (H with "HB") as "%". simpl in *. rewrite H0.
-      iDestruct (tr_rvalof_nolabel with "HA") as "%".
+  - destruct dst; simpl.
+    + iDestruct "HA" as (sl2 a2 sl3 a3 sl4 a4 t0) ">[HA [HE [HC [HD [% _]]]]]".
+      iDestruct (H with "HE") as "%". iDestruct (H0 with "HC") as "%".
+      iDestruct (H1 with "HD") as "%". subst.
       iPureIntro. NoLabelTac.
-    + iDestruct "HA" as "[_ HA]"; fold tr_expr. 
-      iDestruct "HA" as (sla2 sl3) "[HB [HA [_ %]]]". rewrite (surjective_pairing sla2).
-      iDestruct (H with "HB") as "%". simpl in *. rewrite H0.
-      iDestruct (tr_rvalof_nolabel with "HA") as "%".
+    + iDestruct "HA" as (sl2 a2 sl3 a3 sl4 a4) ">[HA [HE [HC %]]]".
+      iDestruct (H with "HA") as "%". iDestruct (H0 with "HE") as "%".
+      iDestruct (H1 with "HC")as "%". subst.
       iPureIntro. NoLabelTac.
-  - destruct dst.
-    + iDestruct "HA" as "[_ HA]"; fold tr_expr. 
-      iDestruct "HA" as (sla2) "[HB [HA %]]". rewrite (surjective_pairing sla2).
-      inversion H0; subst.
-      iDestruct (H with "HB") as "%". simpl in *. 
+    + iDestruct "HA" as (sl2 a2 sl3 a3 sl4 a4 t0) ">[HA [HE [HC [HD %]]]]".
+      iDestruct (H with "HE") as "%". iDestruct (H0 with "HC") as "%".
+      iDestruct (H1 with "HD") as "%". subst.
       iPureIntro. NoLabelTac.
-    + iDestruct "HA" as "[_ HA]"; fold tr_expr. 
-      iDestruct "HA" as (sla2) "[HB [HA %]]". rewrite (surjective_pairing sla2).
-      inversion H0; subst.
-      iDestruct (H with "HB") as "%". simpl in *. 
+  - iDestruct "HA" as ">[% _]". subst. iPureIntro. NoLabelTac.
+  - iDestruct "HA" as ">[% _]". subst. iPureIntro. NoLabelTac.
+  - simpl. destruct dst.
+    + iDestruct "HA" as (sl2 a2 sl3 a3 t0) ">[HA [HD [HC [% %]]]]".
+      iDestruct (H with "HA")as "%". iDestruct (H0 with "HD")as "%". subst.
       iPureIntro. NoLabelTac.
-    + iDestruct "HA" as "[_ HA]"; fold tr_expr. 
-      iDestruct "HA" as (sla2) "[HB [HA %]]". rewrite (surjective_pairing sla2).
-      inversion H0; subst.
-      iDestruct (H with "HB") as "%". simpl in *. 
+    + iDestruct "HA" as (sl2 a2 sl3 a3) ">[HA [HD %]]".
+      iDestruct (H with "HA") as "%". iDestruct (H0 with "HD") as "%". subst.
       iPureIntro. NoLabelTac.
-  - destruct dst.
-    + iDestruct "HA" as "[_ HA]"; fold tr_expr. 
-      iDestruct "HA" as (sla2) "[HB [HA %]]". rewrite (surjective_pairing sla2).
-      inversion H0; subst.
-      iDestruct (H with "HB") as "%". simpl in *. 
+    + iDestruct "HA" as (sl2 a2 sl3 a3 t0) ">[HA [HD [HC [% %]]]]".
+      iDestruct (H with "HA") as "%". iDestruct (H0 with "HD") as "%". subst.
       iPureIntro. NoLabelTac.
-    + iDestruct "HA" as "[_ HA]"; fold tr_expr. 
-      iDestruct "HA" as (sla2) "[HB [HA %]]". rewrite (surjective_pairing sla2).
-      inversion H0; subst.
-      iDestruct (H with "HB") as "%". simpl in *. 
+  - simpl. destruct dst.
+    + iDestruct "HA" as (sl2 a2 sl3 a3 sl4 a4 t0) ">[HA [HD [HC [HE [% _]]]]]".
+      iDestruct (H with "HA") as "%". iDestruct (H0 with "HD") as "%".
+      iDestruct (tr_rvalof_nolabel with "HC") as "%". subst.
       iPureIntro. NoLabelTac.
-    + iDestruct "HA" as "[_ HA]"; fold tr_expr. 
-      iDestruct "HA" as (sla2) "[HB [HA %]]". rewrite (surjective_pairing sla2).
-      inversion H0; subst.
-      iDestruct (H with "HB") as "%". simpl in *. 
+    + iDestruct "HA" as (sl2 a2 sl3 a3 sl4 a4) ">[HA [HD [HC %]]]".
+      iDestruct (H with "HA") as "%". iDestruct (H0 with "HD") as "%".
+      iDestruct (tr_rvalof_nolabel with "HC") as "%". subst.
       iPureIntro. NoLabelTac.
-  - destruct dst.
-    + iDestruct "HA" as "[_ HA]"; fold tr_expr. 
-      iDestruct "HA" as (sla2) "[HB [HA %]]". rewrite (surjective_pairing sla2).
-      inversion H0; subst.
-      iDestruct (H with "HB") as "%". simpl in *. 
+    + iDestruct "HA" as (sl2 a2 sl3 a3 sl4 a4 t0) ">[HA [HD [HC [HE [% _]]]]]".
+      iDestruct (H with "HA") as "%". iDestruct (H0 with "HD") as "%".
+      iDestruct (tr_rvalof_nolabel with "HC") as "%". subst.
       iPureIntro. NoLabelTac.
-    + iDestruct "HA" as "[_ HA]"; fold tr_expr. 
-      iDestruct "HA" as (sla2) "[HB [HA %]]". rewrite (surjective_pairing sla2).
-      inversion H0; subst.
-      iDestruct (H with "HB") as "%". simpl in *. 
+  - simpl. iDestruct "HA" as (sl2 a2) ">[HC HA]". destruct dst.
+    + iDestruct "HA" as (t0) "[HD [% _]]". iDestruct (H with "HC") as "%". subst.
       iPureIntro. NoLabelTac.
-    + iDestruct "HA" as "[_ HA]"; fold tr_expr. 
-      iDestruct "HA" as (sla2) "[HB [HA %]]". rewrite (surjective_pairing sla2).
-      inversion H0; subst.
-      iDestruct (H with "HB") as "%". simpl in *. 
+    + iDestruct "HA" as (sl3 a3) "[HD %]". iDestruct (tr_rvalof_nolabel with "HD") as "%".       
+      iDestruct (H with "HC") as "%". subst.
       iPureIntro. NoLabelTac.
-  - destruct dst.
-    + iDestruct "HA" as "[_ HA]"; fold tr_expr. 
-      iDestruct "HA" as (sla2 sla3) "[HB [HA [_ %]]]". rewrite (surjective_pairing sla2).
-      rewrite (surjective_pairing sla3).
-      inversion H1; subst.
-      iDestruct (H with "HB") as "%".
-      iDestruct (H0 with "HA") as "%". 
+    + iDestruct "HA" as (t0) "[HD [% _]]". iDestruct (H with "HC") as "%". subst.
       iPureIntro. NoLabelTac.
-    + iDestruct "HA" as "[_ HA]"; fold tr_expr. 
-      iDestruct "HA" as (sla2 sla3) "[HB [HA [_ %]]]". rewrite (surjective_pairing sla2).
-      rewrite (surjective_pairing sla3).
-      inversion H1; subst.
-      iDestruct (H with "HB") as "%".
-      iDestruct (H0 with "HA") as "%". 
+  - simpl. iDestruct "HA" as (sl2 a2 sl3) ">[HA [HC %]]".
+    iDestruct (H with "HA") as "%". iDestruct (H0 with "HC") as "%". subst.
+    iPureIntro. NoLabelTac.
+  - simpl. destruct dst.
+    + iDestruct "HA" as (sl2 a2 sl3 al3 t0) ">[HA [HD [HC [% _]]]]".
+      iDestruct (H with "HD") as "%". iDestruct (H0 with "HC") as "%". subst.
       iPureIntro. NoLabelTac.
-    + iDestruct "HA" as "[_ HA]"; fold tr_expr. 
-      iDestruct "HA" as (sla2 sla3) "[HB [HA [_ %]]]". rewrite (surjective_pairing sla2).
-      rewrite (surjective_pairing sla3).
-      inversion H1; subst.
-      iDestruct (H with "HB") as "%".
-      iDestruct (H0 with "HA") as "%". 
+    + iDestruct "HA" as (sl2 a2 sl3 al3) ">[HA [HC %]]".
+      iDestruct (H with "HA") as "%". iDestruct (H0 with "HC") as "%". subst.
       iPureIntro. NoLabelTac.
-  - destruct dst.
-    + iDestruct "HA" as "[_ HA]"; fold tr_expr. 
-      iDestruct "HA" as (sla2) "[HB [HA %]]". rewrite (surjective_pairing sla2).
-      inversion H0; subst.
-      iDestruct (H with "HB") as "%". simpl in *. 
+    + iDestruct "HA" as (sl2 a2 sl3 al3 t0) ">[HA [HD [HC [% _]]]]".
+      iDestruct (H with "HD") as "%". iDestruct (H0 with "HC") as "%". subst.
       iPureIntro. NoLabelTac.
-    + iDestruct "HA" as "[_ HA]"; fold tr_expr. 
-      iDestruct "HA" as (sla2) "[HB [HA %]]". rewrite (surjective_pairing sla2).
-      inversion H0; subst.
-      iDestruct (H with "HB") as "%". simpl in *. 
+  - simpl. destruct dst.
+    + iDestruct "HA" as (sl2 al2 t0) ">[HA [HC [% _]]]".
+      iDestruct (H with "HA") as "%". subst.
       iPureIntro. NoLabelTac.
-    + iDestruct "HA" as "[_ HA]"; fold tr_expr. 
-      iDestruct "HA" as (sla2) "[HB [HA %]]". rewrite (surjective_pairing sla2).
-      inversion H0; subst.
-      iDestruct (H with "HB") as "%". simpl in *. 
+    + iDestruct "HA" as (sl2 al2) ">[HA %]". 
+      iDestruct (H with "HA") as "%". subst.
       iPureIntro. NoLabelTac.
-  - destruct dst.
-    + iDestruct "HA" as "[_ HA]"; fold tr_expr. 
-      iDestruct "HA" as (sla2 sla3 t0) "[HB [HA [HC %]]]". rewrite (surjective_pairing sla2).
-      rewrite (surjective_pairing sla3). iDestruct ("HA" with "HC") as "HA".
-      inversion H1; subst.
-      iDestruct (H with "HB") as "%".
-      iDestruct (H0 with "HA") as "%". 
-      iPureIntro. NoLabelTac. red. unfold find_label. auto.
-    + iDestruct "HA" as "[_ HA]"; fold tr_expr. 
-      iDestruct "HA" as (sla2 sla3) "[HB [HA %]]". rewrite (surjective_pairing sla2).
-      rewrite (surjective_pairing sla3). 
-      simpl in *; subst.
-      iDestruct (H with "HB") as "%".
-      iDestruct (H0 with "HA") as "%". 
-      iPureIntro. NoLabelTac. red. unfold find_label. auto.
-    + iDestruct "HA" as "[_ HA]"; fold tr_expr. 
-      iDestruct "HA" as (sla2 sla3) "[HB [HA [HC %]]]". rewrite (surjective_pairing sla2).
-      rewrite (surjective_pairing sla3). iDestruct ("HA" with "HC") as "HA".
-      simpl in *; subst.
-      iDestruct (H with "HB") as "%".
-      iDestruct (H0 with "HA") as "%". 
+    + iDestruct "HA" as (sl2 al2 t0) ">[HA [HC [% _]]]".
+      iDestruct (H with "HA") as "%". subst.
       iPureIntro. NoLabelTac.
-  - destruct dst.
-    + iDestruct "HA" as "[_ HA]"; fold tr_expr. 
-      iDestruct "HA" as (sla2 sla3 t0) "[HB [HA [HC %]]]". rewrite (surjective_pairing sla2).
-      rewrite (surjective_pairing sla3). iDestruct ("HA" with "HC") as "HA".
-      inversion H1; subst.
-      iDestruct (H with "HB") as "%".
-      iDestruct (H0 with "HA") as "%". 
-      iPureIntro. NoLabelTac. red. unfold find_label. auto.
-    + iDestruct "HA" as "[_ HA]"; fold tr_expr. 
-      iDestruct "HA" as (sla2 sla3) "[HB [HA %]]". rewrite (surjective_pairing sla2).
-      rewrite (surjective_pairing sla3). 
-      simpl in *; subst.
-      iDestruct (H with "HB") as "%".
-      iDestruct (H0 with "HA") as "%". 
-      iPureIntro. NoLabelTac. red. unfold find_label. auto.
-    + iDestruct "HA" as "[_ HA]"; fold tr_expr. 
-      iDestruct "HA" as (sla2 sla3) "[HB [HA [HC %]]]". rewrite (surjective_pairing sla2).
-      rewrite (surjective_pairing sla3). iDestruct ("HA" with "HC") as "HA".
-      simpl in *; subst.
-      iDestruct (H with "HB") as "%".
-      iDestruct (H0 with "HA") as "%". 
-      iPureIntro. NoLabelTac.
-  - destruct dst.
-    + iDestruct "HA" as "[_ HA]"; fold tr_expr.
-      iDestruct "HA" as (sla2 sla3 sla4 t0) "[HA [HB [HC %]]]".
-      inversion H2; subst. clear H2. rewrite (surjective_pairing sla2).
-      iDestruct (H with "HA") as "%". iClear "HA".
-      iDestruct ("HC" with "HB") as "HA".
-      iStopProof. apply test3. apply test2. intros. apply test5 in H3 as (P0&P1).
-      apply (soundness1 _ tmps). apply soundness3 in P0. iIntros "HA".
-      iDestruct (P0 with "HA") as "HA".
-      rewrite (surjective_pairing sla3). iDestruct (H0 with "HA") as "%".
-      iPureIntro.
-      apply (soundness1 _ tmps). apply soundness3 in P1. iIntros "HA".
-      iDestruct (P1 with "HA") as "HA".
-      rewrite (surjective_pairing sla4). iDestruct (H1 with "HA") as "%".
-      simpl in *; subst. iPureIntro. NoLabelTac.
-    + iDestruct "HA" as "[_ HA]"; fold tr_expr.
-      iDestruct "HA" as (sla2 sla3 sla4) "[HA [HB [HC %]]]".
-      simpl in *; subst. rewrite (surjective_pairing sla2). rewrite (surjective_pairing sla3).
-      rewrite (surjective_pairing sla4).
-      iDestruct (H with "HA") as "%". iClear "HA".
-      iDestruct (H0 with "HB") as "%". iClear "HB".
-      iDestruct (H1 with "HC") as "%". iClear "HC".
-      simpl in *; subst. iPureIntro. NoLabelTac.
-    + iDestruct "HA" as "[_ HA]"; fold tr_expr.
-      iDestruct "HA" as (sla2 sla3 sla4 t0) "[HA [HB [HC %]]]".
-      inversion H2; subst. clear H2. rewrite (surjective_pairing sla2).
-      iDestruct (H with "HA") as "%". iClear "HA".
-      iDestruct ("HC" with "HB") as "HA".
-      iStopProof. apply test3. apply test2. intros. apply test5 in H4 as (P0&P1).
-      apply (soundness1 _ tmps). apply soundness3 in P0. iIntros "HA".
-      iDestruct (P0 with "HA") as "HA".
-      rewrite (surjective_pairing sla3). iDestruct (H0 with "HA") as "%".
-      iPureIntro.
-      apply (soundness1 _ tmps). apply soundness3 in P1. iIntros "HA".
-      iDestruct (P1 with "HA") as "HA".
-      rewrite (surjective_pairing sla4). iDestruct (H1 with "HA") as "%".
-      simpl in *; subst. iPureIntro. NoLabelTac.      
-  - destruct dst.
-    1-2 : iDestruct (tr_simple_expr_nil with "HA") as "HA";
-      iDestruct ("HA" with "[]") as "HA"; eauto;
-        iDestruct ("HA" with "[]") as "%"; eauto; rewrite H; auto.
-    iDestruct "HA" as "[_ HA]". iDestruct "HA" as "[_ %]".
-    simpl in *. inversion H; subst. iPureIntro. apply nolabel_do_set.      
-  - destruct dst.
-    1-2 : iDestruct (tr_simple_expr_nil with "HA") as "HA";
-      iDestruct ("HA" with "[]") as "HA"; eauto;
-        iDestruct ("HA" with "[]") as "%"; eauto; rewrite H; auto.
-    iDestruct "HA" as "[_ HA]". iDestruct "HA" as "[_ %]".
-    simpl in *. inversion H; subst. iPureIntro. apply nolabel_do_set.
-  - destruct dst.
-    + iDestruct "HA" as "[_ HA]"; fold tr_expr. 
-      iDestruct "HA" as (sla2 sla3) "[HB [HA HC]]". rewrite (surjective_pairing sla2).
-      rewrite (surjective_pairing sla3). 
-      iDestruct (H with "HB") as "%".
-      iDestruct (H0 with "HA") as "%".
-      iDestruct "HC" as "[[% %]|HC]".
-      * inversion H4.
-      * iDestruct "HC" as (t0) "[HC %]". simpl in *. subst. iPureIntro. NoLabelTac.
-        red. intros.  unfold find_label. reflexivity.
-    + iDestruct "HA" as "[_ HA]"; fold tr_expr. 
-      iDestruct "HA" as (sla2 sla3) "[HB [HA HC]]". rewrite (surjective_pairing sla2).
-      rewrite (surjective_pairing sla3). 
-      iDestruct (H with "HB") as "%".
-      iDestruct (H0 with "HA") as "%".
-      iDestruct "HC" as "[[% %]|HC]".
-      * simpl in *. subst. iPureIntro. NoLabelTac.
-      * iDestruct "HC" as (t0) "[HC %]". simpl in *. subst. iPureIntro. NoLabelTac.
-        red. intros.  unfold find_label. reflexivity.
-    + iDestruct "HA" as "[_ HA]"; fold tr_expr. 
-      iDestruct "HA" as (sla2 sla3) "[HB [HA HC]]". rewrite (surjective_pairing sla2).
-      rewrite (surjective_pairing sla3). 
-      iDestruct (H with "HB") as "%".
-      iDestruct (H0 with "HA") as "%".
-      iDestruct "HC" as "[[% %]|HC]".
-      * inversion H4.
-      * iDestruct "HC" as (t0) "[HC %]". simpl in *. subst. iPureIntro. NoLabelTac.
-        red. intros.  unfold find_label. reflexivity.
-  - destruct dst.
-    + iDestruct "HA" as "[_ HA]"; fold tr_expr. 
-      iDestruct "HA" as (sla2 sla3 sla4) "[HB [HA [HC HD]]]". rewrite (surjective_pairing sla2).
-      rewrite (surjective_pairing sla3). rewrite (surjective_pairing sla4). 
-      iDestruct (H with "HB") as "%".
-      iDestruct (H0 with "HA") as "%".
-      simpl. iDestruct (tr_rvalof_nolabel with "HC") as "%".
-      iDestruct "HD" as "[[% %]|HD]".
-      * inversion H4.
-      * iDestruct "HD" as (t0) "[HD %]". inversion H4. subst. iPureIntro. NoLabelTac.
-        red. intros. unfold find_label. reflexivity.
-    + iDestruct "HA" as "[_ HA]"; fold tr_expr. 
-      iDestruct "HA" as (sla2 sla3 sla4) "[HB [HA [HC HD]]]". rewrite (surjective_pairing sla2).
-      rewrite (surjective_pairing sla3). rewrite (surjective_pairing sla4). 
-      iDestruct (H with "HB") as "%".
-      iDestruct (H0 with "HA") as "%".
-      simpl. iDestruct (tr_rvalof_nolabel with "HC") as "%".
-      iDestruct "HD" as "[[% %]|HD]".
-      * rewrite H5. iPureIntro. NoLabelTac.
-      * iDestruct "HD" as (t0) "[HD %]". inversion H4. subst. iPureIntro. NoLabelTac.
-        red. intros. unfold find_label. reflexivity.
-    + iDestruct "HA" as "[_ HA]"; fold tr_expr. 
-      iDestruct "HA" as (sla2 sla3 sla4) "[HB [HA [HC HD]]]". rewrite (surjective_pairing sla2).
-      rewrite (surjective_pairing sla3). rewrite (surjective_pairing sla4). 
-      iDestruct (H with "HB") as "%".
-      iDestruct (H0 with "HA") as "%".
-      simpl. iDestruct (tr_rvalof_nolabel with "HC") as "%".
-      iDestruct "HD" as "[[% %]|HD]".
-      * inversion H4.
-      * iDestruct "HD" as (t0) "[HD %]". inversion H4. subst. iPureIntro. NoLabelTac.
-        red. intros. unfold find_label. reflexivity.
-  - destruct dst.
-    + iDestruct "HA" as "[_ [HA|HA]]"; fold tr_expr.
-      * iDestruct "HA" as (sla2 sla3) "[HB [HA %]]". rewrite (surjective_pairing sla2).
-        rewrite (surjective_pairing sla3). simpl. iDestruct (tr_rvalof_nolabel with "HA") as "%".
-        iDestruct (H with "HB") as "%". simpl in *; subst. iPureIntro. NoLabelTac.
-      * iDestruct "HA" as (sla2 t0) "[HB [HA %]]". rewrite (surjective_pairing sla2).
-        inversion H0; subst.
-        iDestruct (H with "HB") as "%". simpl in *; subst. iPureIntro. NoLabelTac.
-    + iDestruct "HA" as "[_ [HA|HA]]"; fold tr_expr.
-      * iDestruct "HA" as (sla2 sla3) "[HB [HA %]]". rewrite (surjective_pairing sla2).
-        rewrite (surjective_pairing sla3). simpl. iDestruct (tr_rvalof_nolabel with "HA") as "%".
-        iDestruct (H with "HB") as "%". simpl in *; subst. iPureIntro. NoLabelTac.
-      * iDestruct "HA" as (sla2 t0) "[HB [HA %]]". rewrite (surjective_pairing sla2).
-        inversion H0; subst.
-        iDestruct (H with "HB") as "%". simpl in *; subst. iPureIntro. NoLabelTac.
-    + iDestruct "HA" as "[_ [HA|HA]]"; fold tr_expr.
-      * iDestruct "HA" as (sla2 sla3) "[HB [HA %]]". rewrite (surjective_pairing sla2).
-        rewrite (surjective_pairing sla3). simpl. iDestruct (tr_rvalof_nolabel with "HA") as "%".
-        iDestruct (H with "HB") as "%". simpl in *; subst. iPureIntro. NoLabelTac.
-      * iDestruct "HA" as (sla2 t0) "[HB [HA %]]". rewrite (surjective_pairing sla2).
-        inversion H0; subst.
-        iDestruct (H with "HB") as "%". simpl in *; subst. iPureIntro. NoLabelTac.
-  - destruct dst.
-    + iDestruct "HA" as "[_ HA]"; fold tr_expr.
-      iDestruct "HA" as (sla2 sl3) "[HB [HA [_ %]]]". rewrite (surjective_pairing sla2).
-      simpl. iDestruct (H with "HB") as "%". simpl in *; subst.
-      iDestruct (H0 with "[HA]") as "%".
-      * iApply "HA". trivial.
-      * iPureIntro. NoLabelTac.
-    + iDestruct "HA" as "[_ HA]"; fold tr_expr.
-      iDestruct "HA" as (sla2 sl3) "[HB [HA [_ %]]]". rewrite (surjective_pairing sla2).
-      simpl. iDestruct (H with "HB") as "%". simpl in *; subst.
-      iDestruct (H0 with "[HA]") as "%".
-      * iApply "HA". trivial.
-      * iPureIntro. NoLabelTac.
-    + iDestruct "HA" as "[_ HA]"; fold tr_expr.
-      iDestruct "HA" as (sla2 sl3) "[HB [HA [HC %]]]". rewrite (surjective_pairing sla2).
-      simpl. iDestruct (H with "HB") as "%". simpl in *; subst.
-      iDestruct (H0 with "[HA HC]") as "%".
-      * iApply "HA". trivial.
-      * iPureIntro. NoLabelTac.
-  - destruct dst.
-    + iDestruct "HA" as "[_ HA]"; fold tr_expr; fold tr_exprlist.
-      iDestruct "HA" as (sla2 slal3 t0) "[HB [HA [HC [_ %]]]]". rewrite (surjective_pairing sla2).
-      rewrite (surjective_pairing slal3). inversion H1; subst.
-      iDestruct (H with "HB") as "%".
-      iDestruct (H0 with "HA") as "%".
-      iPureIntro. NoLabelTac.
-      red. intros. unfold find_label. reflexivity.
-    + iDestruct "HA" as "[_ HA]"; fold tr_expr; fold tr_exprlist.
-      iDestruct "HA" as (sla2 slal3) "[HB [HA %]]". rewrite (surjective_pairing sla2).
-      rewrite (surjective_pairing slal3). simpl in *; subst.
-      iDestruct (H with "HB") as "%".
-      iDestruct (H0 with "HA") as "%".
-      iPureIntro. NoLabelTac.
-      red. intros. unfold find_label. reflexivity.
-    + iDestruct "HA" as "[_ HA]"; fold tr_expr; fold tr_exprlist.
-      iDestruct "HA" as (sla2 slal3 t0) "[HB [HA [HC [_ %]]]]". rewrite (surjective_pairing sla2).
-      rewrite (surjective_pairing slal3). inversion H1; subst.
-      iDestruct (H with "HB") as "%".
-      iDestruct (H0 with "HA") as "%".
-      iPureIntro. NoLabelTac.
-      red. intros. unfold find_label. reflexivity.
-  - destruct dst.
-    + iDestruct "HA" as "[_ HA]"; fold tr_expr; fold tr_exprlist.
-      iDestruct "HA" as (slal2 t0) "[HB [HA [_ %]]]". rewrite (surjective_pairing slal2).
-      inversion H0; subst. iDestruct (H with "HB") as "%".
-      iPureIntro. NoLabelTac.
-      red. intros. unfold find_label. reflexivity.
-    + iDestruct "HA" as "[_ HA]"; fold tr_expr; fold tr_exprlist.
-      iDestruct "HA" as (slal2) "[HB %]". rewrite (surjective_pairing slal2).
-      simpl in *; subst. iDestruct (H with "HB") as "%".
-      iPureIntro. NoLabelTac.
-      red. intros. unfold find_label. reflexivity.
-    + iDestruct "HA" as "[_ HA]"; fold tr_expr; fold tr_exprlist.
-      iDestruct "HA" as (slal2 t0) "[HB [HA [_ %]]]". rewrite (surjective_pairing slal2).
-      inversion H0; subst. iDestruct (H with "HB") as "%".
-      iPureIntro. NoLabelTac.
-      red. intros. unfold find_label. reflexivity.
-  - destruct dst; iDestruct "HA" as "[_ HA]"; iExFalso; iApply "HA".
-  - destruct dst.
-    + iDestruct "HA" as "[_ HA]"; fold tr_expr; fold tr_exprlist.
-      iDestruct "HA" as (a2 t0) "[HB [HA %]]". iDestruct ("HB" with "HA") as "HA". simpl.
-      iDestruct (H with "HA") as "%". iPureIntro. apply H1.
-    + iDestruct "HA" as "[_ HA]"; fold tr_expr; fold tr_exprlist.
-      iDestruct "HA" as (a2) "HA". simpl.
-      iDestruct (H with "HA") as "%". iPureIntro. apply H0.
-    + iDestruct "HA" as "[_ HA]"; fold tr_expr; fold tr_exprlist.
-      iDestruct "HA" as (a2 t0) "[HB HA]". iDestruct ("HB" with "HA") as "HA". simpl.
-      iDestruct (H with "HA") as "%". iPureIntro. apply H0.
-  - iDestruct "HA" as "[_ %]". inversion H. iPureIntro. NoLabelTac.
-  - iDestruct "HA" as "[_ HA]"; fold tr_expr; fold tr_exprlist.
-    iDestruct "HA" as (sla2 slal3) "[HA [HB %]]". inversion H1; subst.
-    rewrite (surjective_pairing sla2). rewrite (surjective_pairing slal3).
-    simpl. iDestruct (H with "HA") as "%". iDestruct (H0 with "HB") as "%".
+  - iExFalso. iDestruct "HA" as ">HA". iApply "HA".
+  - simpl. destruct dst.
+    + iDestruct "HA" as (a2 t0) ">[HA [HB %]]". iDestruct (H with "HB") as "%". auto.
+    + iDestruct "HA" as (a2) ">HA". iDestruct (H with "HA") as "%". auto.
+    + iDestruct "HA" as (a2 t0) ">[HB HA]". iDestruct (H with "HA") as "%". auto.
+  - simpl. iDestruct "HA" as ">[% _]". subst. NoLabelTac.
+  - simpl. iDestruct "HA" as (sl2 a2 sl3 al3) ">[HA [HB [% _]]]".
+    iDestruct (H with "HA") as "%". iDestruct (H0 with "HB") as "%". subst.
     iPureIntro. NoLabelTac.
 Qed.
                                         
 Lemma tr_find_label_top:
-  forall e le m dst r sl a,
-    tr_top tge e le m dst r sl a -∗ ⌜ nolabel_list sl ⌝.
+  forall e le m dst r sl a tmp,
+    tr_top tge e le m dst r sl a tmp -> nolabel_list sl.
 Proof.
-  intros. iIntros "HA". unfold tr_top. iDestruct ("HA" with "") as "[HA|%]".
-  - unfold tr_top_base. epose tr_find_label_expr. destruct a0. iApply (H with "HA").
-  - unfold tr_top_val_val in H. destruct sl; auto.
+  intros. inv H. NoLabelTac.
+  apply (soundness1 _ tmp). iIntros "HA". apply soundness3 in H0. iDestruct (H0 with "HA") as "HA".
+  iApply (proj1 tr_find_label_expr); auto.
 Qed.
-
+                                                                                                  
 Lemma tr_find_label_expression:
   forall r s a, tr_expression r s a -> forall k, find_label lbl s k = None.
 Proof.
-  intros. inv H.
+  intros. inv H. 
   assert (nolabel (makeseq sl)). apply makeseq_nolabel.
   pose (H0 tge empty_env (Maps.PTree.empty val) Mem.empty).
-  apply soundness3 in m.
-  apply (soundness1 _ tmps). iIntros "HA". iDestruct (m with "HA") as "HA".
-  iApply tr_find_label_top; eauto.
+  eapply (tr_find_label_top). eauto.
   apply H.
 Qed.
 
@@ -1480,10 +1396,8 @@ Proof.
   intros. inv H.
   assert (nolabel (makeseq sl)). apply makeseq_nolabel.
   pose (H0 tge empty_env (Maps.PTree.empty val) Mem.empty).
-  apply soundness3 in m.
-  apply (soundness1 _ tmps). iIntros "HA". iDestruct (m with "HA") as "HA".
-  iApply tr_find_label_top; eauto.
-  apply H.
+  eapply (tr_find_label_top). eauto.
+  apply H. 
 Qed.
 
 Lemma tr_find_label_if:
@@ -1494,12 +1408,10 @@ Proof.
   apply makeseq_nolabel.
   apply nolabel_list_app.
   pose (H0 tge empty_env (Maps.PTree.empty val) Mem.empty).
-  apply soundness3 in m.
-  apply (soundness1 _ tmps). iIntros "HA". iDestruct (m with "HA") as "HA".
-  iApply tr_find_label_top; eauto.
-  simpl; split; auto. apply makeif_nolabel. red; simpl; auto. red; simpl; auto.
+  eapply (tr_find_label_top). eauto. NoLabelTac.
   apply H.
 Qed.
+
 Lemma tr_find_label:
   forall s k ts tk
     (TR: tr_stmt s ts)
@@ -1687,29 +1599,20 @@ Qed.
 Lemma tr_val_gen:
   forall le dst v ty a,
   typeof a = ty ->
-  (∀ tge e le' m,
-      (∀ id, \s id -∗ ⌜ le'!id = le!id ⌝) -∗
-                                          ⌜ eval_expr tge e le' m a v ⌝) -∗
-  tr_expr le dst (Csyntax.Eval v ty) ((final dst a),a).
+  (∀ tge e m, locally le (fun le' => ⌜ eval_expr tge e le' m a v ⌝)) -∗
+  tr_expr le dst (Csyntax.Eval v ty) (final dst a) a.
 Proof.
-  intros. destruct dst; simpl; iIntros "HA"; subst; eauto.
+  intros. destruct dst; simpl; iIntros "HA !>"; subst; try iExists _; auto; iSplitL; eauto.
 Qed.
 
-Lemma test6_l : forall (P Q : iProp),
-    (P ⊢ P) ->
-    (((P ∧ Q) : iProp) ⊢ P).
+Lemma locally_finish {A} : forall le t (v : A),
+    \s t -∗ locally (set t v le) (λ le', ⌜le' ! t = Some v⌝).
 Proof.
-  MonPred.unseal. intros. split. red. intros i h P0. inversion P0. apply H0.
+  unfold_locally.
+  destruct H2. red in H. intros. exists heap_empty, h1. subst h1.
+  repeat split; auto. erewrite <- H0. apply gss. apply lookup_singleton.
 Qed.
-
-Lemma test6_r : forall (P Q : iProp),
-    (Q ⊢ Q) ->
-    (((P ∧ Q) : iProp) ⊢ Q).
-Proof.
-  MonPred.unseal. intros. split. red. intros i h P0. inversion P0. apply H1.
-Qed.
-
-
+  
 Lemma estep_simulation:
   forall S1 t S2, Cstrategy.estep ge S1 t S2 ->
   forall S1' (MS: match_states S1 S1'),
@@ -1720,12 +1623,9 @@ Lemma estep_simulation:
 Proof.
  induction 1; intros; inv MS.
 (* expr *)
- -  assert (tr_expr le dest r (sl,a) () tmps).
-    + apply soundness2. apply soundness3 in H9. iIntros "HA".
-      iDestruct (H9 with "HA") as "HA". unfold tr_top. iDestruct "HA" as "[HA|%]".
-      iApply "HA". unfold tr_top_val_val in H1. destruct sl; auto.
-      repeat destruct H1. destruct H2. destruct H2. subst. contradiction. contradiction.
-    + exploit tr_simple_rvalue; eauto. apply soundness3 in H1. intro.
+ - assert (tr_expr le dest r sl a () tmps).
+   + inv H9; auto. contradiction.
+   + exploit tr_simple_rvalue; eauto. apply soundness3 in H1. intro.
       apply (soundness1 _ tmps). iIntros "HA".
       iDestruct (H1 with "HA") as "HA". iDestruct (H2 with "HA") as "%".
       destruct dest.
@@ -1735,688 +1635,948 @@ Proof.
         -- right; split.
            ++ apply star_refl.
            ++ destruct r; simpl; try (contradiction || omega || unfold lt; omega).
-        -- eapply (match_exprstates _ _ _ _ _ _ _ _ _ _ _ ∅); eauto.
-           apply soundness2. iIntros. unfold tr_top. unfold tr_top_val_val. iRight.
-           iPureIntro. exists v. exists (Csyntax.typeof r). split; auto.
+        -- econstructor; eauto. instantiate (1 := ∅). econstructor; auto.
       (* for effects *)
       * subst sl. iExists _.
         iSplit; iPureIntro.
         -- right; split.
            ++ apply star_refl.
            ++ destruct r; simpl; try (contradiction || omega || unfold lt; omega).
-        -- econstructor; eauto.
+        -- econstructor; eauto. constructor. 
            instantiate (1 := ∅). apply soundness2.
-           iIntros "HA". unfold tr_top. simpl. iLeft. unfold tr_top_base. simpl.
-           eauto.
+           iIntros "HA". auto. 
            (* for set *)
       * inversion H10.
-        (* rval volatile *)
- - exploit tr_top_leftcontext; eauto.
-   intro. apply soundness3 in H11.
-   apply (soundness1 _ tmps). iIntros "HA". iDestruct (H11 with "HA") as "HA". 
-   iDestruct (H2 with "HA") as "HA". iDestruct ("HA" with "[]") as "HA"; eauto. 
-   iDestruct ("HA" with "[]") as "HA"; eauto.
-   iDestruct "HA" as (dst' sl1 sl2 a') "[P [% R]]".
-   iDestruct "P" as "[HA|%]".
-   + unfold tr_top_base. simpl.
-     iDestruct "HA" as "[_ HA]".
-     iDestruct "HA" as (sla2 sl3) "[HA [HB [HC %]]]".
-     unfold tr_rvalof. rewrite H3. iDestruct "HB" as (t1) "[% HB]".
-     inversion H6. subst.
-     rewrite (surjective_pairing sla2).
-     iDestruct (tr_simple_lvalue with "HA") as "[% [% %]]"; eauto.
-     rewrite H4; simpl. clear H6. iClear "HA". iClear "HC".
+        
+ (* rval volatile *)
+ - inv H11; simpl in *; auto.
+   + inv H; discriminate.
+   + exploit tr_expr_leftcontext; eauto.
+     intro. apply soundness3 in H2.
+     apply (soundness1 _ tmps). iIntros "HA". iDestruct (H2 with "HA") as "HA". 
+     iDestruct (H4 with "HA") as (dst' sl1 sl2 a') "[P [% R]]". 
+     simpl. iDestruct "P" as (sl0 a0 sl3) ">[HA [HB %]]".
+     iDestruct (tr_simple_lvalue with "HA") as "[% [% %]]"; eauto. subst.
+     unfold tr_rvalof. rewrite H3. iDestruct "HB" as (t1) "[[% %] HB]". subst.
      iExists _. iSplit. 
      * iPureIntro. left. eapply plus_two. constructor. eapply step_make_set; eauto. traceEq.
-     * iStopProof. apply test3. apply test2.
-       intros.
-
-       (* apply test4 in H6. destruct H6 as (tmp0&tmp1&P0&P1&P2&P3).  *)econstructor; eauto.
-       change (final dst' (Etempvar t1 (Csyntax.typeof l)) ++ sl2) with (nil ++ (final dst' (Etempvar t1 (Csyntax.typeof l)) ++ sl2)).
+     * fold Kseqlist. iClear "HA". iStopProof. apply test3. apply test2.
+       intros. econstructor; eauto. constructor.
        apply soundness2. instantiate (1 := tmps0).
-       apply soundness3 in H6. iIntros "HA".
-       iDestruct (H6 with "HA") as "[HA HB]".
-       iApply ("HB" with "[HA]"); eauto. simpl.
-
-       admit. (* iApply ("HB" with ""). *)    
-         (* -- iApply tr_val_gen; auto. iIntros (? ? ? ?) "HB". *)
-       (*    iDestruct ("HB" with "[HA]")  as "%". *)
-       (*    apply soundness3 in P0. iDestruct (P0 with "HA") as "HA". *)
-       (*    iExists (Csyntax.typeof l). iApply "HA". *)
-       (*    iPureIntro. constructor. rewrite H6. apply Maps.PTree.gss. *)
-       (* -- iIntros. iStopProof. apply test3. apply test2. intros. *)
-       (*    apply Maps.PTree.gso. red. intros. subst. elim H5.  *)
-       (*    iPureIntro. *)
-       (*    apply (soundness1 _ tmps0). iIntros "HA". iDestruct (H6 with "HA") as "[HA [HB [HC HD]]]". *)
-
-   + unfold tr_top_val_val in H5. destruct sl1; auto. destruct H5 as (v'&ty&P0&P1&P2&P3).
-     subst. inversion P3.
+       apply soundness3 in H5. iIntros "HA".
+       iDestruct (H5 with "HA") as "[HA HC]". clear H5. clear H4. clear H2. clear tmps0. 
+       iDestruct ("HC" $! (Eval v (Csyntax.typeof l)) with "[]") as "HC"; eauto.
+       iDestruct (locally_set with "[HA] HC") as "[HA HB]"; eauto.
+       iApply (locally_out with "HA"). iApply tr_val_gen; eauto. iIntros.
+       iApply locally_conseq_pure. intros. constructor. eapply H2. simpl.
+       iApply locally_finish. iFrame.
+       
  (* seqand true *)
- - exploit tr_top_leftcontext; eauto. 
-   intro. apply soundness3 in H9.
-   apply (soundness1 _ tmps). iIntros "HA". iDestruct (H9 with "HA") as "HA". 
-   iDestruct (H2 with "HA") as "HA". iDestruct ("HA" with "[]") as "HA"; eauto.
-   iDestruct ("HA" with "[]") as "HA"; eauto.
-   iDestruct "HA" as (dst' sl1 sl2 a') "[HA [% HB]]". simpl. unfold tr_top.
-   iDestruct "HA" as "[HA|%]".
-   + unfold tr_top_base. simpl. iDestruct "HA" as "[_ HA]". destruct dst'.
-     * simpl. iDestruct "HA" as (sla2 sla3 t0) "[HA [HC [HD %]]]".
-       eapply tr_simple_rvalue in H0.
-       inversion H4. subst.
-       rewrite (surjective_pairing sla2).
-       iDestruct (H0 with "HA") as "[% [% %]]". rewrite H3. simpl. iExists _. iSplit.
+ - inv H9; simpl in *; auto.
+   + inv H; discriminate.
+   + exploit tr_expr_leftcontext; eauto.
+     intro. apply soundness3 in H2.
+     apply (soundness1 _ tmps). iIntros "HA". iDestruct (H2 with "HA") as "HA". 
+     iDestruct (H3 with "HA") as (dst' sl1 sl2 a') "[P [% R]]". clear H2. clear H3.
+     simpl. destruct dst'.
+     * iDestruct "P" as (sl0 a0 sl3 a3 t0) ">[HA [HB [HC [% %]]]]".
+       iDestruct (tr_simple_rvalue with "HB") as "[% [% %]]"; eauto. subst.
+       iClear "HB". iExists _. iSplit.
        -- iPureIntro. left. simpl Kseqlist. eapply plus_left. constructor. eapply star_trans.
           apply step_makeif with (b := true) (v1 := v); auto. congruence.
           apply push_seq. reflexivity. reflexivity.
        -- rewrite <- Kseqlist_app. iStopProof. apply test3. apply test2. intros.
-          eapply match_exprstates; eauto.
-          apply soundness2. apply soundness3 in H7. iIntros "HA".
-          iDestruct (H7 with "HA") as "[HA [HB [HC HD]]]".
-          iApply ("HD" with "[HA HB HC]"); eauto.
-          simpl. repeat iSplit; auto. iExists sla3.2. iExists t0. iSplitL "HB". iIntros.
-          rewrite <- surjective_pairing. iApply "HB". iFrame.
-          iSplitL "HC". iFrame. eauto.
-     * simpl. iDestruct "HA" as (sla2 sla3) "[HA [HC %]]".
-       eapply tr_simple_rvalue in H0. rewrite (surjective_pairing sla2).
-       iDestruct (H0 with "HA") as "[% [% %]]". subst. rewrite H5.
-       iExists _. iSplit.
+          eapply match_exprstates; eauto. econstructor.
+          apply soundness2. apply soundness3 in H2. iIntros "HA".
+          iDestruct (H2 with "HA") as "[HA [HB HC]]". clear H2.
+          iDestruct ("HC" $! (Eparen r2 type_bool ty) with "[]") as "HC"; eauto.
+          iApply (locally_out with "HC"). simpl.
+          iModIntro. repeat iExists _. iFrame. eauto.
+     * iDestruct "P" as (sl0 a2 sl3 a3) ">[HA [HB %]]".
+       iDestruct (tr_simple_rvalue with "HA") as "[% [% %]]"; eauto. subst.
+       iClear "HA". iExists _. iSplit.
        -- iPureIntro. left. simpl Kseqlist. eapply plus_left. constructor. eapply star_trans.
           apply step_makeif with (b := true) (v1 := v); auto. congruence.
           apply push_seq. reflexivity. reflexivity.
        -- rewrite <- Kseqlist_app. iStopProof. apply test3. apply test2. intros.
-          eapply match_exprstates; eauto.
-          apply soundness2. apply soundness3 in H3. iIntros "HA".
-          iDestruct (H3 with "HA") as "[HA [HB HC]]".
-          iApply ("HC" with "[HA HB]"); eauto.
-          simpl. iSplitL; eauto. iSplitL "HA"; eauto. iExists sla3.2.
-          rewrite <- surjective_pairing. iApply "HB".
-     * iDestruct "HA" as (sla2 sla3) "[HA [HC [HD %]]]".
-       eapply tr_simple_rvalue in H0. rewrite (surjective_pairing sla2).
-       iDestruct (H0 with "HA") as "[% [% %]]". subst. rewrite H5.
-       iExists _. iSplit.
+          eapply match_exprstates; eauto. econstructor.
+          apply soundness2. apply soundness3 in H2. iIntros "HA".
+          iDestruct (H2 with "HA") as "[HA HB]". clear H2.
+          iDestruct ("HB" $! (Eparen r2 type_bool ty) with "[]") as "HC"; eauto.
+          iApply (locally_out with "HC"). simpl.
+          iModIntro. repeat iExists _. iFrame.
+     * iDestruct "P" as (sl0 a2 sl3 a3) ">[HA [HB %]]".
+       iDestruct (tr_simple_rvalue with "HA") as "[% [% %]]"; eauto. subst.
+       iClear "HA". iExists _. iSplit.
        -- iPureIntro. left. simpl Kseqlist. eapply plus_left. constructor. eapply star_trans.
           apply step_makeif with (b := true) (v1 := v); auto. congruence.
           apply push_seq. reflexivity. reflexivity.
        -- rewrite <- Kseqlist_app. iStopProof. apply test3. apply test2. intros.
-          eapply match_exprstates; eauto.
-          apply soundness2. apply soundness3 in H3. iIntros "HA".
-          iDestruct (H3 with "HA") as "[HA [HB [HD HC]]]".
-          iApply ("HC" with "[HA HB HD]"); eauto.
-          simpl. iSplitL; eauto. iSplitL "HA"; eauto. iExists sla3.2. iExists (sd_temp sd).
-          rewrite <- surjective_pairing. iFrame.
-   + unfold tr_top_val_val in H4. destruct sl1; auto. destruct H4 as (v'&ty'&P0&P1&P2&P3).
-     subst. inversion P3.
-     
+          eapply match_exprstates; eauto. econstructor.
+          apply soundness2. apply soundness3 in H2. iIntros "HA".
+          iDestruct (H2 with "HA") as "[HA HB]". clear H2.
+          iDestruct ("HB" $! (Eparen r2 type_bool ty) with "[]") as "HC"; eauto.
+          iApply (locally_out with "HC"). simpl.
+          iModIntro. repeat iExists _. iFrame.
  (* seqand false *)
- - exploit tr_top_leftcontext; intro.
-   apply (soundness1 _ tmps). iIntros "HA". apply soundness3 in H9. iDestruct (H9 with "HA") as "HA".
-   iDestruct (H2 with "HA") as "HA". iDestruct ("HA" with "[]") as "HA"; eauto.
-   iDestruct ("HA" with "[]") as "HA"; eauto.
-   iDestruct "HA" as (dst' sl1 sl2 a') "[P [% R]]".
-   iDestruct "P" as "[[_ HA]|%]".
-   + fold tr_expr. destruct dst'.
-     * iDestruct "HA" as (sla2 sla3 t0) "[HA [HB [HC %]]]". inversion H4; subst.
-       eapply tr_simple_rvalue in H0. rewrite (surjective_pairing sla2).
-       iDestruct (H0 with "HA") as "[% [% %]]". rewrite H3. iExists _. iSplit.
+ - inv H9; simpl in *; auto.
+   + inv H; discriminate.
+   + exploit tr_expr_leftcontext; eauto.
+     intro. apply soundness3 in H2.
+     apply (soundness1 _ tmps). iIntros "HA". iDestruct (H2 with "HA") as "HA". 
+     iDestruct (H3 with "HA") as (dst' sl1 sl2 a') "[P [% R]]". clear H2. clear H3.
+     simpl. destruct dst'.
+     * iDestruct "P" as (sl0 a0 sl3 a3 t0) ">[HA [HB [HC [% %]]]]".
+       iDestruct (tr_simple_rvalue with "HB") as "[% [% %]]"; eauto. subst.
+       iClear "HB". iExists _. iSplit.
        -- iPureIntro. left. eapply plus_left. simpl Kseqlist. constructor.
           eapply star_trans. apply step_makeif with (b := false) (v1 := v); auto. congruence.
           apply star_one. constructor. constructor. reflexivity. reflexivity.
-       -- iStopProof. apply test3. apply test2. intros. eapply match_exprstates; eauto.
-          change sl2 with (nil ++ sl2). apply soundness3 in H7. apply soundness2.
-          iIntros "HA". iDestruct (H7 with "HA") as "[HA [HB [HC HD]]]".
-          iApply ("HD" with "[HA HB HC]"); eauto.
-          simpl. iSplitL "HA HB HC"; auto.
-          ++ iSplitL "HA" ; eauto. iSplitL; eauto. iIntros "* HA".
-             iDestruct ("HA" with "HC") as "%". iPureIntro. constructor. rewrite H11.
-             apply Maps.PTree.gss.
-          ++ iIntros "* HA". iPureIntro. apply Maps.PTree.gso. intro. admit.
-     * iDestruct "HA" as (sla2 sla3) "[HA [HB %]]". simpl in H4. subst.
-       eapply tr_simple_rvalue in H0. rewrite (surjective_pairing sla2).
-       iDestruct (H0 with "HA") as "[% [% %]]". rewrite H3. iExists _. iSplit.
+       -- iStopProof. apply test3. apply test2. intros.
+          eapply match_exprstates; eauto. econstructor.
+          apply soundness2. apply soundness3 in H2. iIntros "HA".
+          iDestruct (H2 with "HA") as "[HA [HB HC]]". clear H2.
+          iDestruct ("HC" $! (Eval (Vint Int.zero) ty) with "[]") as "HC"; eauto.
+          iDestruct (locally_set with "[HA] HC") as "[HA HC]"; eauto.
+          change sl2 with (nil ++ sl2). iApply (locally_out with "HA").
+          simpl. iModIntro. iSplitR "HB"; auto. iIntros.
+          iApply locally_conseq_pure. intros. constructor. eapply H2.
+          iApply locally_finish. iFrame.
+     * iDestruct "P" as (sl0 a2 sl3 a3) ">[HA [HB %]]".
+       iDestruct (tr_simple_rvalue with "HA") as "[% [% %]]"; eauto. subst.
+       iClear "HA". iExists _. iSplit.
        -- iPureIntro. left. eapply plus_left. simpl Kseqlist. constructor.
           apply step_makeif with (b := false) (v1 := v); auto. congruence. reflexivity.
-       -- iStopProof. apply test3. apply test2. intros. eapply match_exprstates; eauto.
-          change sl2 with (nil ++ sl2). apply soundness3 in H6. apply soundness2.
-          iIntros "HA". iDestruct (H6 with "HA") as "[HA [HB HC]]".
-          iApply ("HC" with "[HA HB]"); eauto.
-     * iDestruct "HA" as (sla2 sla3) "[HA [HB [HC %]]]". simpl in *. subst.
-       eapply tr_simple_rvalue in H0. rewrite (surjective_pairing sla2).
-       iDestruct (H0 with "HA") as "[% [% %]]". rewrite H3. iExists _. iSplit.
+       -- iStopProof. apply test3. apply test2. intros. eapply match_exprstates; eauto. econstructor.
+          change sl2 with (nil ++ sl2). apply soundness3 in H2. apply soundness2.
+          iIntros "HA". iDestruct (H2 with "HA") as "[HA HB]".
+          iDestruct ("HB" $! (Eval (Vint Int.zero) ty) with "[]") as "HB"; eauto.
+          iApply (locally_out with "HB"). simpl. eauto.
+     * iDestruct "P" as (sl0 a2 sl3 a3) ">[HA [HB %]]".
+       iDestruct (tr_simple_rvalue with "HA") as "[% [% %]]"; eauto. subst.
+       iClear "HA". iExists _. iSplit.
        -- iPureIntro. left. eapply plus_left. simpl Kseqlist. constructor.
           eapply star_trans. apply step_makeif with (b := false) (v1 := v); auto. congruence.
           apply push_seq. reflexivity. reflexivity.
-       --  rewrite <- Kseqlist_app.
-           iStopProof. apply test3. apply test2. intros. eapply match_exprstates; eauto.
-           apply soundness3 in H6. apply soundness2.
-          iIntros "HA". iDestruct (H6 with "HA") as "[HA [HB [HC HD]]]".
-          iApply ("HD" with "[HA HB HC]"). simpl. iSplitL "HA HB HC"; eauto.
-          iSplitL "HA"; eauto.
-          iExists (Econst_int Int.zero ty).
-          iSplit; eauto.
-          ++ iIntros (? ? ? ?) "HA". iDestruct ("HA" with "[HC]") as "%".
-             iFrame. iPureIntro.
-             econstructor; eauto.
-          ++ eauto.
-   + unfold tr_top_val_val in H4. destruct sl1; auto. destruct H4 as (v'&ty0&P0&P1&P2&P3).
-     subst. inversion P3.
+       -- rewrite <- Kseqlist_app. iStopProof. apply test3. apply test2. intros.
+          econstructor; eauto. econstructor. 
+          apply soundness2. apply soundness3 in H2. iIntros "HA".
+          iDestruct (H2 with "HA") as "[HA HB]". clear H2.
+          iDestruct ("HB" $! (Eval (Vint Int.zero) ty) with "[]") as "HB"; eauto.
+          iApply (locally_out with "HB"). simpl. iModIntro.
+          iExists (Econst_int Int.zero ty). iSplitL; eauto.
+          iIntros. iApply locally_simpl. iIntros. iPureIntro. constructor.
+          
  (* seqor true *)
- - exploit tr_top_leftcontext. intro. apply soundness3 in H9.
-   apply (soundness1 _ tmps). iIntros "HA". iDestruct (H9 with "HA") as "HA". 
-   iDestruct (H2 with "HA") as "HA". iDestruct ("HA" with "[]") as "HA"; eauto.
-   iDestruct ("HA" with "[]") as "HA"; eauto.
-   iDestruct "HA" as (dst' sl1 sl2 a') "[HA [% HB]]". simpl. unfold tr_top.
-   iDestruct "HA" as "[[_ HA]|%]".
-   + unfold tr_top_base. fold tr_expr. simpl. destruct dst'.
-     * iDestruct "HA" as (sla2 sla3 t0) "[HA [HD [HC %]]]". inversion H4; subst.
-       eapply tr_simple_rvalue in H0. rewrite (surjective_pairing sla2).
-       iDestruct (H0 with "HA") as "[% [% %]]". rewrite H3. iExists _. iSplit.
+ - inv H9; simpl in *; auto.
+   + inv H; discriminate.
+   + exploit tr_expr_leftcontext; eauto.
+     intro. apply soundness3 in H2.
+     apply (soundness1 _ tmps). iIntros "HA". iDestruct (H2 with "HA") as "HA". 
+     iDestruct (H3 with "HA") as (dst' sl1 sl2 a') "[P [% R]]". clear H2. clear H3.
+     simpl. destruct dst'.
+     * iDestruct "P" as (sl0 a0 sl3 a3 t0) ">[HA [HB [HC [% %]]]]".
+       iDestruct (tr_simple_rvalue with "HB") as "[% [% %]]"; eauto. subst.
+       iClear "HB". iExists _. iSplit.
        -- iPureIntro. left. eapply plus_left. simpl Kseqlist. constructor.
           eapply star_trans. apply step_makeif with (b := true) (v1 := v); auto. congruence.
           apply star_one. constructor. constructor. reflexivity. reflexivity.
-       -- iStopProof. apply test3. apply test2. intros. eapply match_exprstates; eauto.
-          change sl2 with (nil ++ sl2). apply soundness3 in H7. apply soundness2.
-          iIntros "HA". iDestruct (H7 with "HA") as "[HA [HB [HC HD]]]".
-          iApply ("HD" with "[HA HB HC]"); eauto. simpl. iSplitL "HA HB HC"; auto.
-          ++ iSplitL "HA"; eauto. iSplitL; eauto.
-             iIntros "* HA". iDestruct ("HA" with "[HC]") as "%".
-             iFrame. iPureIntro. constructor. rewrite H11. apply Maps.PTree.gss.
-          ++ iIntros. iPureIntro. apply Maps.PTree.gso. admit.
-     * iDestruct "HA" as (sla2 sla3) "[HA [HC %]]". simpl in H4. subst.
-       eapply tr_simple_rvalue in H0. rewrite (surjective_pairing sla2).
-       iDestruct (H0 with "HA") as "[% [% %]]". rewrite H3. iExists _. iSplit.
+       -- iStopProof. apply test3. apply test2. intros. eapply match_exprstates; eauto. econstructor.
+          change sl2 with (nil ++ sl2). apply soundness3 in H2. apply soundness2.
+          iIntros "HA". iDestruct (H2 with "HA") as "[HA [HB HC]]".
+          iDestruct ("HC" $! (Eval (Vint Int.one) ty) with "[]") as "HC"; eauto.
+          iDestruct (locally_set with "[HA] HC") as "[HA HC]"; eauto.
+          change sl2 with (nil ++ sl2). iApply (locally_out with "HA").
+          simpl. iModIntro. iSplitR "HB"; auto. iIntros.
+          iApply locally_conseq_pure. intros. econstructor. eapply H3.
+          iApply locally_finish. iFrame.
+     * iDestruct "P" as (sl0 a2 sl3 a3) ">[HA [HB %]]".
+       iDestruct (tr_simple_rvalue with "HA") as "[% [% %]]"; eauto. subst.
+       iClear "HA". iExists _. iSplit.
        -- iPureIntro. left. eapply plus_left. simpl Kseqlist. constructor.
           apply step_makeif with (b := true) (v1 := v); auto. congruence. reflexivity.
-       -- iStopProof. apply test3. apply test2. intros. eapply match_exprstates; eauto.
-          change sl2 with (nil ++ sl2). apply soundness3 in H6. apply soundness2.
-          iIntros "HA". iDestruct (H6 with "HA") as "[HA [HB HC]]".
-          iApply ("HC" with "[HA HB]"); eauto.
-     * iDestruct "HA" as (sla2 sla3) "[HA [HD [HC %]]]". simpl in *. subst.
-       eapply tr_simple_rvalue in H0. rewrite (surjective_pairing sla2).
-       iDestruct (H0 with "HA") as "[% [% %]]". rewrite H3. iExists _. iSplit.
+       -- iStopProof. apply test3. apply test2. intros. eapply match_exprstates; eauto. econstructor.
+          change sl2 with (nil ++ sl2). apply soundness3 in H2. apply soundness2.
+          iIntros "HA". iDestruct (H2 with "HA") as "[HA HB]". clear H2.
+          iDestruct ("HB" $! (Eval (Vint Int.one) ty) with "[]") as "HB"; eauto.
+          iApply (locally_out with "HB"). simpl. auto.
+     * iDestruct "P" as (sl0 a2 sl3 a3) ">[HA [HB %]]".
+       iDestruct (tr_simple_rvalue with "HA") as "[% [% %]]"; eauto. subst.
+       iClear "HA". iExists _. iSplit.
        -- iPureIntro. left. eapply plus_left. simpl Kseqlist. constructor.
           eapply star_trans. apply step_makeif with (b := true) (v1 := v); auto. congruence.
           apply push_seq. reflexivity. reflexivity.
-       --  rewrite <- Kseqlist_app.
-           iStopProof. apply test3. apply test2. intros. eapply match_exprstates; eauto.
-           apply soundness3 in H6. apply soundness2.
-           iIntros "HA". iDestruct (H6 with "HA") as "[HA [HB [HC HD]]]".
-           iApply ("HD" with "[HA HB HC]"); eauto. simpl. iSplitL "HA HB HC"; auto.
-           iSplitL "HA"; eauto.
-           iExists (Econst_int Int.one ty).
-           iSplit; eauto.
-           iIntros (? ? ? ?) "HA". iDestruct ("HA" with "[HC]") as "%".
-           iFrame. iPureIntro. econstructor; eauto.
-   + unfold tr_top_val_val in H4. destruct sl1; auto. destruct H4 as (v'&ty0&P0&P1&P2&P3).
-     subst. inversion P3.
-     
+       -- rewrite <- Kseqlist_app.
+          iStopProof. apply test3. apply test2. intros. eapply match_exprstates; eauto. econstructor.
+          apply soundness3 in H2. apply soundness2. iIntros "HA".
+          iDestruct (H2 with "HA") as "[HA HB]". clear H2.
+          iDestruct ("HB" $! (Eval (Vint Int.one) ty) with "[]") as "HB"; eauto.
+          iApply (locally_out with "HB"). simpl. iModIntro.
+          iExists (Econst_int Int.one ty). iSplitL; eauto.
+          iIntros. iApply locally_simpl. iIntros. iPureIntro. constructor.
+
  (* seqor false *)
- - exploit tr_top_leftcontext. intro. apply soundness3 in H9.
-   apply (soundness1 _ tmps). iIntros "HA". iDestruct (H9 with "HA") as "HA". 
-   iDestruct (H2 with "HA") as "HA". iDestruct ("HA" with "[]") as "HA"; eauto.
-   iDestruct ("HA" with "[]") as "HA"; eauto.
-   iDestruct "HA" as (dst' sl1 sl2 a') "[HA [% HB]]". simpl. unfold tr_top.
-   iDestruct "HA" as "[[_ HA]|%]".
-   + fold tr_expr. unfold tr_top_base.  simpl. destruct dst'.
-     * iDestruct "HA" as (sla2 sla3 t0) "[HA [HD [HC %]]]". inversion H4; subst.
-       eapply tr_simple_rvalue in H0. rewrite (surjective_pairing sla2).
-       iDestruct (H0 with "HA") as "[% [% %]]". rewrite H3. iExists _. iSplit.
+ - inv H9; simpl in *; auto.
+   + inv H; discriminate.
+   + exploit tr_expr_leftcontext; eauto.
+     intro. apply soundness3 in H2.
+     apply (soundness1 _ tmps). iIntros "HA". iDestruct (H2 with "HA") as "HA". 
+     iDestruct (H3 with "HA") as (dst' sl1 sl2 a') "[P [% R]]". clear H2. clear H3.
+     simpl. destruct dst'.
+     * iDestruct "P" as (sl0 a0 sl3 a3 t0) ">[HA [HB [HC [% %]]]]".
+       iDestruct (tr_simple_rvalue with "HB") as "[% [% %]]"; eauto. subst.
+       iClear "HB". iExists _. iSplit.
        -- iPureIntro. left. eapply plus_left. simpl Kseqlist. constructor.
           eapply star_trans. apply step_makeif with (b := false) (v1 := v); auto. congruence.
-          apply push_seq. constructor. constructor. 
+          apply push_seq. constructor. constructor.
        -- rewrite <- Kseqlist_app.
-          iStopProof. apply test3. apply test2. intros. eapply match_exprstates; eauto.
-          apply soundness3 in H7. apply soundness2.
-          iIntros "HA". iDestruct (H7 with "HA") as "[HA [HB [HC HD]]]".
-          iApply ("HD" with "[HA HB HC]"); eauto. simpl. iSplitL "HA HB HC"; auto.
-          iSplitL "HA"; eauto.
-          iExists sla3.2. iExists t0. rewrite <- surjective_pairing. iFrame. eauto.
-     * iDestruct "HA" as (sla2 sla3) "[HA [HC %]]". simpl in H4. subst.
-       eapply tr_simple_rvalue in H0. rewrite (surjective_pairing sla2).
-       iDestruct (H0 with "HA") as "[% [% %]]". rewrite H3. iExists _. iSplit.
+          iStopProof. apply test3. apply test2. intros. eapply match_exprstates; eauto. econstructor.
+          apply soundness3 in H2. apply soundness2.
+          iIntros "HA". iDestruct (H2 with "HA") as "[HA [HB HC]]".
+          iDestruct ("HC" $! (Eparen r2 type_bool ty) with "[]") as "HC"; eauto.
+          iApply (locally_out with "HC").
+          simpl. iModIntro. repeat iExists _. iFrame. eauto.
+     * iDestruct "P" as (sl0 a2 sl3 a3) ">[HA [HB %]]".
+       iDestruct (tr_simple_rvalue with "HA") as "[% [% %]]"; eauto. subst.
+       iClear "HA". iExists _. iSplit.
        -- iPureIntro. left. eapply plus_left. simpl Kseqlist. constructor.
           eapply star_trans.
           apply step_makeif with (b := false) (v1 := v); auto. congruence. apply push_seq.
           reflexivity. reflexivity.
        -- rewrite <- Kseqlist_app.
-          iStopProof. apply test3. apply test2. intros. eapply match_exprstates; eauto.
-          apply soundness3 in H6. apply soundness2.
-          iIntros "HA". iDestruct (H6 with "HA") as "[HA [HB HC]]".
-          iApply ("HC" with "[HA HB]"); eauto. simpl. iSplitL "HA HB "; eauto.
-          iSplitL "HA"; eauto.
-          iExists sla3.2. rewrite <- surjective_pairing. iApply "HB".
-     * iDestruct "HA" as (sla2 sla3) "[HA [HD [HC %]]]". simpl in *. subst.
-       eapply tr_simple_rvalue in H0. rewrite (surjective_pairing sla2).
-       iDestruct (H0 with "HA") as "[% [% %]]". rewrite H3. iExists _. iSplit.
+          iStopProof. apply test3. apply test2. intros. eapply match_exprstates; eauto. econstructor.
+          apply soundness3 in H2. apply soundness2. iIntros "HA".
+          iDestruct (H2 with "HA") as "[HA HB]".
+          iDestruct ("HB" $! (Eparen r2 type_bool ty) with "[]") as "HB"; eauto.
+          iApply (locally_out with "HB").
+          simpl. iModIntro. iExists _. eauto.
+     * iDestruct "P" as (sl0 a2 sl3 a3) ">[HA [HB %]]".
+       iDestruct (tr_simple_rvalue with "HA") as "[% [% %]]"; eauto. subst.
+       iClear "HA". iExists _. iSplit.
        -- iPureIntro. left. eapply plus_left. simpl Kseqlist. constructor.
           eapply star_trans. apply step_makeif with (b := false) (v1 := v); auto. congruence.
           apply push_seq. reflexivity. reflexivity.
-       --  rewrite <- Kseqlist_app.
-           iStopProof. apply test3. apply test2. intros. eapply match_exprstates; eauto.
-           apply soundness3 in H6. apply soundness2.
-           iIntros "HA". iDestruct (H6 with "HA") as "[HA [HB [HC HD]]]".
-           iApply ("HD" with "[HA HB HC]"); eauto. simpl. iSplitL "HA HB HC"; auto.
-           iSplitL "HA"; eauto.
-           iExists sla3.2. iExists (sd_temp sd). rewrite <- surjective_pairing. iFrame.
-   + unfold tr_top_val_val in H4. destruct sl1; auto. destruct H4 as (v'&ty0&P0&P1&P2&P3).
-     subst. inversion P3.
-     
-     (* condition *)
-  - exploit tr_top_leftcontext. intro. apply soundness3 in H9.
-   apply (soundness1 _ tmps). iIntros "HA". iDestruct (H9 with "HA") as "HA". 
-   iDestruct (H2 with "HA") as "HA". iDestruct ("HA" with "[]") as "HA"; eauto.
-   iDestruct ("HA" with "[]") as "HA"; eauto.
-   iDestruct "HA" as (dst' sl1 sl2 a') "[HA [% HB]]". simpl. unfold tr_top.
-   iDestruct "HA" as "[[_ HA]|%]".
-   + fold tr_expr. unfold tr_top_base.  simpl. destruct dst'.
-     * iDestruct "HA" as (sla2 sla3 sla4 t0) "[HA [HD [HC %]]]".
-       (* iDestruct ("HC" with "HD") as "HC". *)
-       inversion H4; subst.
-       eapply tr_simple_rvalue in H0. rewrite (surjective_pairing sla2).
-       iDestruct (H0 with "HA") as "[% [% %]]". rewrite H3; simpl Kseqlist. destruct b. 
+       -- rewrite <- Kseqlist_app.
+          iStopProof. apply test3. apply test2. intros. eapply match_exprstates; eauto. econstructor.
+          apply soundness3 in H2. apply soundness2. iIntros "HA".
+          iDestruct (H2 with "HA") as "[HA HB]".
+          iDestruct ("HB" $! (Eparen r2 type_bool ty) with "[]") as "HB"; eauto.
+          iApply (locally_out with "HB").
+          simpl. iModIntro. repeat iExists _. iFrame.
+
+ (* condition *)
+ - inv H9; simpl in *; auto.
+   + inv H; discriminate.
+   + exploit tr_expr_leftcontext; eauto.
+     intro. apply soundness3 in H2.
+     apply (soundness1 _ tmps). iIntros "HA". iDestruct (H2 with "HA") as "HA". 
+     iDestruct (H3 with "HA") as (dst' sl1 sl2 a') "[P [% R]]". clear H2. clear H3.
+     simpl. destruct dst'.
+     * iDestruct "P" as (sl0 a0 sl3 a3 sl4 a4 t0) ">[HA [HB [HC [HD [% %]]]]]".
+       iDestruct (tr_simple_rvalue with "HB") as "[% [% %]]"; eauto. subst.
+       iClear "HB". destruct b.
        -- iExists _. iSplit.
           ++ iPureIntro. left. eapply plus_left. constructor.
              eapply star_trans. apply step_makeif with (b := true) (v1 := v); auto. congruence.
              apply push_seq. reflexivity. reflexivity.
-          ++ rewrite <- Kseqlist_app.
-             iStopProof. apply test3. apply test2. intros. eapply match_exprstates; eauto.
-             apply soundness3 in H7. apply soundness2.
-             iIntros "HA". iDestruct (H7 with "HA") as "[HA [HB [HC HD]]]".
-             iApply ("HD" with "[HA HB HC]"); eauto. simpl. iSplitL "HA HB HC"; auto.
-             iSplitL "HA"; eauto. iExists sla3.2. iExists t0. iSplitL "HC"; eauto.
-             rewrite <- surjective_pairing. iIntros "HB".
-             iDestruct ("HC" with "HB") as "HA". iDestruct "HA" as "[HA _]". eauto.
+          ++ rewrite <- Kseqlist_app. iStopProof. apply test3. apply test2. intros.
+             eapply match_exprstates; eauto. econstructor.
+             apply soundness3 in H2. apply soundness2. 
+             iIntros "HA". iDestruct (H2 with "HA") as "[HA [HB [HC HD]]]". clear H2.
+             iDestruct ("HD" $! (Eparen r2 ty ty) with "[]") as "HD"; eauto.
+             iApply (locally_out with "HD"). simpl. iClear "HC". iModIntro.
+             repeat iExists _. iFrame. eauto.
        -- iExists _. iSplit.
           ++ iPureIntro. left. eapply plus_left. constructor.
              eapply star_trans. apply step_makeif with (b := false) (v1 := v); auto. congruence.
              apply push_seq. reflexivity. reflexivity.
-          ++ rewrite <- Kseqlist_app.
-             iStopProof. apply test3. apply test2. intros. eapply match_exprstates; eauto.
-             apply soundness3 in H7. apply soundness2.
-             iIntros "HA". iDestruct (H7 with "HA") as "[HA [HB [HC HD]]]".
-             iApply ("HD" with "[HA HB HC]"); eauto. simpl. iSplitL; eauto.
-             iSplitL "HA"; eauto. iExists sla4.2.
-             iExists t0. rewrite <- surjective_pairing. iFrame. iSplitL; eauto.
-             iIntros "HA". iDestruct ("HC" with "HA") as "HA". iDestruct "HA" as "[_ HA]".
-             eauto.
-     * iDestruct "HA" as (sla2 sla3 sl4) "[HA [HC [HD %]]]". subst.
-       eapply tr_simple_rvalue in H0. rewrite (surjective_pairing sla2).
-       iDestruct (H0 with "HA") as "[% [% %]]". rewrite H3; simpl Kseqlist. destruct b.
+          ++ rewrite <- Kseqlist_app. iStopProof. apply test3. apply test2. intros.
+             eapply match_exprstates; eauto. econstructor.
+             apply soundness3 in H2. apply soundness2. 
+             iIntros "HA". iDestruct (H2 with "HA") as "[HA [HB [HC HD]]]". clear H2.
+             iDestruct ("HD" $! (Eparen r3 ty ty) with "[]") as "HD"; eauto.
+             iApply (locally_out with "HD"). simpl. iClear "HB". iModIntro.
+             repeat iExists _. iFrame. eauto.
+     * iDestruct "P" as (sl0 a0 sl3 a3 sl4 a4) ">[HA [HB [HC %]]]".
+       iDestruct (tr_simple_rvalue with "HA") as "[% [% %]]"; eauto. subst.
+       iClear "HA". destruct b.
        -- iExists _. iSplit.
           ++ iPureIntro. left. eapply plus_left. constructor.
              eapply star_trans. apply step_makeif with (b := true) (v1 := v); auto. congruence.
              apply push_seq. reflexivity. traceEq.
-          ++ rewrite <- Kseqlist_app.
-             iStopProof. apply test3. apply test2. intros. econstructor; eauto.
-             apply soundness3 in H6. apply soundness2.
-             iIntros "HA". iDestruct (H6 with "HA") as "[HA [HB [HC HD]]]".
-             iApply ("HD" with "[HA HB HC]"); eauto. simpl. iSplitL; eauto.
-             iSplitL "HA HC"; eauto.
-             iExists sla3.2. rewrite <- surjective_pairing. iFrame.
+          ++ rewrite <- Kseqlist_app. iStopProof. apply test3. apply test2. intros.
+             eapply match_exprstates; eauto. econstructor.
+             apply soundness3 in H2. apply soundness2. 
+             iIntros "HA". iDestruct (H2 with "HA") as "[HA [HB HC]]". clear H2.
+             iDestruct ("HC" $! (Eparen r2 ty ty) with "[]") as "HD"; eauto.
+             iApply (locally_out with "HD"). simpl. iClear "HB". iModIntro.
+             repeat iExists _. iFrame.
        -- iExists _. iSplit.
           ++ iPureIntro. left. eapply plus_left. constructor.
              eapply star_trans. apply step_makeif with (b := false) (v1 := v); auto. congruence.
              apply push_seq. reflexivity. traceEq.
-          ++ rewrite <- Kseqlist_app.
-             iStopProof. apply test3. apply test2. intros. econstructor; eauto.
-             apply soundness3 in H6. apply soundness2.
-             iIntros "HA". iDestruct (H6 with "HA") as "[HA [HB [HC HD]]]".
-             iApply ("HD" with "[HA HB HC]"); eauto. simpl. iSplitL; eauto. iSplitL "HA HB"; eauto.
-             iExists sl4.2. rewrite <- surjective_pairing. iFrame.
-     * iDestruct "HA" as (sla2 sla3 sla4 t0) "[HA [HD [HC %]]]". subst.
-       eapply tr_simple_rvalue in H0. rewrite (surjective_pairing sla2).
-       iDestruct (H0 with "HA") as "[% [% %]]". rewrite H3. destruct b.
+          ++ rewrite <- Kseqlist_app. iStopProof. apply test3. apply test2. intros.
+             eapply match_exprstates; eauto. econstructor.
+             apply soundness3 in H2. apply soundness2. 
+             iIntros "HA". iDestruct (H2 with "HA") as "[HA [HB HC]]". clear H2.
+             iDestruct ("HC" $! (Eparen r3 ty ty) with "[]") as "HD"; eauto.
+             iApply (locally_out with "HD"). simpl. iClear "HA". iModIntro.
+             repeat iExists _. iFrame.
+     * iDestruct "P" as (sl0 a0 sl3 a3 sl4 a4 t0) ">[HA [HB [HC [HD %]]]]".
+       iDestruct (tr_simple_rvalue with "HB") as "[% [% %]]"; eauto. subst.
+       iClear "HB". destruct b.
        -- iExists _. iSplit.
           ++ iPureIntro.  left. eapply plus_left. constructor. simpl.
              eapply star_trans. apply step_makeif with (b := true) (v1 := v); auto. congruence.
              apply push_seq. reflexivity. traceEq.
-          ++ rewrite <- Kseqlist_app.
-             iStopProof. apply test3. apply test2. intros. econstructor; eauto.
-             apply soundness3 in H6. apply soundness2.
-             iIntros "HA". iDestruct (H6 with "HA") as "[HA [HB [HC HD]]]".
-             iApply ("HD" with "[HA HB HC]"); eauto. simpl. iSplitL; eauto. iSplitL "HA"; auto.
-             iExists sla3.2. iExists t0. rewrite <- surjective_pairing. iFrame.
-             iIntros "HA". iDestruct ("HC" with "HA") as "HA". iDestruct "HA" as "[HA _]". eauto.
+          ++ rewrite <- Kseqlist_app. iStopProof. apply test3. apply test2. intros.
+             eapply match_exprstates; eauto. econstructor.
+             apply soundness3 in H2. apply soundness2. 
+             iIntros "HA". iDestruct (H2 with "HA") as "[HA [HB [HC HD]]]". clear H2.
+             iDestruct ("HD" $! (Eparen r2 ty ty) with "[]") as "HD"; eauto.
+             iApply (locally_out with "HD"). simpl. iClear "HA". iClear "HC". iModIntro.
+             repeat iExists _. iFrame.
        -- iExists _. iSplit.
           ++ iPureIntro. left. eapply plus_left. constructor. simpl.
              eapply star_trans. apply step_makeif with (b := false) (v1 := v); auto. congruence.
              apply push_seq. reflexivity. traceEq.
           ++ rewrite <- Kseqlist_app.
-             iStopProof. apply test3. apply test2. intros. econstructor; eauto.
-             apply soundness3 in H6. apply soundness2.
-             iIntros "HA". iDestruct (H6 with "HA") as "[HA [HB [HC HD]]]".
-             iApply ("HD" with "[HA HB HC]"); eauto. simpl. iSplitL; eauto. iSplitL "HA"; auto.
-             iExists sla4.2. iExists t0. rewrite <- surjective_pairing. iFrame. iIntros "HA".
-             iDestruct ("HC" with "HA") as "HA". iDestruct "HA" as "[_ HA]". eauto.
-   + unfold tr_top_val_val in H4. destruct sl1; auto. destruct H4 as (v'&ty0&P0&P1&P2&P3).
-     subst. inversion P3.
+             iStopProof. apply test3. apply test2. intros.
+             eapply match_exprstates; eauto. econstructor.
+             apply soundness3 in H2. apply soundness2. 
+             iIntros "HA". iDestruct (H2 with "HA") as "[HA [HB [HC HD]]]". clear H2.
+             iDestruct ("HD" $! (Eparen r3 ty ty) with "[]") as "HD"; eauto.
+             iApply (locally_out with "HD"). simpl. iClear "HA". iClear "HB". iModIntro.
+             repeat iExists _. iFrame.
+
+ (* assign *)
+ - inv H12; simpl in *; auto.
+   + inv H; discriminate.
+   + exploit tr_expr_leftcontext; eauto.
+     intro. apply soundness3 in H4.
+     apply (soundness1 _ tmps). iIntros "HA". iDestruct (H4 with "HA") as "HA". 
+     iDestruct (H5 with "HA") as (dst' sl1 sl2 a') "[P [% R]]". clear H4. clear H5.
+     simpl. destruct dst'.
+     * iDestruct "P" as (sl0 a0 sl3 a3 t1) ">[HA [HB [HC [% %]]]]".
+       iDestruct (tr_simple_rvalue with "HB") as "[% [% %]]"; eauto.
+       iDestruct (proj1 tr_expr_invariant with "HA") as "HA".
+       iDestruct (locally_set with "HC HA") as "[HA HC]".
+       iDestruct (locally_delete with "HA") as "HA".
+       iDestruct (tr_simple_lvalue with "HA") as "[% [% %]]"; eauto. subst. simpl.
+       iExists _. iSplit.
+       -- iPureIntro. left. eapply plus_left. constructor.
+          eapply star_left. constructor. econstructor. eauto. rewrite <- H8; eauto. 
+          eapply star_left. constructor.
+          apply star_one. eapply step_make_assign; eauto. 
+          constructor. eapply Maps.PTree.gss. simpl. eapply cast_idempotent; eauto. 
+          reflexivity. reflexivity. traceEq.
+       -- iStopProof. apply test3. apply test2. intros. eapply match_exprstates; eauto. econstructor.
+          apply soundness3 in H4. apply soundness2. iIntros "HA".
+          iDestruct (H4 with "HA") as "[HA [HB [HC HD]]]". clear H4.
+          iDestruct ("HB" $! (Eval v' (Csyntax.typeof l)) with "[]") as "HB"; eauto.
+          iDestruct (locally_set with "HC HB") as "[HB HC]".
+          change sl2 with (nil ++ sl2).
+          iApply (locally_out with "HB"). simpl. iClear "HA". iClear "HD". iModIntro.
+          iSplitL; eauto. iIntros. iApply locally_conseq_pure. intros. econstructor. eapply H4.
+          iApply locally_finish. iFrame.
+     * iDestruct "P" as (sl0 a0 sl3 a3) ">[HA [HB %]]".
+       iDestruct (tr_simple_rvalue with "HB") as "[% [% %]]"; eauto.
+       iDestruct (tr_simple_lvalue with "HA") as "[% [% %]]"; eauto. subst. simpl.
+       iExists _. iSplit.
+       -- iPureIntro. left. eapply plus_left. constructor.
+          apply star_one. eapply step_make_assign; eauto.
+          rewrite <- H7; eauto. traceEq.
+       -- iStopProof. apply test3. apply test2. intros. eapply match_exprstates; eauto. econstructor.
+          apply soundness3 in H4. apply soundness2. iIntros "HA". change sl2 with (nil ++ sl2).
+          iDestruct (H4 with "HA") as "[HA [HB HC]]". clear H4.
+          iDestruct ("HC" $! (Eval v' (Csyntax.typeof l)) with "[]") as "HC"; eauto.
+          iApply (locally_out with "HC"). simpl. eauto.
+     * iDestruct "P" as (sl0 a0 sl3 a3 t1) ">[HA [HB [HC [% %]]]]".
+       iDestruct (tr_simple_rvalue with "HB") as "[% [% %]]"; eauto.
+       iDestruct (proj1 tr_expr_invariant with "HA") as "HA".
+       iDestruct (locally_set with "HC HA") as "[HA HC]".
+       iDestruct (locally_delete with "HA") as "HA".
+       iDestruct (tr_simple_lvalue with "HA") as "[% [% %]]"; eauto. subst. simpl.
+       iExists _. iSplit.
+       -- iPureIntro. left. eapply plus_left. constructor.
+          eapply star_left. constructor. econstructor. eauto. rewrite <- H8; eauto. 
+          eapply star_left. constructor.
+          apply star_one. eapply step_make_assign; eauto. 
+          constructor. eapply Maps.PTree.gss. simpl. eapply cast_idempotent; eauto. 
+          reflexivity. reflexivity. traceEq.
+       -- iStopProof. apply test3. apply test2. intros. eapply match_exprstates; eauto. econstructor.
+          apply soundness3 in H4. apply soundness2. iIntros "HA".
+          iDestruct (H4 with "HA") as "[HA [HB [HC HD]]]". clear H4.
+          iDestruct ("HB" $! (Eval v' (Csyntax.typeof l)) with "[]") as "HB"; eauto.
+          iDestruct (locally_set with "HC HB") as "[HB HC]".
+          change sl2 with (nil ++ sl2).
+          iApply (locally_out with "HB"). simpl. iClear "HA". iClear "HD". iModIntro.
+          repeat iExists _.
+          iSplitL; eauto. iIntros. iApply locally_conseq_pure. intros. econstructor. eapply H4.
+          iApply locally_finish. iFrame.
+          iPureIntro. split; eauto.
+
+ (* assignop *)
+ - inv H15; simpl in *; auto.
+   + inv H; discriminate.
+   + exploit tr_expr_leftcontext; eauto.
+     intro. apply soundness3 in H6.
+     apply (soundness1 _ tmps). iIntros "HA". iDestruct (H6 with "HA") as "HA". 
+     iDestruct (H7 with "HA") as (dst' sl1 sl2 a') "[P [% R]]". clear H6. clear H7.
+     simpl. destruct dst'.
+     * iDestruct "P" as (sl0 a0 sl3 a3 sl4 a4 t0) ">[HA [HB [HC [HD [% %]]]]]".
+       unfold tr_rvalof. destruct (type_is_volatile (Csyntax.typeof l)) eqn:?.
+       -- iDestruct "HC" as (t3) "[[% %] HC]".
+          iDestruct (tr_simple_lvalue with "HA") as "[% [% %]]"; eauto.
+          iDestruct (proj1 tr_expr_invariant with "HB") as "HB".
+          iDestruct (locally_set with "[HC] HB") as "[HB HC]"; eauto.
+          iDestruct (locally_delete with "HB") as "HB".
+          iDestruct (tr_simple_rvalue with "HB") as "[% [% %]]"; eauto. subst.
+          iDestruct (proj1 tr_expr_invariant with "HA") as "HA".
+          iDestruct (locally_set with "[HC] HA") as "[HA HC]"; eauto.
+          iDestruct (locally_set with "[HD] HA") as "[HA HD]"; eauto.
+          iDestruct (locally_delete with "HA") as "HA".
+          iDestruct (tr_simple_lvalue with "HA") as "[% [% %]]"; eauto.
+          iExists _. iSplit.
+          ++ iPureIntro.
+             left. rewrite app_ass. rewrite Kseqlist_app.
+             eapply star_plus_trans. eapply star_two.
+             econstructor. eapply step_make_set; eauto. traceEq.
+             simpl. eapply plus_four. econstructor. econstructor.
+             econstructor. econstructor. constructor. apply Maps.PTree.gss.
+             eauto. rewrite <- H17. rewrite comp_env_preserved. simpl. eauto. eassumption.
+             econstructor. eapply step_make_assign; eauto.
+             econstructor. apply Maps.PTree.gss. simpl. eapply cast_idempotent; eauto.
+             reflexivity. traceEq.
+          ++ iStopProof. apply test3. apply test2. intros. eapply match_exprstates; eauto.
+             econstructor. apply soundness3 in H9. apply soundness2. iIntros "HA".
+             iDestruct (H9 with "HA") as "[HA [HB [HC [HD HE]]]]". clear H9.
+             iDestruct ("HA" $! (Eval v4 (Csyntax.typeof l)) with "[]") as "HA"; eauto.
+             iDestruct (locally_set with "[HC] HA") as "[HA HC]"; eauto.
+             iDestruct (locally_set with "[HD] HA") as "[HA HD]"; eauto.
+             change sl2 with (nil ++ sl2).
+             iApply (locally_out with "HA"). simpl. iModIntro. iSplitL "HD"; eauto.
+             iIntros "*". iApply locally_conseq_pure. intros. econstructor. apply H9.
+             iApply locally_finish. iFrame.
+       -- iDestruct "HC" as "[% %]".
+          iDestruct (tr_simple_lvalue with "HA") as "[% [% %]]"; eauto.
+          iDestruct (proj1 tr_expr_invariant with "HA") as "HA".
+          iDestruct (locally_set with "HD HA") as "[HA HC]".
+          iDestruct (locally_delete with "HA") as "HA".
+          iDestruct (tr_simple_lvalue with "HA") as "[% [% %]]"; eauto.
+          iDestruct (tr_simple_rvalue with "HB") as "[% [% %]]"; eauto.
+          iDestruct (proj1 tr_expr_invariant with "HB") as "HB".
+          iDestruct (locally_set with "HC HB") as "[HB HC]".
+          iDestruct (locally_delete with "HB") as "HB".
+          iDestruct (tr_simple_rvalue with "HB") as "[% [% %]]"; eauto. subst. simpl.
+          exploit deref_loc_translated; eauto. intros. unfold chunk_for_volatile_type in H6.
+          rewrite Heqb0 in H6. destruct H6.
+          iExists _. iSplit.
+          ++ iPureIntro.
+             left. eapply star_plus_trans. apply star_refl. 
+             simpl. eapply plus_four. econstructor. econstructor.
+             econstructor. econstructor. eapply eval_Elvalue; eauto. rewrite <- H12. eauto.
+             eauto. rewrite <- H12. rewrite <- H23. rewrite comp_env_preserved. eauto.
+             eassumption. econstructor. eapply step_make_assign; eauto.
+             constructor. apply Maps.PTree.gss. simpl. eapply cast_idempotent; eauto.
+             reflexivity. traceEq.
+          ++ iStopProof. apply test3. apply test2. intros. eapply match_exprstates; eauto.
+             econstructor. apply soundness3 in H8. apply soundness2. iIntros "HA".
+             iDestruct (H8 with "HA") as "[HA [HB [HC HD]]]". clear H8.
+             iDestruct ("HA" $! (Eval v4 (Csyntax.typeof l)) with "[]") as "HA"; eauto.
+             iDestruct (locally_set with "[HC] HA") as "[HA HC]"; eauto.
+             change sl2 with (nil ++ sl2).
+             iApply (locally_out with "HA"). 
+             instantiate (1 := v4). simpl. iModIntro. iSplitL "HC"; eauto.
+             iIntros "*". iApply locally_conseq_pure. intros. econstructor. apply H8.
+             iApply locally_finish. iFrame.
+     * iDestruct "P" as (sl0 a2 sl3 a3 sl4 a4) ">[HA [HB [HC %]]]".
+       unfold tr_rvalof. destruct (type_is_volatile (Csyntax.typeof l)) eqn:?.
+       -- iDestruct "HC" as (t0) "[[% %] HC]".
+          iDestruct (tr_simple_lvalue with "HA") as "[% [% %]]"; eauto.
+          iDestruct (proj1 tr_expr_invariant with "HA") as "HA".
+          iDestruct (locally_set with "[HC] HA") as "[HA HC]"; eauto.
+          iDestruct (locally_delete with "HA") as "HA".
+          iDestruct (tr_simple_lvalue with "HA") as "[% [% %]]"; eauto.
+          iDestruct (tr_simple_rvalue with "HB") as "[% [% %]]"; eauto.
+          iDestruct (proj1 tr_expr_invariant with "HB") as "HB".
+          iDestruct (locally_set with "[HC] HB") as "[HB HC]"; eauto.
+          iDestruct (locally_delete with "HB") as "HB".
+          iDestruct (tr_simple_rvalue with "HB") as "[% [% %]]"; eauto. subst. simpl.
+          iExists _. iSplit.
+          ++ iPureIntro.
+             left. eapply star_plus_trans. eapply star_two. econstructor.
+             eapply step_make_set; eauto. traceEq.
+             eapply plus_two. simpl. econstructor. eapply step_make_assign; eauto.
+             econstructor. constructor. apply Maps.PTree.gss. eauto.
+             rewrite comp_env_preserved. simpl. rewrite <- H22. auto. reflexivity. traceEq.
+          ++ iStopProof. apply test3. apply test2. intros. eapply match_exprstates; eauto.
+             econstructor. apply soundness3 in H6. apply soundness2. iIntros "HA".
+             iDestruct (H6 with "HA") as "[HA [HB [HC HD]]]". clear H6.
+             iDestruct ("HA" $! (Eval v4 (Csyntax.typeof l)) with "[]") as "HA"; eauto.
+             iDestruct (locally_set with "[HC] HA") as "[HA HC]"; eauto.
+             change sl2 with (nil ++ sl2).
+             iApply (locally_out with "HA"). simpl. iModIntro. auto.
+       -- iDestruct "HC" as "[% %]".
+          iDestruct (tr_simple_lvalue with "HA") as "[% [% %]]"; eauto.
+          iDestruct (tr_simple_rvalue with "HB") as "[% [% %]]"; eauto.
+          exploit deref_loc_translated; eauto. intros. unfold chunk_for_volatile_type in H18.
+          rewrite Heqb0 in H18. destruct H18. subst. simpl.
+          iExists _. iSplit.
+          ++ iPureIntro.
+             left. eapply star_plus_trans. apply star_refl. 
+             eapply plus_two. simpl. econstructor. eapply step_make_assign; eauto.
+             econstructor. eapply eval_Elvalue; eauto. rewrite <- H11. eauto. eauto.
+             rewrite <- H11. rewrite <- H15. rewrite comp_env_preserved. auto.
+             reflexivity. traceEq.
+          ++ iStopProof. apply test3. apply test2. intros. eapply match_exprstates; eauto.
+             econstructor. apply soundness3 in H6. apply soundness2. iIntros "HA".
+             iDestruct (H6 with "HA") as "[HA [HB HC]]". clear H6.
+             iDestruct ("HC" $! (Eval v4 (Csyntax.typeof l)) with "[]") as "HC"; eauto.
+             change sl2 with (nil ++ sl2).
+             iApply (locally_out with "HC"). simpl. iModIntro. auto.
+     * iDestruct "P" as (sl0 a0 sl3 a3 sl4 a4 t0) ">[HA [HB [HC [HD [% %]]]]]".
+       unfold tr_rvalof. destruct (type_is_volatile (Csyntax.typeof l)) eqn:?.
+       -- iDestruct "HC" as (t3) "[[% %] HC]".
+          iDestruct (tr_simple_lvalue with "HA") as "[% [% %]]"; eauto.
+          iDestruct (proj1 tr_expr_invariant with "HB") as "HB".
+          iDestruct (locally_set with "[HC] HB") as "[HB HC]"; eauto.
+          iDestruct (locally_delete with "HB") as "HB".
+          iDestruct (tr_simple_rvalue with "HB") as "[% [% %]]"; eauto. subst.
+          iDestruct (proj1 tr_expr_invariant with "HA") as "HA".
+          iDestruct (locally_set with "[HC] HA") as "[HA HC]"; eauto.
+          iDestruct (locally_set with "[HD] HA") as "[HA HD]"; eauto.
+          iDestruct (locally_delete with "HA") as "HA".
+          iDestruct (tr_simple_lvalue with "HA") as "[% [% %]]"; eauto.
+          iExists _. iSplit.
+          ++ iPureIntro.
+             left. rewrite app_ass. rewrite Kseqlist_app.
+             eapply star_plus_trans. eapply star_two.
+             econstructor. eapply step_make_set; eauto. traceEq.
+             simpl. eapply plus_four. econstructor. econstructor.
+             econstructor. econstructor. constructor. apply Maps.PTree.gss.
+             eauto. rewrite <- H17. rewrite comp_env_preserved. simpl. eauto. eassumption.
+             econstructor. eapply step_make_assign; eauto.
+             econstructor. apply Maps.PTree.gss. simpl. eapply cast_idempotent; eauto.
+             reflexivity. traceEq.
+          ++ iStopProof. apply test3. apply test2. intros. eapply match_exprstates; eauto.
+             econstructor. apply soundness3 in H9. apply soundness2. iIntros "HA".
+             iDestruct (H9 with "HA") as "[HA [HB [HC [HD HE]]]]". clear H9.
+             iDestruct ("HA" $! (Eval v4 (Csyntax.typeof l)) with "[]") as "HA"; eauto.
+             iDestruct (locally_set with "[HC] HA") as "[HA HC]"; eauto.
+             iDestruct (locally_set with "[HD] HA") as "[HA HD]"; eauto.
+             change sl2 with (nil ++ sl2).
+             iApply (locally_out with "HA"). simpl. iModIntro. iExists _. iSplitL "HD"; eauto.
+             iIntros "*". iApply locally_conseq_pure. intros. econstructor. apply H9.
+             iApply locally_finish. iFrame. eauto.
+       -- iDestruct "HC" as "[% %]".
+          iDestruct (tr_simple_lvalue with "HA") as "[% [% %]]"; eauto.
+          iDestruct (proj1 tr_expr_invariant with "HA") as "HA".
+          iDestruct (locally_set with "HD HA") as "[HA HC]".
+          iDestruct (locally_delete with "HA") as "HA".
+          iDestruct (tr_simple_lvalue with "HA") as "[% [% %]]"; eauto.
+          iDestruct (tr_simple_rvalue with "HB") as "[% [% %]]"; eauto.
+          iDestruct (proj1 tr_expr_invariant with "HB") as "HB".
+          iDestruct (locally_set with "HC HB") as "[HB HC]".
+          iDestruct (locally_delete with "HB") as "HB".
+          iDestruct (tr_simple_rvalue with "HB") as "[% [% %]]"; eauto. subst. simpl.
+          exploit deref_loc_translated; eauto. intros. unfold chunk_for_volatile_type in H6.
+          rewrite Heqb0 in H6. destruct H6.
+          iExists _. iSplit.
+          ++ iPureIntro.
+             left. eapply star_plus_trans. apply star_refl. 
+             simpl. eapply plus_four. econstructor. econstructor.
+             econstructor. econstructor. eapply eval_Elvalue; eauto. rewrite <- H12. eauto.
+             eauto. rewrite <- H12. rewrite <- H23. rewrite comp_env_preserved. eauto.
+             eassumption. econstructor. eapply step_make_assign; eauto.
+             constructor. apply Maps.PTree.gss. simpl. eapply cast_idempotent; eauto.
+             reflexivity. traceEq.
+          ++ iStopProof. apply test3. apply test2. intros. eapply match_exprstates; eauto.
+             econstructor. apply soundness3 in H8. apply soundness2. iIntros "HA".
+             iDestruct (H8 with "HA") as "[HA [HB [HC HD]]]". clear H8.
+             iDestruct ("HA" $! (Eval v4 (Csyntax.typeof l)) with "[]") as "HA"; eauto.
+             iDestruct (locally_set with "[HC] HA") as "[HA HC]"; eauto.
+             change sl2 with (nil ++ sl2).
+             iApply (locally_out with "HA"). instantiate (1 := v4).
+             simpl. iModIntro. iExists _. iSplitL "HC"; eauto.
+             iIntros "*". iApply locally_conseq_pure. intros. econstructor. apply H8.
+             iApply locally_finish. iFrame. eauto.
+             
+ (* assignop stuck *)
+ - inv H12; simpl in *; auto.
+   + inv H; discriminate.
+   + exploit tr_expr_leftcontext; eauto.
+     intro. apply soundness3 in H4.
+     apply (soundness1 _ tmps). iIntros "HA". iDestruct (H4 with "HA") as "HA". 
+     iDestruct (H5 with "HA") as (dst' sl1 sl2 a') "[P [% R]]". clear H4. clear H5.
+     simpl. destruct dst'.
+     * iDestruct "P" as (sl0 a2 sl3 a3 sl4 a4 t1) ">[HA [HB [HC [HD [% %]]]]]".
+       iDestruct (tr_simple_lvalue with "HA") as "[% [% %]]"; eauto.
+       iDestruct (tr_simple_rvalue with "HB") as "[% [% %]]"; eauto.
+       iDestruct (step_tr_rvalof with "HC") as (le') "[% [% %]]"; eauto.
+       iDestruct (tr_simple_lvalue with "HA") as "[% [% %]]"; eauto.
+       iDestruct (tr_simple_rvalue with "HB") as "[% [% %]]"; eauto.
+       subst. simpl.
+       iExists _. iSplit.
+       ++ iPureIntro.
+          right; split. rewrite app_ass. rewrite Kseqlist_app. eexact H15. lia.
+       ++ iPureIntro. econstructor.
+     * iDestruct "P" as (sl0 a2 sl3 a3 sl4 a4) ">[HA [HB [HC %]]]".
+       iDestruct (tr_simple_lvalue with "HA") as "[% [% %]]"; eauto.
+       iDestruct (tr_simple_rvalue with "HB") as "[% [% %]]"; eauto.
+       iDestruct (step_tr_rvalof with "HC") as (le') "[% [% %]]"; eauto.
+       subst. simpl.
+       iExists _. iSplit.
+       ++ iPureIntro.
+          right; split. rewrite app_ass. rewrite Kseqlist_app. eexact H14. lia.
+       ++ iPureIntro. econstructor.
+     * iDestruct "P" as (sl0 a2 sl3 a3 sl4 a4 t1) ">[HA [HB [HC [HD [% %]]]]]".
+       iDestruct (tr_simple_lvalue with "HA") as "[% [% %]]"; eauto.
+       iDestruct (tr_simple_rvalue with "HB") as "[% [% %]]"; eauto.
+       iDestruct (step_tr_rvalof with "HC") as (le') "[% [% %]]"; eauto.
+       iDestruct (tr_simple_lvalue with "HA") as "[% [% %]]"; eauto.
+       iDestruct (tr_simple_rvalue with "HB") as "[% [% %]]"; eauto.
+       subst. simpl.
+       iExists _. iSplit.
+       ++ iPureIntro.
+          right; split. rewrite app_ass. rewrite Kseqlist_app. eexact H15. lia.
+       ++ iPureIntro. econstructor.
      
-  (* assign *)
-  - exploit tr_top_leftcontext. intro. apply soundness3 in H12.
-    apply (soundness1 _ tmps). iIntros "HA". iDestruct (H12 with "HA") as "HA". 
-    iDestruct (H4 with "HA") as "HA". iDestruct ("HA" with "[]") as "HA"; eauto.
-    iDestruct ("HA" with "[]") as "HA"; eauto.
-    iDestruct "HA" as (dst' sl1 sl2 a') "[HA [% HB]]". simpl. unfold tr_top.
-    iDestruct "HA" as "[[_ HA]|%]"; fold tr_expr. 
-    + iDestruct "HA" as (sla2 sla3) "[HA [HC HD]]".
-      destruct dst'; iDestruct "HD" as "[[% %]| HD]"; try discriminate.
-      * admit.  (* Toujours (forall id, In id tmps -> le ! id = le' ! id *)
-      * simpl in *. subst. clear H7.
-        eapply tr_simple_lvalue in H0.
-        eapply tr_simple_rvalue in H1. rewrite (surjective_pairing sla2).
-        rewrite (surjective_pairing sla3).
-        iDestruct (H0 with "HA") as "[% [% %]]". 
-        iDestruct (H1 with "HC") as "[% [% %]]". rewrite H5. rewrite H8. simpl Kseqlist.
-        iExists _. iSplit.
-        -- iPureIntro. left. eapply plus_left. constructor.
-           apply star_one. eapply step_make_assign; eauto.
-           rewrite <- H9; eauto. traceEq.
-        -- iStopProof. apply test3. apply test2. intros. econstructor; eauto.
-           apply soundness3 in H14. apply soundness2.
-           iIntros "HA". iDestruct (H14 with "HA") as "[HA [HB HC]]".
-           change sl2 with (nil ++ sl2).
-           iApply ("HC" with "[HA HB]"); eauto.
-      * admit.
-      * admit.
-    + unfold tr_top_val_val in H6. destruct sl1; auto. destruct H6 as (v''&ty0&P0&P1&P2&P3).
-      inversion P3.
-
-  (* assignop *)
-  - exploit tr_top_leftcontext. intro. apply soundness3 in H15.
-    apply (soundness1 _ tmps). iIntros "HA". iDestruct (H15 with "HA") as "HA". 
-    iDestruct (H6 with "HA") as "HA". iDestruct ("HA" with "[]") as "HA"; eauto.
-    iDestruct ("HA" with "[]") as "HA"; eauto.
-    iDestruct "HA" as (dst' sl1 sl2 a') "[HA [% HB]]". simpl. unfold tr_top.
-    iDestruct "HA" as "[[_ HA]|%]"; fold tr_expr. 
-    + iDestruct "HA" as (sla2 sla3 sla4) "[HA [HC [HD HE]]]".
-      destruct dst'; iDestruct "HE" as "[[% %]| HE]"; try discriminate.
-      * admit.  (* Toujours (forall id, In id tmps -> le ! id = le' ! id *)
-      * admit.
-      * admit.
-      * admit.
-    + unfold tr_top_val_val in H8. destruct sl1; auto. destruct H8 as (v''&ty0&P0&P1&P2&P3).
-      inversion P3.
-
-  (* assignop stuck *)
-  - exploit tr_top_leftcontext; intro. apply soundness3 in H12.
-    apply (soundness1 _ tmps). iIntros "HA". iDestruct (H12 with "HA") as "HA". 
-    iDestruct (H4 with "HA") as "HA". iDestruct ("HA" with "[]") as "HA"; eauto.
-    iDestruct ("HA" with "[]") as "HA"; eauto.
-    iDestruct "HA" as (dst' sl1 sl2 a') "[HA [% HB]]". simpl. unfold tr_top.
-    iDestruct "HA" as "[[_ HA]|%]"; fold tr_expr. 
-    + iDestruct "HA" as (sla2 sla3 sla4) "[HA [HC [HD HE]]]".
-      destruct dst'; iDestruct "HE" as "[[% %]| HE]"; try discriminate.
-      * iDestruct "HE" as (t1) "[HE %]". inversion H6; subst.
-        eapply tr_simple_lvalue in H0. rewrite (surjective_pairing sla2).
-        iDestruct (H0 with "HA") as "[% [% %]]".
-        eapply tr_simple_rvalue in H2. rewrite (surjective_pairing sla3).
-        iDestruct (H2 with "HC") as "[% [% %]]".
-        eapply step_tr_rvalof in H1. rewrite (surjective_pairing sla4).
-        iDestruct (H1 with "HD") as "HD".
-        iDestruct ("HD" with "[]") as (le') "[[% [% %]] HD]"; eauto. rewrite H5. rewrite H9.
-        simpl Kseqlist. iExists _. iSplit.
-        -- iPureIntro. right; split. rewrite app_ass. rewrite Kseqlist_app. eexact H15.
-           simpl. unfold lt; omega.
-        -- iPureIntro. constructor.
-        -- eauto.
-      * simpl in *. subst. clear H6.
-        eapply tr_simple_lvalue in H0. rewrite (surjective_pairing sla2).
-        iDestruct (H0 with "HA") as "[% [% %]]".
-        eapply tr_simple_rvalue in H2. rewrite (surjective_pairing sla3).
-        iDestruct (H2 with "HC") as "[% [% %]]".
-        eapply step_tr_rvalof in H1. rewrite (surjective_pairing sla4).
-        iDestruct (H1 with "HD") as "HD".
-        iDestruct ("HD" with "[]") as (le') "[[% [% %]] HD]"; eauto. rewrite H5. rewrite H8.
-        simpl Kseqlist. iExists _. iSplit.
-        -- iPureIntro. right; split. rewrite app_ass. rewrite Kseqlist_app. eexact H14.
-           simpl. unfold lt. omega.
-        -- iPureIntro. constructor.
-        -- auto.
-      * iDestruct "HE" as (t1) "[HE %]". inversion H6; subst.
-        eapply tr_simple_lvalue in H0. rewrite (surjective_pairing sla2).
-        iDestruct (H0 with "HA") as "[% [% %]]".
-        eapply tr_simple_rvalue in H2. rewrite (surjective_pairing sla3).
-        iDestruct (H2 with "HC") as "[% [% %]]".
-        eapply step_tr_rvalof in H1. rewrite (surjective_pairing sla4).
-        iDestruct (H1 with "HD") as "HD".
-        iDestruct ("HD" with "[]") as (le') "[[% [% %]] HD]"; eauto. rewrite H5. rewrite H9.
-        simpl Kseqlist. iExists _. iSplit.
-        -- iPureIntro. right; split. rewrite app_ass. rewrite Kseqlist_app. eexact H15.
-           simpl. unfold lt; omega.
-        -- iPureIntro. constructor.
-        -- eauto.
-      * iDestruct "HE" as (t1) "[HE %]". inversion H6; subst.
-        eapply tr_simple_lvalue in H0. rewrite (surjective_pairing sla2).
-        iDestruct (H0 with "HA") as "[% [% %]]".
-        eapply tr_simple_rvalue in H2. rewrite (surjective_pairing sla3).
-        iDestruct (H2 with "HC") as "[% [% %]]".
-        eapply step_tr_rvalof in H1. rewrite (surjective_pairing sla4).
-        iDestruct (H1 with "HD") as "HD".
-        iDestruct ("HD" with "[]") as (le') "[[% [% %]] HD]"; eauto. rewrite H5. rewrite H9.
-        simpl Kseqlist. iExists _. iSplit.
-        -- iPureIntro. right; split. rewrite app_ass. rewrite Kseqlist_app. eexact H15.
-           simpl. unfold lt; omega.
-        -- iPureIntro. constructor.
-        -- eauto.
-    + unfold tr_top_val_val in H6. destruct sl1; auto. destruct H6 as (v'&ty0&P0&P1&P2&P3).
-      inversion P3.
-
   (* postincr *)
-  - exploit tr_top_leftcontext; intro. apply soundness3 in H14.
-    apply (soundness1 _ tmps). iIntros "HA". iDestruct (H14 with "HA") as "HA". 
-    iDestruct (H5 with "HA") as "HA". iDestruct ("HA" with "[]") as "HA"; eauto.
-    iDestruct ("HA" with "[]") as "HA"; eauto.
-    iDestruct "HA" as (dst' sl1 sl2 a') "[HA [% HB]]". simpl. unfold tr_top.
-    iDestruct "HA" as "[[_ HA]|%]"; fold tr_expr. 
-    + iDestruct "HA" as "[HA| HA]".
-      * admit.
-      * admit.
-    + unfold tr_top_val_val in H7. destruct sl1; try contradiction.
-      destruct H7 as (v&ty&P0&P1&P2&P3). inversion P3.
+ - inv H14; simpl in *; auto.
+   + inv H; discriminate.
+   + exploit tr_expr_leftcontext; eauto.
+     intro. apply soundness3 in H5.
+     apply (soundness1 _ tmps). iIntros "HA". iDestruct (H5 with "HA") as "HA". 
+     iDestruct (H6 with "HA") as (dst' sl1 sl2 a') "[P [% R]]". clear H5. clear H6.
+     simpl. iDestruct "P" as (sl0 a2) ">[HA HB]". destruct dst'.
+     * iDestruct "HB" as (t0) "[HB [% %]]".
+       iDestruct (tr_simple_lvalue with "HA") as "[% [% %]]"; eauto.
+       iDestruct (proj1 tr_expr_invariant with "HA") as "HA".
+       iDestruct (locally_set with "HB HA") as "[HA HB]".
+       iDestruct (locally_delete with "HA") as "HA".
+       iDestruct (tr_simple_lvalue with "HA") as "[% [% %]]"; eauto.
+       subst. simpl. iExists _. iSplit.
+       -- iPureIntro.
+          left. eapply plus_four. constructor.
+          eapply step_make_set; eauto.
+          constructor.
+          eapply step_make_assign; eauto.
+          unfold transl_incrdecr. destruct id; simpl in H2.
+          econstructor. constructor. apply Maps.PTree.gss. constructor.
+          rewrite comp_env_preserved; simpl; eauto.
+          econstructor. constructor. apply Maps.PTree.gss. constructor.
+          rewrite comp_env_preserved; simpl; eauto.
+          destruct id; auto.
+          traceEq.
+       -- iStopProof. apply test3. apply test2. intros. econstructor; eauto. econstructor.
+          apply soundness2. apply soundness3 in H5. iIntros "HA".
+          iDestruct (H5 with "HA") as "[HA [HB HC]]". clear H5.
+          iDestruct ("HA" $! (Eval v1 (Csyntax.typeof l)) with "[]") as "HA"; eauto.
+          iDestruct (locally_set with "HB HA") as "[HA HB]".
+          change sl2 with (nil ++ sl2).
+          iApply (locally_out with "HA"). simpl. iModIntro. iSplitL "HB"; eauto.
+          iIntros "*". iApply locally_conseq_pure. intros. econstructor. apply H5.
+          iApply locally_finish. iFrame.
+     * iDestruct "HB" as (sl3 a3) "[HB %]".
+       iDestruct (tr_simple_lvalue with "HA") as "[% [% %]]"; eauto.
+       unfold tr_rvalof. destruct (type_is_volatile (Csyntax.typeof l)) eqn:?.
+       -- iDestruct "HB" as (t0) "[[% %] HB]".
+          iDestruct (proj1 tr_expr_invariant with "HA") as "HA".
+          iDestruct (locally_set with "[HB] HA") as "[HA HB]"; eauto.
+          iDestruct (locally_delete with "HA") as "HA".
+          iDestruct (tr_simple_lvalue with "HA") as "[% [% %]]"; eauto.
+          iDestruct (tr_simple_lvalue with "HA") as "[% [% %]]"; eauto.
+          subst. iExists _. iSplit.
+          ++ iPureIntro.
+             left. rewrite app_ass; rewrite Kseqlist_app.
+             eapply star_plus_trans.
+             eapply star_two. econstructor. eapply step_make_set; eauto. traceEq.
+             eapply plus_two. simpl. constructor.
+             eapply step_make_assign; eauto.
+             unfold transl_incrdecr. destruct id; simpl in H2.
+             econstructor. constructor. apply Maps.PTree.gss. econstructor.
+             rewrite comp_env_preserved. simpl. eauto.
+             econstructor. econstructor. apply Maps.PTree.gss. econstructor.
+             rewrite comp_env_preserved. simpl; eauto.
+             destruct id; auto.
+             reflexivity. traceEq.
+          ++ iStopProof. apply test3. apply test2. intros. econstructor; eauto. econstructor.
+             apply soundness2. apply soundness3 in H5. iIntros "HA".
+             iDestruct (H5 with "HA") as "[HA [HB HC]]". clear H5.
+             iDestruct ("HA" $! (Eval v1 (Csyntax.typeof l)) with "[]") as "HA"; eauto.
+             iDestruct (locally_set with "HB HA") as "[HA HB]".
+             change sl2 with (nil ++ sl2).
+             iApply (locally_out with "HA"). simpl. iModIntro. eauto.
+       -- iDestruct "HB" as "[% %]".
+          iDestruct (tr_simple_lvalue with "HA") as "[% [% %]]"; eauto.
+          exploit deref_loc_translated; eauto. intros. unfold chunk_for_volatile_type in H17.
+          rewrite Heqb0 in H17. destruct H17.
+          subst. iExists _. iSplit.
+          ++ iPureIntro.
+             left. rewrite app_ass; rewrite Kseqlist_app.
+             eapply star_plus_trans. eapply star_refl.
+             eapply plus_two. simpl. constructor.
+             eapply step_make_assign; eauto.
+             unfold transl_incrdecr. destruct id; simpl in H2.
+             econstructor. econstructor; eauto. rewrite <- H8. eauto. econstructor.
+             rewrite comp_env_preserved. simpl. rewrite <- H8. eauto.
+             econstructor. econstructor. eauto. rewrite <- H8. eauto. econstructor.
+             rewrite comp_env_preserved. simpl. rewrite <- H8. eauto.
+             unfold transl_incrdecr. destruct id; simpl in H2. eauto. eauto. reflexivity.
+             traceEq.
+          ++ iStopProof. apply test3. apply test2. intros. econstructor; eauto. econstructor.
+             apply soundness2. apply soundness3 in H5. iIntros "HA".
+             iDestruct (H5 with "HA") as "[HA HB]". clear H5.
+             iDestruct ("HB" $! (Eval v1 (Csyntax.typeof l)) with "[]") as "HB"; eauto.
+             change sl2 with (nil ++ sl2).
+             iApply (locally_out with "HB"). simpl. eauto.
+     * iDestruct "HB" as (t0) "[HB [% %]]".
+       iDestruct (tr_simple_lvalue with "HA") as "[% [% %]]"; eauto.
+       iDestruct (proj1 tr_expr_invariant with "HA") as "HA".
+       iDestruct (locally_set with "HB HA") as "[HA HB]".
+       iDestruct (locally_delete with "HA") as "HA".
+       iDestruct (tr_simple_lvalue with "HA") as "[% [% %]]"; eauto.
+       subst. simpl. iExists _. iSplit.
+       -- iPureIntro.
+          left. eapply plus_four. constructor.
+          eapply step_make_set; eauto.
+          constructor.
+          eapply step_make_assign; eauto.
+          unfold transl_incrdecr. destruct id; simpl in H2.
+          econstructor. constructor. apply Maps.PTree.gss. constructor.
+          rewrite comp_env_preserved; simpl; eauto.
+          econstructor. constructor. apply Maps.PTree.gss. constructor.
+          rewrite comp_env_preserved; simpl; eauto.
+          destruct id; auto.
+          traceEq.
+       -- iStopProof. apply test3. apply test2. intros. econstructor; eauto. econstructor.
+          apply soundness2. apply soundness3 in H5. iIntros "HA".
+          iDestruct (H5 with "HA") as "[HA [HB HC]]". clear H5.
+          iDestruct ("HA" $! (Eval v1 (Csyntax.typeof l)) with "[]") as "HA"; eauto.
+          iDestruct (locally_set with "HB HA") as "[HA HB]".
+          change sl2 with (nil ++ sl2).
+          iApply (locally_out with "HA"). simpl. iModIntro. iExists _. iSplitL "HB"; eauto.
+          iIntros "*". iApply locally_conseq_pure. intros. econstructor. apply H5.
+          iApply locally_finish. iFrame. eauto.
 
-  (* postincr stuck *)
-  - exploit tr_top_leftcontext; intro. apply soundness3 in H11.
-    apply (soundness1 _ tmps). iIntros "HA". iDestruct (H11 with "HA") as "HA". 
-    iDestruct (H3 with "HA") as "HA". iDestruct ("HA" with "[]") as "HA"; eauto.
-    iDestruct ("HA" with "[]") as "HA"; eauto.
-    iDestruct "HA" as (dst' sl1 sl2 a') "[HA [% HB]]". simpl. unfold tr_top.
-    iDestruct "HA" as "[[_ HA]|%]"; fold tr_expr. 
-    + iDestruct "HA" as "[HA|HA]".
-      * iDestruct "HA" as (sla2 sla3) "[HA [HC %]]".
-        eapply tr_simple_lvalue in H0. rewrite (surjective_pairing sla2).
-        iDestruct (H0 with "HA") as "[% [% %]]".
-        subst. 
-        eapply step_tr_rvalof in H1; eauto. rewrite (surjective_pairing sla3).
-        iDestruct (H1 with "HC") as "HC".
-        iDestruct ("HC" with "[]") as (le') "[[% [% %]] HC]"; eauto. simpl in *. rewrite H5.
-        rewrite H6. simpl Kseqlist.
-        iExists _. iSplit; iPureIntro.
-        -- right; split. rewrite app_ass; rewrite Kseqlist_app. eexact H4.
-           unfold lt. omega.
-        -- constructor.
-      * iDestruct "HA" as (sla2 t1) "[HA [HC %]]". inversion H5. subst. 
-        eapply tr_simple_lvalue in H0. rewrite (surjective_pairing sla2).
-        iDestruct (H0 with "HA") as "[% [% %]]".
-        rewrite H4. simpl Kseqlist. iExists _. iSplit.
-        -- iPureIntro. left. eapply plus_two. constructor. eapply step_make_set; eauto.
-           traceEq.
-        -- iPureIntro. constructor.
-    + unfold tr_top_val_val in H5. destruct sl1; auto. destruct H5 as (v'&ty0&P0&P1&P2&P3).
-      inversion P3.
+ (* postincr stuck *)
+ - inv H11; simpl in *; auto.
+   + inv H; discriminate.
+   + exploit tr_expr_leftcontext; eauto.
+     intro. apply soundness3 in H3.
+     apply (soundness1 _ tmps). iIntros "HA". iDestruct (H3 with "HA") as "HA". 
+     iDestruct (H4 with "HA") as (dst' sl1 sl2 a') "[P [% R]]". clear H3. clear H4.
+     simpl. iDestruct "P" as (sl0 a2) ">[HA HB]". destruct dst'.
+     * iDestruct "HB" as (t1) "[HB [% %]]".
+       iDestruct (tr_simple_lvalue with "HA") as "[% [% %]]"; eauto.
+       subst. simpl. iExists _. iSplit.
+       -- iPureIntro. left. eapply plus_two. constructor. eapply step_make_set; eauto. traceEq.
+       -- iPureIntro. econstructor.
+     * iDestruct "HB" as (sl3 a3) "[HB %]".
+       iDestruct (tr_simple_lvalue with "HA") as "[% [% %]]"; eauto.
+       iDestruct (step_tr_rvalof with "HB") as (le') "[% [% %]]"; eauto. subst.
+       iExists _. iSplit.
+       -- iPureIntro. right; split. simpl. rewrite app_ass; rewrite Kseqlist_app. eexact H8. lia.
+       -- iPureIntro. econstructor.
+     * iDestruct "HB" as (t1) "[HB [% %]]".
+       iDestruct (tr_simple_lvalue with "HA") as "[% [% %]]"; eauto.
+       subst. simpl. iExists _. iSplit.
+       -- iPureIntro. left. eapply plus_two. constructor. eapply step_make_set; eauto. traceEq.
+       -- iPureIntro. econstructor.
 
-  (* comma *)
-  - exploit tr_top_leftcontext; intro. apply soundness3 in H9.
-    apply (soundness1 _ tmps). iIntros "HA". iDestruct (H9 with "HA") as "HA". 
-    iDestruct (H1 with "HA") as "HA". iDestruct ("HA" with "[]") as "HA"; eauto.
-    iDestruct ("HA" with "[]") as "HA"; eauto.
-    iDestruct "HA" as (dst' sl1 sl2 a') "[HA [% HB]]". simpl. unfold tr_top.
-    iDestruct "HA" as "[[_ HA]|%]"; fold tr_expr. 
-    + iDestruct "HA" as (sla2 sl3) "[HA [HD [HC %]]]". simpl in *. subst.
-      eapply tr_simple_rvalue in H0. rewrite (surjective_pairing sla2).
-      iDestruct (H0 with "HA") as "%". rewrite H2. simpl Kseqlist. iClear "HA".
-      iExists _. iSplit.
-      * iPureIntro. right; split. apply star_refl. simpl. apply plus_lt_compat_r.
+ (* comma *)
+ - inv H9; simpl in *; auto.
+   + inv H; discriminate.
+   + exploit tr_expr_leftcontext; eauto.
+     intro. apply soundness3 in H1.
+     apply (soundness1 _ tmps). iIntros "HA". iDestruct (H1 with "HA") as "HA". 
+     iDestruct (H2 with "HA") as (dst' sl1 sl2 a') "[P [% R]]". clear H1. clear H2.
+     simpl. iDestruct "P" as (sl0 a2 sl3) ">[HA [HB %]]".
+     iDestruct (tr_simple_rvalue with "HA") as "%"; eauto. iClear "HA".
+     iExists _. iSplit.
+     * iPureIntro. right; split. apply star_refl. apply plus_lt_compat_r.
         apply (leftcontext_size _ _ _ H). simpl. omega.
-      * iStopProof. apply test3. apply test2. intros. econstructor; eauto.
-        apply soundness3 in H3. apply soundness2.
-        iIntros "HA". iDestruct (H3 with "HA") as "[HB [HC HD]]".
-        iApply ("HD" with "[HB HC]"); eauto. iSplit; eauto. iApply "HB". iFrame.
-    + unfold tr_top_val_val in H3. destruct sl1; auto. destruct H3 as (v'&ty0&P0&P1&P2&P3).
-      inversion P3.
+     * iStopProof. apply test3. apply test2. intros. econstructor; eauto. econstructor.
+       apply soundness3 in H4. apply soundness2.
+       iIntros "HA". iDestruct (H4 with "HA") as "[HB HD]".
+       iDestruct ("HD" $! r2 with "[]") as "HD"; eauto.
+       subst. iApply (locally_out with "HD"). simpl. iFrame.
 
-  (* paren *)
-  - exploit tr_top_leftcontext; intro. apply soundness3 in H9.
-    apply (soundness1 _ tmps). iIntros "HA". iDestruct (H9 with "HA") as "HA". 
-    iDestruct (H2 with "HA") as "HA". iDestruct ("HA" with "[]") as "HA"; eauto.
-    iDestruct ("HA" with "[]") as "HA"; eauto.
-    iDestruct "HA" as (dst' sl1 sl2 a') "[HA [% HB]]". simpl. unfold tr_top.
-    iDestruct "HA" as "[[_ HA]|%]"; fold tr_expr. 
-    + destruct dst'.
-      * iDestruct "HA" as (a2 t0) "[HA [HC %]]".
-        eapply tr_simple_rvalue in H0. iDestruct ("HA" with "HC") as "HA".
-        iDestruct (H0 with "HA") as (?) "[% [% %]]". simpl in *. subst. simpl Kseqlist.
-        iExists _. iSplit.
-        -- iPureIntro. left. eapply plus_left. constructor. apply star_one. econstructor.
-           econstructor; eauto. rewrite <- H7; eauto. traceEq.
-        -- admit.
-      * iDestruct "HA" as (a2) "HA".
-        eapply tr_simple_rvalue in H0. simpl.
-        iDestruct (H0 with "HA") as "%". simpl in *. subst. simpl Kseqlist.
-        iExists _. iSplit.
-        -- iPureIntro. right; split. apply star_refl. simpl. apply plus_lt_compat_r.
-           apply (leftcontext_size _ _ _ H). simpl.
-           unfold lt. apply le_n_S. apply le_0_n.
-        -- iStopProof. apply test3. apply test2. intros. econstructor; eauto.
-           apply soundness3 in H3. apply soundness2.
-           iIntros "HA". iDestruct (H3 with "HA") as "[HA HB]".
-           change sl2 with (nil ++ sl2).
-           iApply ("HB" with "[HA]"); eauto.
-      * admit.
-    + unfold tr_top_val_val in H4. destruct sl1; auto. destruct H4 as (v'&ty0&P0&P1&P2&P3).
-      inversion P3.
+ (* paren *)
+ - inv H9; simpl in *; auto.
+   + inv H; discriminate.
+   + exploit tr_expr_leftcontext; eauto.
+     intro. apply soundness3 in H2.
+     apply (soundness1 _ tmps). iIntros "HA". iDestruct (H2 with "HA") as "HA". 
+     iDestruct (H3 with "HA") as (dst' sl1 sl2 a') "[P [% R]]". clear H2. clear H3.
+     simpl. destruct dst'.
+     * iDestruct "P" as (a2 t0) ">[HA [HB %]]".
+       iDestruct (tr_simple_rvalue with "HB") as (b) "[% [% %]]"; eauto. subst; simpl.
+       iExists _. iSplit.
+       -- iPureIntro. left. eapply plus_left. constructor. apply star_one. econstructor.
+          econstructor; eauto. rewrite <- H5; eauto. traceEq.
+       -- iStopProof. apply test3. apply test2. intros. econstructor; eauto. econstructor.
+          apply soundness2. apply soundness3 in H2. iIntros "HA".
+          iDestruct (H2 with "HA") as "[HA [HB HC]]".
+          iDestruct ("HC" $! (Eval v ty) with "[]") as "HC"; eauto.
+          iDestruct (locally_set with "HA HC") as "[HC HA]".
+          change sl2 with (nil ++ sl2).
+          iApply (locally_out with "HC"). simpl. iModIntro. iSplitL "HA"; eauto.
+          iIntros "*". iApply locally_conseq_pure. intros. econstructor. apply H3.
+          iApply locally_finish. iFrame.
+     * iDestruct "P" as (a2) ">HA".
+       iDestruct (tr_simple_rvalue with "HA") as "%"; eauto. subst; simpl.
+       iExists _. iSplit.
+       -- iPureIntro. right; split. apply star_refl. simpl. apply plus_lt_compat_r.
+          apply (leftcontext_size _ _ _ H). simpl. lia.
+       -- iStopProof. apply test3. apply test2. intros. econstructor; eauto. econstructor.
+          apply soundness2. apply soundness3 in H2. iIntros "HA".
+          iDestruct (H2 with "HA") as "[HA HB]".
+          iDestruct ("HB" $! (Eval v ty) with "[]") as "HC"; eauto.
+          change sl2 with (nil ++ sl2).
+          iApply (locally_out with "HC"). simpl. eauto.
+     * iDestruct "P" as (a2 t0) ">HA".
+       iDestruct (tr_simple_rvalue with "HA") as (b) "[% [% %]]"; eauto. subst; simpl.
+       iExists _. iSplit.
+       -- iPureIntro. left. eapply plus_left. constructor. apply star_one. econstructor.
+          econstructor; eauto. rewrite <- H3; eauto. traceEq.
+       -- iStopProof. apply test3. apply test2. intros. econstructor; eauto. econstructor.
+          apply soundness2. apply soundness3 in H2. iIntros "HA".
+          iDestruct (H2 with "HA") as "[HA HB]".
+          iDestruct ("HB" $! (Eval v ty) with "[]") as "HC"; eauto.
+          change sl2 with (nil ++ sl2). admit.
 
-  (* call *)
-  - exploit tr_top_leftcontext; intro. apply soundness3 in H12.
-    apply (soundness1 _ tmps). iIntros "HA". iDestruct (H12 with "HA") as "HA". 
-    iDestruct (H5 with "HA") as "HA". iDestruct ("HA" with "[]") as "HA"; eauto.
-    iDestruct ("HA" with "[]") as "HA"; eauto.
-    iDestruct "HA" as (dst' sl1 sl2 a') "[HA [% HB]]". simpl. unfold tr_top.
-    iDestruct "HA" as "[[_ HA]|%]"; fold tr_expr; fold tr_exprlist.
-    + destruct dst'.
-      * iDestruct "HA" as (sla2 slal3 t0) "[HA [HC [HD [_ %]]]]". inversion H7; subst.
-        eapply tr_simple_rvalue in H1. rewrite (surjective_pairing sla2).
-        iDestruct (H1 with "HA") as "[% [% %]]". rewrite H6.
-        rewrite (surjective_pairing slal3).
-        iDestruct (tr_simple_exprlist with "HC") as "HC"; eauto.
-        iDestruct ("HC" with "[]") as "[% %]"; eauto. rewrite H10. simpl Kseqlist.
-        apply functions_translated in H3. destruct H3 as (tf'&P0&P1).
-        iExists _. iSplit.
-        -- iPureIntro. left. eapply plus_left. constructor. apply star_one.
-           econstructor; eauto. rewrite <- H8; eauto. exploit type_of_fundef_preserved; eauto.
-           congruence. traceEq.
-        -- iStopProof. apply test3. apply test2. intros. constructor; auto.
-           econstructor; eauto. intros.
-           apply soundness3 in H3. apply soundness2.
-           iIntros "HA". iDestruct (H3 with "HA") as "[HA [HB HC]]".
-           change sl2 with (nil ++ sl2).
-           iApply ("HC" with "[HA HB]"); eauto. simpl. iSplitL; eauto. iSplitL "HA"; eauto.
-           iSplit; eauto. iIntros (? ? ? ?) "HA".
-           iDestruct ("HA" with "HB") as "%". iPureIntro. constructor. rewrite H15.
-           apply Maps.PTree.gss. iIntros. admit.
-      * iDestruct "HA" as (sla2 slal3) "[HA [HC %]]". simpl in *. subst.
-        eapply tr_simple_rvalue in H1. rewrite (surjective_pairing sla2).
-        iDestruct (H1 with "HA") as "[% [% %]]". rewrite H6.
-        rewrite (surjective_pairing slal3).
-        iDestruct (tr_simple_exprlist with "HC") as "HC"; eauto.
-        iDestruct ("HC" with "[]") as "[% %]"; eauto. rewrite H9. simpl Kseqlist.
-        apply functions_translated in H3. destruct H3 as (tf'&P0&P1).
-        iExists _. iSplit.
-        -- iPureIntro. left. eapply plus_left. constructor. apply star_one.
-           econstructor; eauto. rewrite <- H7; eauto. exploit type_of_fundef_preserved; eauto.
-           congruence. traceEq.
-        -- iStopProof. apply test3. apply test2. intros. constructor; auto.
-           econstructor; eauto. intros.
-           apply soundness3 in H3. apply soundness2.
-           iIntros "HA". iDestruct (H3 with "HA") as "[HA HB]".
-           change sl2 with (nil ++ sl2).
-           iApply ("HB" with "[HA]"); eauto.
-      * admit.
-    + unfold tr_top_val_val in H7. destruct sl1; auto. destruct H7 as (v'&ty0&P0&P1&P2&P3).
-      inversion P3.
+ (* call *)
+ - inv H12; simpl in *; auto.
+   + inv H; discriminate.
+   + exploit tr_expr_leftcontext; eauto.
+     intro. apply soundness3 in H5.
+     apply (soundness1 _ tmps). iIntros "HA". iDestruct (H5 with "HA") as "HA". 
+     iDestruct (H6 with "HA") as (dst' sl1 sl2 a') "[P [% R]]". clear H5. clear H6.
+     simpl. destruct dst'.
+     * iDestruct "P" as (sl0 a2 sl3 al3 t0) ">[HA [HB [HC [% %]]]]".
+       iDestruct (tr_simple_rvalue with "HB") as "[% [% %]]"; eauto.
+       iDestruct (tr_simple_exprlist with "HC []") as "[% %]"; eauto.
+       subst. simpl. exploit functions_translated; eauto. intros [tfd [J K]].
+       iExists _. iSplit.
+       -- iPureIntro. left. eapply plus_left. constructor. apply star_one.
+          econstructor; eauto. rewrite <- H9; eauto.
+          exploit type_of_fundef_preserved; eauto. congruence.
+          traceEq.
+       -- iStopProof. apply test3. apply test2. intros. econstructor; eauto. econstructor; eauto.
+          intros. econstructor. apply soundness2. apply soundness3 in H5. iIntros "HA".
+          iDestruct (H5 with "HA") as "[HA [HB [HC HD]]]".
+          iDestruct ("HD" $! (Eval v ty) with "[]") as "HD"; eauto.
+          change sl2 with (nil ++ sl2). unfold set_opttemp.
+          iDestruct (locally_set with "HA HD") as "[HD HA]".
+          iApply (locally_out with "HD"). iModIntro. iSplitL "HA".
+          iIntros. iApply locally_conseq_pure. intros. econstructor. eapply H6.
+          iApply locally_finish. iFrame.
+          eauto.
+     * iDestruct "P" as (sl0 a2 sl3 al3) ">[HA [HB %]]".
+       iDestruct (tr_simple_rvalue with "HA") as "[% [% %]]"; eauto.
+       iDestruct (tr_simple_exprlist with "HB []") as "[% %]"; eauto.
+       subst. simpl. exploit functions_translated; eauto. intros [tfd [J K]].
+       iExists _. iSplit.
+       -- iPureIntro. left. eapply plus_left. constructor. apply star_one.
+          econstructor; eauto. rewrite <- H8; eauto.
+          exploit type_of_fundef_preserved; eauto. congruence.
+          traceEq.
+       -- iStopProof. apply test3. apply test2. intros. econstructor; eauto. econstructor; eauto.
+          intros. econstructor. apply soundness2. apply soundness3 in H5. iIntros "HA".
+          iDestruct (H5 with "HA") as "[HA [HB HC]]".
+          iDestruct ("HC" $! (Eval v ty) with "[]") as "HD"; eauto.
+          change sl2 with (nil ++ sl2). unfold set_opttemp.
+          iApply (locally_out with "HD"). eauto.
+     * iDestruct "P" as (sl0 a2 sl3 al3 t0) ">[HA [HB [HC [% %]]]]".
+       iDestruct (tr_simple_rvalue with "HB") as "[% [% %]]"; eauto.
+       iDestruct (tr_simple_exprlist with "HC []") as "[% %]"; eauto.
+       subst. simpl. exploit functions_translated; eauto. intros [tfd [J K]].
+       iExists _. iSplit.
+       -- iPureIntro. left. eapply plus_left. constructor. apply star_one.
+          econstructor; eauto. rewrite <- H9; eauto.
+          exploit type_of_fundef_preserved; eauto. congruence.
+          traceEq.
+       -- iStopProof. apply test3. apply test2. intros. econstructor; eauto. econstructor; eauto.
+          intros. econstructor. apply soundness2. apply soundness3 in H5. iIntros "HA".
+          iDestruct (H5 with "HA") as "[HA [HB [HC HD]]]".
+          iDestruct ("HD" $! (Eval v ty) with "[]") as "HD"; eauto.
+          change sl2 with (nil ++ sl2). unfold set_opttemp.
+          iDestruct (locally_set with "HA HD") as "[HD HA]".
+          iApply (locally_out with "HD"). iModIntro. iExists _. iSplitL "HA".
+          iIntros. iApply locally_conseq_pure. intros. econstructor. eapply H6.
+          iApply locally_finish. iFrame. eauto.
 
-  (* builtin *)
-  - exploit tr_top_leftcontext; intro. apply soundness3 in H9.
-    apply (soundness1 _ tmps). iIntros "HA". iDestruct (H9 with "HA") as "HA". 
-    iDestruct (H2 with "HA") as "HA". iDestruct ("HA" with "[]") as "HA"; eauto.
-    iDestruct ("HA" with "[]") as "HA"; eauto.
-    iDestruct "HA" as (dst' sl1 sl2 a') "[HA [% HB]]". simpl. unfold tr_top.
-    iDestruct "HA" as "[[_ HA]|%]"; fold tr_expr; fold tr_exprlist.
-    + destruct dst'.
-      * iDestruct "HA" as (slal2 t1) "[HA [HD [_ %]]]". inversion H4; subst.
-        rewrite (surjective_pairing slal2).
-        iDestruct (tr_simple_exprlist with "HA") as "HA"; eauto.
-        iDestruct ("HA" with "[]") as "[% %]"; eauto. rewrite H3. simpl Kseqlist.
-        iExists _. iSplit.
-        -- iPureIntro. left. eapply plus_left. constructor. apply star_one.
-           econstructor; eauto. eapply external_call_symbols_preserved; eauto. apply senv_preserved.
-           traceEq.
-        -- iStopProof. apply test3. apply test2. intros. econstructor; eauto.
-           apply soundness3 in H6. apply soundness2.
-           iIntros "HA". iDestruct (H6 with "HA") as "[HA HB]".
-           change sl2 with (nil ++ sl2).
-           iApply ("HB" with "[HA]"); eauto. epose tr_val_gen.
-           change [] with (final For_val (Etempvar t1 ty)). admit.
-      * iDestruct "HA" as (slal2) "[HA %]". simpl in *; subst.
-        rewrite (surjective_pairing slal2).
-        iDestruct (tr_simple_exprlist with "HA") as "HA"; eauto.
-        iDestruct ("HA" with "[]") as "[% %]"; eauto. rewrite H3. simpl Kseqlist.
-        iExists _. iSplit.
-        -- iPureIntro. left. eapply plus_left. constructor. apply star_one.
-           econstructor; eauto. eapply external_call_symbols_preserved; eauto. apply senv_preserved.
-           traceEq.
-        -- iStopProof. apply test3. apply test2. intros. econstructor; eauto.
-           apply soundness3 in H5. apply soundness2.
-           iIntros "HA". iDestruct (H5 with "HA") as "HA".
-           change sl2 with (nil ++ sl2). iApply "HA"; eauto.
-      * iDestruct "HA" as (slal2 t1) "[HA [HD [HE %]]]". inversion H4; subst.
-        rewrite (surjective_pairing slal2).
-        iDestruct (tr_simple_exprlist with "HA") as "HA"; eauto.
-        iDestruct ("HA" with "[]") as "[% %]"; eauto. rewrite H3. simpl Kseqlist.
-        iExists _. iSplit; eauto.
-        -- iPureIntro. left. eapply plus_left. constructor. apply star_one.
-           econstructor; eauto. eapply external_call_symbols_preserved; eauto. apply senv_preserved.
-           traceEq.
-        -- iStopProof. apply test3. apply test2. intros. econstructor; eauto.
-           apply soundness3 in H6. apply soundness2.
-           iIntros "HA". iDestruct (H6 with "HA") as "[HA [HC HB]]".
-           change sl2 with (nil ++ sl2).
-           iApply ("HB" with "[HA HC]"); eauto. 
-           change (do_set sd (Etempvar t1 ty)) with (final (For_set sd) (Etempvar t1 ty)).
-           iSplitL "HA"; eauto. iApply (tr_val_gen with "[HA]"); eauto.
-           iIntros (? ? ? ?) "HB". simpl.
-           iDestruct ("HB"  with "HA") as "%".
-           iPureIntro. constructor. rewrite H7. apply Maps.PTree.gss.
-           iIntros (?) "HA". simpl. iStopProof. apply test3. apply test2. intros.
-           apply Maps.PTree.gso. intro. subst. admit.
-    + unfold tr_top_val_val in H4. destruct sl1; auto. destruct H4 as (v'&ty0&P0&P1&P2&P3).
-      inversion P3.
+ (* ebuiltin *)
+ - inv H9; simpl in *; auto.
+   + inv H; discriminate.
+   + exploit tr_expr_leftcontext; eauto.
+     intro. apply soundness3 in H2.
+     apply (soundness1 _ tmps). iIntros "HA". iDestruct (H2 with "HA") as "HA". 
+     iDestruct (H3 with "HA") as (dst' sl1 sl2 a') "[P [% R]]". clear H2. clear H3.
+     simpl. destruct dst'.
+     * iDestruct "P" as  (sl0 al2 t1) ">[HA [HB [% %]]]".
+       iDestruct (tr_simple_exprlist with "HA []") as "[% %]"; eauto.
+       subst; simpl. iExists _. iSplit.
+       -- iPureIntro. left. eapply plus_left. constructor.  apply star_one.
+          econstructor; eauto.
+          eapply external_call_symbols_preserved; eauto. apply senv_preserved.
+          traceEq.
+       -- iStopProof. apply test3. apply test2. intros. econstructor; eauto. econstructor; eauto.
+          intros. apply soundness2. apply soundness3 in H2. iIntros "HA".
+          iDestruct (H2 with "HA") as "[HA [HB HD]]".
+          iDestruct ("HD" $! (Eval vres ty) with "[]") as "HD"; eauto.
+          change sl2 with (nil ++ sl2). unfold set_opttemp.
+          iDestruct (locally_set with "HB HD") as "[HD HB]".
+          iApply (locally_out with "HD"). iModIntro. iSplitL "HB"; eauto.
+          iIntros. iApply locally_conseq_pure. intros. econstructor. eapply H3.
+          iApply locally_finish. iFrame.
+     * iDestruct "P" as  (sl0 al2) ">[HA %]".
+       iDestruct (tr_simple_exprlist with "HA []") as "[% %]"; eauto.
+       subst. simpl. iExists _. iSplit.
+       -- iPureIntro. left. eapply plus_left. constructor. apply star_one.
+          econstructor; eauto.
+          eapply external_call_symbols_preserved; eauto. apply senv_preserved.
+          traceEq.
+       -- iStopProof. apply test3. apply test2. intros. econstructor; eauto. econstructor; eauto.
+          intros. apply soundness2. apply soundness3 in H2. iIntros "HA".
+          iDestruct (H2 with "HA") as "[HA HD]".
+          iDestruct ("HD" $! (Eval vres ty) with "[]") as "HD"; eauto.
+          change sl2 with (nil ++ sl2). unfold set_opttemp.
+          iApply (locally_out with "HD"). iModIntro. eauto.
+     * iDestruct "P" as  (sl0 al2 t1) ">[HA [HB [% %]]]".
+       iDestruct (tr_simple_exprlist with "HA []") as "[% %]"; eauto.
+       subst; simpl. iExists _. iSplit.
+       -- iPureIntro. left. eapply plus_left. constructor.  apply star_one.
+          econstructor; eauto.
+          eapply external_call_symbols_preserved; eauto. apply senv_preserved.
+          traceEq.
+       -- iStopProof. apply test3. apply test2. intros. econstructor; eauto. econstructor; eauto.
+          intros. apply soundness2. apply soundness3 in H2. iIntros "HA".
+          iDestruct (H2 with "HA") as "[HA [HB HD]]".
+          iDestruct ("HD" $! (Eval vres ty) with "[]") as "HD"; eauto.
+          change sl2 with (nil ++ sl2). unfold set_opttemp.
+          iDestruct (locally_set with "HB HD") as "[HD HB]".
+          iApply (locally_out with "HD"). iModIntro. iExists _. iSplitL "HB"; eauto.
+          iIntros. iApply locally_conseq_pure. intros. econstructor. eapply H3.
+          iApply locally_finish. iFrame. eauto.
+
+       
 Admitted.
 
 
 (** Forward simulation for statements. *)
 
 Lemma tr_top_val_for_val_inv:
-  forall e le m v ty sl a,
-  tr_top tge e le m For_val (Csyntax.Eval v ty) sl a -∗
-  ⌜sl = nil /\ typeof a = ty /\ eval_expr tge e le m a v⌝.
+  forall e le m v ty sl a tmp,
+  tr_top tge e le m For_val (Csyntax.Eval v ty) sl a tmp ->
+  sl = nil /\ typeof a = ty /\ eval_expr tge e le m a v.
 Proof.
-  iIntros (? ? ? ? ? ? ?) "HA". iDestruct "HA" as "[HA|%]".
-  - unfold tr_top_base. simpl. iDestruct "HA" as "[HA [HB [% %]]]".
-    repeat iSplit; auto. iApply "HB". eauto.
-  - unfold tr_top_val_val in H. destruct sl; auto.
-    destruct H as (v0&ty0&P0&P1&P2&P3). inversion P3. subst.
-    iPureIntro. repeat split; auto.
+  intros. inv H; eauto. apply (soundness1 _ tmp). iIntros "HA". apply soundness3 in H0.
+  iDestruct (H0 with "HA") as ">[HA [% %]]".
+  repeat iSplit; eauto. iDestruct (locally_delete with "HA") as "HA". iFrame.
 Qed.
-
     
 Lemma alloc_variables_preserved:
   forall e m params e' m',
@@ -2445,6 +2605,17 @@ Proof.
   rewrite comp_env_preserved. auto.
 Qed.
 
+Lemma red_absorb : forall P tmp, (<absorb> ⌜P⌝ : iProp) () tmp -> P.
+Proof.
+  MonPred.unseal. intros. red in H. inversion_star H h P. clear H. do 2 red in P2.
+  inversion_star H h P. inv P5. apply H.
+Qed.
+
+Lemma red_pure : forall P tmp, (⌜P⌝ : iProp) () tmp -> P.
+Proof.
+  MonPred.unseal. intros. do 2 red in H. inversion_star H h P. clear H. inv P1. apply H.
+Qed.
+  
 Lemma sstep_simulation:
   forall S1 t S2, Csem.sstep ge S1 t S2 ->
   forall S1' (MS: match_states S1 S1'),
@@ -2461,13 +2632,10 @@ Proof.
   simpl. unfold lt. rewrite plus_n_Sm. reflexivity. 
   econstructor; eauto. constructor. auto.
   (* do 2 *)
-  inv H7. apply soundness3 in H6.
-  apply (soundness1 _ tmps). iIntros "HA". iDestruct (H6 with "HA") as "[[_ %]|%]".
-  iPureIntro. simpl in *; subst.
+  inv H7. inv H6. simpl in H. apply red_absorb in H. subst.
   econstructor; split.
-  right; split. apply star_refl. simpl. unfold lt. reflexivity. 
+  right; split. apply star_refl. simpl. lia.
   econstructor; eauto. constructor.
-  unfold tr_top_val_val in H. destruct sl; auto. destruct H as (v0&ty0&P0&P1&P2&P3). inversion P2.
   (* seq *)
   inv H6. econstructor; split. left. apply plus_one. constructor.
   econstructor; eauto. constructor; auto.
@@ -2498,18 +2666,14 @@ Proof.
 (* ifthenelse *)
   inv H8.
 (* ifthenelse empty *)
-  exploit tr_top_val_for_val_inv; eauto. intro. apply (soundness1 _ tmps).
-  apply soundness3 in H7. iIntros "HA". iDestruct (H7 with "HA") as "HA".
-  iDestruct (H0 with "HA") as "[% [% %]]". subst. iPureIntro.
+  exploit tr_top_val_for_val_inv; eauto. intros [P0 [P1 P2]]. subst.
   econstructor; split; simpl.
   right. destruct b; econstructor; eauto.
   eapply star_left. apply step_skip_seq. econstructor. traceEq.
   eapply star_left. apply step_skip_seq. econstructor. traceEq.
   destruct b; econstructor; eauto. econstructor; eauto. econstructor; eauto.
   (* ifthenelse non empty *)
-  exploit tr_top_val_for_val_inv; eauto. intro. apply (soundness1 _ tmps).
-  apply soundness3 in H7. iIntros "HA". iDestruct (H7 with "HA") as "HA".
-  iDestruct (H0 with "HA") as "[% [% %]]". subst. iPureIntro.
+  exploit tr_top_val_for_val_inv; eauto. intros [P0 [P1 P2]]. subst.
   econstructor; split.
   left. eapply plus_two. constructor.
   apply step_ifthenelse with (v1 := v) (b := b); auto. traceEq.
@@ -2523,9 +2687,7 @@ Proof.
   econstructor; eauto. simpl.  econstructor; eauto. econstructor; eauto.
 (* while false *)
   inv H8.
-  exploit tr_top_val_for_val_inv; eauto. intro. apply (soundness1 _ tmps).
-  apply soundness3 in H7. iIntros "HA". iDestruct (H7 with "HA") as "HA".
-  iDestruct (H0 with "HA") as "[% [% %]]". subst. iPureIntro.
+  exploit tr_top_val_for_val_inv; eauto. intros [P0 [P1 P2]]. subst.
   econstructor; split.
   left. simpl. eapply plus_left. constructor.
   eapply star_trans. apply step_makeif with (v1 := v) (b := false); auto.
@@ -2534,9 +2696,7 @@ Proof.
   constructor; auto. constructor.
 (* while true *)
   inv H8.
-  exploit tr_top_val_for_val_inv; eauto. intro. apply (soundness1 _ tmps).
-  apply soundness3 in H7. iIntros "HA". iDestruct (H7 with "HA") as "HA".
-  iDestruct (H0 with "HA") as "[% [% %]]". subst. iPureIntro. 
+  exploit tr_top_val_for_val_inv; eauto. intros [P0 [P1 P2]]. subst.
   econstructor; split.
   left. simpl. eapply plus_left. constructor.
   eapply star_right. apply step_makeif with (v1 := v) (b := true); auto.
@@ -2572,9 +2732,7 @@ Proof.
   econstructor; eauto. simpl. econstructor; auto. econstructor; eauto.
 (* dowhile false *)
   inv H8.
-  exploit tr_top_val_for_val_inv; eauto. intro. apply (soundness1 _ tmps).
-  apply soundness3 in H7. iIntros "HA". iDestruct (H7 with "HA") as "HA".
-  iDestruct (H0 with "HA") as "[% [% %]]". subst. iPureIntro.
+  exploit tr_top_val_for_val_inv; eauto. intros [P0 [P1 P2]]. subst.
   econstructor; split.
   left. simpl. eapply plus_left. constructor.
   eapply star_right. apply step_makeif with (v1 := v) (b := false); auto.
@@ -2583,9 +2741,7 @@ Proof.
   constructor; auto. constructor.
 (* dowhile true *)
   inv H8.
-  exploit tr_top_val_for_val_inv; eauto. intro. apply (soundness1 _ tmps).
-  apply soundness3 in H7. iIntros "HA". iDestruct (H7 with "HA") as "HA".
-  iDestruct (H0 with "HA") as "[% [% %]]". subst. iPureIntro.
+  exploit tr_top_val_for_val_inv; eauto. intros [P0 [P1 P2]]. subst.
   econstructor; split.
   left. simpl. eapply plus_left. constructor.
   eapply star_right. apply step_makeif with (v1 := v) (b := true); auto.
@@ -2611,9 +2767,7 @@ Proof.
   reflexivity. traceEq.
   rewrite Kseqlist_app. econstructor; eauto. simpl. constructor; auto. econstructor; eauto.
 (* for false *)
-  inv H8. exploit tr_top_val_for_val_inv; eauto. intro. apply (soundness1 _ tmps).
-  apply soundness3 in H7. iIntros "HA". iDestruct (H7 with "HA") as "HA".
-  iDestruct (H0 with "HA") as "[% [% %]]". subst. iPureIntro.
+  inv H8. exploit tr_top_val_for_val_inv; eauto. intros [P0 [P1 P2]]. subst.
   econstructor; split.
   left. simpl. eapply plus_left. constructor.
   eapply star_trans. apply step_makeif with (v1 := v) (b := false); auto.
@@ -2621,9 +2775,7 @@ Proof.
   reflexivity. reflexivity. traceEq.
   constructor; auto. constructor.
 (* for true *)
-  inv H8. exploit tr_top_val_for_val_inv; eauto. intro. apply (soundness1 _ tmps).
-  apply soundness3 in H7. iIntros "HA". iDestruct (H7 with "HA") as "HA".
-  iDestruct (H0 with "HA") as "[% [% %]]". subst. iPureIntro.
+  inv H8. exploit tr_top_val_for_val_inv; eauto. intros [P0 [P1 P2]]. subst.
   econstructor; split.
   left. simpl. eapply plus_left. constructor.
   eapply star_right. apply step_makeif with (v1 := v) (b := true); auto.
@@ -2657,9 +2809,7 @@ Proof.
   left; eapply plus_left. constructor. apply push_seq. traceEq.
   econstructor; eauto. constructor. auto.
 (* return some 2 *)
-  inv H9. exploit tr_top_val_for_val_inv; eauto. intro. apply (soundness1 _ tmps).
-  apply soundness3 in H8. iIntros "HA". iDestruct (H8 with "HA") as "HA".
-  iDestruct (H1 with "HA") as "[% [% %]]". subst. iPureIntro.
+  inv H9. exploit tr_top_val_for_val_inv; eauto. intros [P0 [P1 P2]]. subst.
   econstructor; split.
   left. eapply plus_two. constructor. econstructor. eauto.
   erewrite function_return_preserved; eauto. rewrite blocks_of_env_preserved; eauto.
@@ -2678,9 +2828,7 @@ Proof.
   left; eapply plus_left. constructor. apply push_seq. traceEq.
   econstructor; eauto. constructor; auto.
 (* expr switch *)
-  inv H8. exploit tr_top_val_for_val_inv; eauto. intro. apply (soundness1 _ tmps).
-  apply soundness3 in H7. iIntros "HA". iDestruct (H7 with "HA") as "HA".
-  iDestruct (H0 with "HA") as "[% [% %]]". subst. iPureIntro.
+  inv H8. exploit tr_top_val_for_val_inv; eauto. intros [P0 [P1 P2]]. subst.
   econstructor; split.
   left; eapply plus_two. constructor. econstructor; eauto. traceEq.
   econstructor; eauto.

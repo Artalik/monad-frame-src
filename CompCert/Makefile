@@ -109,8 +109,8 @@ BACKEND=\
 # C front-end modules (in cfrontend/)
 
 CFRONTEND=Ctypes.v Cop.v Csyntax.v Csem.v Ctyping.v Cstrategy.v Cexec.v \
-  Initializers.v Initializersproof.v MoSel.v \
-  SimplExpr.v SimplExprspec.v SimplExprproof.v \
+  Initializers.v Initializersproof.v \
+  MoSel.v Locally.v SimplExpr.v SimplExprspec.v SimplExprproof.v \
   Clight.v ClightBigstep.v SimplLocals.v SimplLocalsproof.v \
   Cshmgen.v Cshmgenproof.v \
   Csharpminor.v Cminorgen.v Cminorgenproof.v
