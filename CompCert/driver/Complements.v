@@ -102,7 +102,7 @@ Theorem bigstep_cstrategy_preservation:
        program_behaves (Asm.semantics tp) (Reacts T)
     \/ exists t, program_behaves (Asm.semantics tp) (Diverges t) /\ traceinf_prefix t T).
 Proof.
-  intuition.
+  intros. split; intros.
   apply transf_cstrategy_program_preservation with p; auto. red; auto.
   apply behavior_bigstep_terminates with (Cstrategy.bigstep_semantics p); auto.
   apply Cstrategy.bigstep_semantics_sound.

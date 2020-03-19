@@ -30,7 +30,8 @@ Local Open Scope list_scope.
 
 (* (** State and error monad for generating fresh identifiers. *) *)
 
-Import gensym.
+Export gensym.
+
 Definition bind2 {A B C: Type} (x: mon (A * B)) (f: A -> B -> mon C) : mon C :=
   bind x (fun p => f (fst p) (snd p)).
 
@@ -42,17 +43,6 @@ Notation "'do' ( X , Y ) <- A ; B" := (bind2 A (fun X Y => B))
    : gensym_monad_scope.
 
 Local Open Scope gensym_monad_scope.
-
-(* Parameter first_unused_ident: unit -> ident. *)
-
-(* Definition initial_generator (x: unit) : generator := *)
-(*   mkgenerator (first_unused_ident x) nil. *)
-
-(* Definition gensym (ty: type): mon ident := *)
-(*   fun (g: generator) => *)
-(*     Res (gen_next g) *)
-(*         (mkgenerator (Pos.succ (gen_next g)) ((gen_next g, ty) :: gen_trail g)) *)
-(*         (Ple_succ (gen_next g)). *)
 
 (** Construct a sequence from a list of statements.  To facilitate the
    proof, the sequence is nested to the left and starts with a [Sskip]. *)

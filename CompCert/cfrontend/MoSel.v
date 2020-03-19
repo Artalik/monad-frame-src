@@ -19,10 +19,9 @@ Module SepBasicCore.
 
   Definition hprop := heap -> Prop.
 
-  Notation "'heap_empty'" := (∅ : heap) : heap_scope.
+  Notation "'heap_empty'" := (∅ : heap).
 
-  Notation "h1 \u h2" := (h1 ∪ h2)
-                           (at level 37, right associativity) : heap_scope.
+  Notation "h1 \u h2" := (h1 ∪ h2) (at level 37, right associativity).
 
   (* Properties on heap *)
   Instance heap_union_empty_l : LeftId (=@{heap}) ∅ (∪) := _.
@@ -57,8 +56,6 @@ Module SepBasicCore.
     intros. apply map_disjoint_union_r in H as (P0&P1). assumption.
   Qed.
 
-  Open Scope heap_scope.
-
   (* Operators *)
 
   Definition hand (H1 H2:hprop):hprop :=
@@ -71,7 +68,7 @@ Module SepBasicCore.
 
   Definition hsingle loc t : hprop :=
     fun h =>  h = {[loc := t]}.
-
+  
   Definition hheap_ctx (ctx : heap) : hprop := fun h => h = ctx.
 
   Definition hstar (H1 H2 : hprop) : hprop :=
@@ -92,24 +89,23 @@ Module SepBasicCore.
   Definition hforall {A} (f : A -> hprop) : hprop := fun h => forall a, f a h.
 
   Notation "'Hexists' x1 , H" := (hexists (fun x1 => H))
-                                   (at level 39, x1 ident, H at level 50) : heap_scope.
+                                   (at level 39, x1 ident, H at level 50).
   Notation "'Hexists' x1 x2 , H" := (Hexists x1, Hexists x2, H)
-                                      (at level 39, x1 ident, x2 ident, H at level 50) : heap_scope.
+                                      (at level 39, x1 ident, x2 ident, H at level 50).
   Notation "'Hexists' x1 x2 x3 , H" := (Hexists x1, Hexists x2, Hexists x3, H)
-                                         (at level 39, x1 ident, x2 ident, x3 ident, H at level 50) : heap_scope.
+                                         (at level 39, x1 ident, x2 ident, x3 ident, H at level 50).
 
 
   Notation "'\[]'" := (hempty)
-                        (at level 0) : heap_scope.
+                        (at level 0).
 
   Notation "\[ P ]" := (hpure P)
-                         (at level 0, P at level 99, format "\[ P ]") : heap_scope.
+                         (at level 0, P at level 99, format "\[ P ]").
 
   Notation "H1 '\*' H2" := (hstar H1 H2)
-                             (at level 41, right associativity) : heap_scope.
+                             (at level 41, right associativity).
 
-  Notation "\Top" := (htop) : heap_scope.
-  Open Scope heap_scope.
+  Notation "\Top" := htop.
 
   Definition hwand (H1 H2 : hprop) : hprop :=
     hexists (fun (H:hprop) => H \* (hpure (H \* H1 ==> H2))).
@@ -131,7 +127,7 @@ Module SepBasicCore.
 
   Hint Resolve heap_union_empty_l heap_union_empty_r hempty_intro map_disjoint_empty_l map_disjoint_empty_r heap_union_assoc heap_disjoint_union_r_l heap_disjoint_union_l_l heap_disjoint_union_r_r heap_disjoint_union_l_r.
 
-  Ltac inversion_star h P :=
+  Ltac inversion_star H h P :=
     match goal with
     | H : (_ \* _) _ |- _ =>
       let W := fresh h in
@@ -160,7 +156,7 @@ Module SepBasicCore.
     Proof using.
       intros. extens. 
       split; intro.
-      - inversion_star h P. inversion P0; subst. rewrite heap_union_empty_l. assumption.
+      - inversion_star H h P. inversion P0; subst. rewrite heap_union_empty_l. assumption.
       - exists heap_empty; exists x. repeat split; auto. apply map_disjoint_empty_l.
     Qed.
 
@@ -168,7 +164,7 @@ Module SepBasicCore.
         H1 \* H2 = H2 \* H1.
     Proof using.
       intros H1 H2. extens.
-      split; intro P; inversion_star h P; exists h0; exists h; repeat split; auto;
+      split; intro P; inversion_star H h P; exists h0; exists h; repeat split; auto;
         rewrite heap_union_comm; auto.
     Qed.
 
@@ -201,7 +197,7 @@ Module SepBasicCore.
     Lemma himpl_frame_l : forall H2 H1 H1',
         H1 ==> H1' ->
         (H1 \* H2) ==> (H1' \* H2).
-    Proof using. intros. intros h P. inversion_star h P. exists h0; exists h1. split; eauto. Qed.
+    Proof using. intros. intros h P. inversion_star H h P. exists h0; exists h1. split; eauto. Qed.
 
   End Properties.
 
@@ -213,7 +209,7 @@ End SepBasicCore.
 Export SepBasicCore.
 
 Module ProofModeInstantiate.
-
+  
   Canonical Structure hpropO := leibnizO hprop.
 
   Definition hprop_emp := hpure True.
@@ -230,7 +226,7 @@ Module ProofModeInstantiate.
     - rewrite /Transitive. intros. intros h P. eauto.
     - rewrite leibniz_equiv_iff. intros (P0&P1). extens. split; intro; auto.
     - intros X Y Z. rewrite /hpure_abs. repeat red. intro. extens.
-      split; intro; inversion_star h P; exists h; exists h0; repeat split; auto; inversion P0; inversion H2;
+      split; intro; inversion_star H h P; exists h; exists h0; repeat split; auto; inversion P0; inversion H2;
         auto; apply H; assumption.
     - intros X Y Z. rewrite /hforall. repeat red. intros. extens. split; intros; repeat red in H;
       apply functional_extensionality in H; subst; auto.
@@ -238,11 +234,11 @@ Module ProofModeInstantiate.
       split; intro; repeat red in H; apply functional_extensionality in H; subst; auto.
     - rewrite /hpure_abs. intros φ P. exists heap_empty. exists x. repeat split; auto.
       apply map_disjoint_empty_l.
-    - unfold hpure_abs in *. intros x W P h P0. inversion_star h P. inversion P2. apply P; auto.
+    - unfold hpure_abs in *. intros x W P h P0. inversion_star W h P. inversion P2. apply P; auto.
       exists h0; exists h1. repeat split; auto.
     - rewrite /hforall /hpure_abs. intros h W h0 P. exists heap_empty; exists h0.
       repeat split; auto.
-      + intro a. pose (P a). inversion_star h P. inversion P1. apply H.
+      + intro a. pose (P a). inversion_star h0 h P. inversion P1. apply H.
       + apply map_disjoint_empty_l.
     - rewrite /hand. intros P Q h (P0&P1). apply P0.
     - rewrite /hand. intros P Q h (P0&P1). apply P1.
@@ -255,21 +251,21 @@ Module ProofModeInstantiate.
     - intros h Q a H H0. apply H0.
     - intros x W H P Q. exists H. apply Q.
     - intros x W Q P h P0. destruct P0. eapply P. apply H.
-    - intros P P' Q Q' A B C D. inversion_star h P. exists h; exists h0. repeat split; auto.
+    - intros P P' Q Q' A B C D. inversion_star HHH h P. exists h; exists h0. repeat split; auto.
     - intros x W A. exists heap_empty; exists W. repeat split; auto. apply map_disjoint_empty_l.
-    - intros P h Q. inversion_star H H. inversion H3; inversion H6; subst.
+    - intros P h Q. inversion_star H H H. inversion H3; inversion H6; subst.
       rewrite heap_union_empty_l. apply H4.
-    - intros P Q h R. inversion_star H H. exists H2; exists H0. repeat split; auto. subst.
+    - intros P Q h R. inversion_star H H H. exists H2; exists H0. repeat split; auto. subst.
       apply heap_union_comm. apply H5.
     - intros P Q R h P0. rewrite <- hstar_assoc. apply P0.
     - intros P Q R P0 h P1. exists P. exists h; exists heap_empty. repeat split; auto. apply map_disjoint_empty_r.
-    - intros P Q R W h P0. inversion_star h P. apply W in P2. destruct P2. inversion_star h H.
+    - intros P Q R W h P0. inversion_star h h P. apply W in P2. destruct P2. inversion_star H h H.
       inversion H2. apply H4. exists h2; exists h1. repeat split; auto; subst.
       + apply heap_disjoint_union_l_l in P4. apply P4.
       + inversion H5. subst. rewrite heap_union_empty_r. reflexivity.
     - rewrite /hpersistent. intros P Q H h P0. apply H. apply P0.
     - rewrite /hpersistent. rewrite /hforall. intros A B C D E. apply D.
-    - rewrite /hpersistent. intros P Q h P0. inversion_star h P. apply P2.
+    - rewrite /hpersistent. intros P Q h P0. inversion_star P0 h P. apply P2.
     - intros P Q x W. destruct W. exists heap_empty; exists x. repeat split; auto. apply map_disjoint_empty_l.
   Qed.
 
@@ -301,38 +297,38 @@ Module ProofMode.
   Export ProofModeInstantiate.
 
 
-  (* We need to repeat all these hints appearing in proofmode/tactics.v,
-   so that they state something about CFML connectives. [Hint Extern]
-   patterns are not matched modulo canonical structure unification. *)
+  (* (* We need to repeat all these hints appearing in proofmode/tactics.v, *)
+  (*  so that they state something about CFML connectives. [Hint Extern] *)
+  (*  patterns are not matched modulo canonical structure unification. *) *)
 
-  Hint Extern 0 (_ ==> _) => iStartProof.
-  Hint Extern 0 (envs_entails _ (hpure _)) => iPureIntro.
-  Hint Extern 0 (envs_entails _ (hempty)) => iEmpIntro.
-  Hint Extern 0 (envs_entails _ (hforall _)) => iIntros (?).
-  Hint Extern 0 (envs_entails _ (hwand _ _)) => iIntros "?".
+  (* Hint Extern 0 (_ ==> _) => iStartProof. *)
+  (* Hint Extern 0 (envs_entails _ (hpure _)) => iPureIntro. *)
+  (* Hint Extern 0 (envs_entails _ (hempty)) => iEmpIntro. *)
+  (* Hint Extern 0 (envs_entails _ (hforall _)) => iIntros (?). *)
+  (* Hint Extern 0 (envs_entails _ (hwand _ _)) => iIntros "?". *)
 
-  Hint Extern 1 (envs_entails _ (hand _ _)) => iSplit.
-  Hint Extern 1 (envs_entails _ (hstar _ _)) => iSplit.
-  Hint Extern 1 (envs_entails _ (hexists _)) => iExists _.
-  Hint Extern 1 (envs_entails _ (hor _ _)) => iLeft.
-  Hint Extern 1 (envs_entails _ (hor _ _)) => iRight.
+  (* Hint Extern 1 (envs_entails _ (hand _ _)) => iSplit. *)
+  (* Hint Extern 1 (envs_entails _ (hstar _ _)) => iSplit. *)
+  (* Hint Extern 1 (envs_entails _ (hexists _)) => iExists _. *)
+  (* Hint Extern 1 (envs_entails _ (hor _ _)) => iLeft. *)
+  (* Hint Extern 1 (envs_entails _ (hor _ _)) => iRight. *)
 
-  Hint Extern 2 (envs_entails _ (hstar _ _)) => progress iFrame : iFrame.
+  (* Hint Extern 2 (envs_entails _ (hstar _ _)) => progress iFrame : iFrame. *)
 
-  (* Specific instances for CFML. *)
+  (* (* Specific instances for CFML. *) *)
 
-  Hint Extern 3 (envs_entails _ ?P) => is_evar P; iAccu.
-  Hint Extern 3 (envs_entails _ (?P _)) => is_evar P; iAccu.
+  (* Hint Extern 3 (envs_entails _ ?P) => is_evar P; iAccu. *)
+  (* Hint Extern 3 (envs_entails _ (?P _)) => is_evar P; iAccu. *)
 
-  Hint Extern 0 (envs_entails _ (\[_] \* _)) => iSplitR.
-  Hint Extern 0 (envs_entails _ (\[_] ∗ _)) => iSplitR.
-  Hint Extern 0 (envs_entails _ (_ \* \[_])) => iSplitL.
-  Hint Extern 0 (envs_entails _ (_ ∗ \[_])) => iSplitL.
+  (* Hint Extern 0 (envs_entails _ (\[_] \* _)) => iSplitR. *)
+  (* Hint Extern 0 (envs_entails _ (\[_] ∗ _)) => iSplitR. *)
+  (* Hint Extern 0 (envs_entails _ (_ \* \[_])) => iSplitL. *)
+  (* Hint Extern 0 (envs_entails _ (_ ∗ \[_])) => iSplitL. *)
 
-  Hint Extern 0 (envs_entails _ (emp \* _)) => iSplitR.
-  Hint Extern 0 (envs_entails _ (emp ∗ _)) => iSplitR.
-  Hint Extern 0 (envs_entails _ (_ \* emp)) => iSplitL.
-  Hint Extern 0 (envs_entails _ (_ ∗ emp)) => iSplitL.
+  (* Hint Extern 0 (envs_entails _ (emp \* _)) => iSplitR. *)
+  (* Hint Extern 0 (envs_entails _ (emp ∗ _)) => iSplitR. *)
+  (* Hint Extern 0 (envs_entails _ (_ \* emp)) => iSplitL. *)
+  (* Hint Extern 0 (envs_entails _ (_ ∗ emp)) => iSplitL. *)
 
   (** * Specific Proofmode instances about hpure and htop. *)
 
@@ -342,7 +338,7 @@ Module ProofMode.
   Proof. intros ??. repeat red. trivial. Qed.
 
   Global Instance htop_into_pure : IntoPure \Top True.
-  Proof. unfold IntoPure. auto. Qed.
+  Proof. unfold IntoPure. intros h H. exists ∅, h. repeat split; auto. apply map_disjoint_empty_l. Qed.
   Global Instance htop_from_pure a : FromPure a \Top True.
   Proof. intros ??. red; trivial. Qed.
 
@@ -352,14 +348,20 @@ Module ProofMode.
   Proof. rewrite hpure_pure. apply _. Qed.
 
   Global Instance hpure_into_pure φ : IntoPure \[φ] φ.
-  Proof. rewrite hpure_pure /IntoPure. by iDestruct 1 as "%". Qed.
+  Proof. rewrite hpure_pure /IntoPure. intros h H. destruct H. auto. Qed.
   Global Instance hpure_from_pure φ : FromPure true \[φ] φ.
   Proof. by rewrite hpure_pure /FromPure /= /bi_affinely stdpp.base.comm. Qed.
 
   Global Instance from_and_hpure φ ψ : FromAnd \[φ ∧ ψ] \[φ] \[ψ].
-  Proof. rewrite /FromAnd. auto. Qed.
+  Proof.
+    rewrite /FromAnd. intros h H. destruct H. inversion H. inversion H0. repeat eexists; auto.
+  Qed.
   Global Instance from_sep_hpure φ ψ : FromSep \[φ ∧ ψ] \[φ] \[ψ].
-  Proof. rewrite /FromSep. auto. Qed.
+  Proof.
+    rewrite /FromSep. intros h H. red in H. inversion_star H h P.
+    inversion P0. inversion P1. inversion H1. inversion H3. subst. rewrite heap_union_empty_l.
+    repeat eexists; auto. 
+  Qed.
   Global Instance into_and_hpure (p : bool) φ ψ : IntoAnd p \[φ ∧ ψ] \[φ] \[ψ].
   Proof. rewrite /IntoAnd. f_equiv. auto. Qed.
   Global Instance into_sep_hpure φ ψ : IntoSep \[φ ∧ ψ] \[φ] \[ψ].
@@ -383,42 +385,42 @@ Module ProofMode.
     rewrite /FromPure /Frame=><- /=. destruct p=>/=; iIntros "[% _] !%"; auto.
   Qed.
 
-  (** Instance bi_emp_valid *)
+  (* (** Instance bi_emp_valid *) *)
 
-  Global Instance as_emp_valid_emp_valid0 P : @AsEmpValid0 hpropI (emp ⊢ P) P | 0.
-  Proof. by rewrite /AsEmpValid0 /AsEmpValid. Qed.
+  (* Global Instance as_emp_valid_emp_valid0 P : @AsEmpValid0 hpropI (emp ⊢ P) P | 0. *)
+  (* Proof. by rewrite /AsEmpValid0 /AsEmpValid. Qed. *)
 
-  Global Instance as_emp_valid_emp_valid0_bis (P : hprop) :
-    @AsEmpValid0 hpropI (bi_emp_valid P) P | 0.
-  Proof. by rewrite /AsEmpValid0 /AsEmpValid. Qed.
+  (* Global Instance as_emp_valid_emp_valid0_bis (P : hprop) : *)
+  (*   @AsEmpValid0 hpropI (bi_emp_valid P) P | 0. *)
+  (* Proof. by rewrite /AsEmpValid0 /AsEmpValid. Qed. *)
 
-  Global Instance as_emp_valid_entails0 P Q : @AsEmpValid0 hpropI (P ⊢ Q) (P -∗ Q).
-  Proof. split. apply bi.entails_wand. apply bi.wand_entails. Qed.
+  (* Global Instance as_emp_valid_entails0 P Q : @AsEmpValid0 hpropI (P ⊢ Q) (P -∗ Q). *)
+  (* Proof. split. apply bi.entails_wand. apply bi.wand_entails. Qed. *)
 
-  Global Instance as_emp_valid_entails P Q : @AsEmpValid hpropI (P ⊢ Q) (P -∗ Q).
-  Proof. split. apply bi.entails_wand. apply bi.wand_entails. Qed.
+  (* Global Instance as_emp_valid_entails P Q : @AsEmpValid hpropI (P ⊢ Q) (P -∗ Q). *)
+  (* Proof. split. apply bi.entails_wand. apply bi.wand_entails. Qed. *)
 
-  Global Instance as_emp_valid_forall {A : Type} (φ : A → Prop) (P : A → hprop) :
-    (∀ x, AsEmpValid (φ x) (P x)) → AsEmpValid (∀ x, φ x) (∀ x, P x).
-  Proof.
-    rewrite /AsEmpValid=>H1. split=>H2.
-    - apply bi.forall_intro=>?. apply H1, H2.
-    - intros x. apply H1. revert H2. by rewrite (bi.forall_elim x).
-  Qed.
+  (* Global Instance as_emp_valid_forall {A : Type} (φ : A → Prop) (P : A → hprop) : *)
+  (*   (∀ x, AsEmpValid (φ x) (P x)) → AsEmpValid (∀ x, φ x) (∀ x, P x). *)
+  (* Proof. *)
+  (*   rewrite /AsEmpValid=>H1. split=>H2. *)
+  (*   - apply bi.forall_intro=>?. apply H1, H2. *)
+  (*   - intros x. apply H1. revert H2. by rewrite (bi.forall_elim x). *)
+  (* Qed. *)
 
-  Global Instance as_emp_valid_emp_valid (P : hprop) :
-    @AsEmpValid hpropI (emp ⊢ P) P | 0.
-  Proof.
-    rewrite /AsEmpValid. split.
-    - intro. eapply H.
-    - intro. intro. intro. inversion H0. apply H. apply H0. 
-  Qed.
+  (* Global Instance as_emp_valid_emp_valid (P : hprop) : *)
+  (*   @AsEmpValid hpropI (emp ⊢ P) P | 0. *)
+  (* Proof. *)
+  (*   rewrite /AsEmpValid. split. *)
+  (*   - intro. eapply H. *)
+  (*   - intro. intro. intro. inversion H0. apply H. apply H0.  *)
+  (* Qed. *)
 
-  Global Instance as_emp_valid_emp_valid_bis (P : hprop) :
-    @AsEmpValid hpropI (bi_emp_valid P) P | 0.
-  Proof.
-      by rewrite /AsEmpValid.
-  Qed.
+  (* Global Instance as_emp_valid_emp_valid_bis (P : hprop) : *)
+  (*   @AsEmpValid hpropI (bi_emp_valid P) P | 0. *)
+  (* Proof. *)
+  (*     by rewrite /AsEmpValid. *)
+  (* Qed. *)
 
   (** Instance affine *)
 
@@ -440,8 +442,8 @@ Module ProofMode.
   (** Instance Wand *)
 
   Global Instance from_wand_wand P1 P2 : @FromWand hpropI (P1 -∗ P2) P1 P2.
-  Proof. by rewrite /FromWand. Qed.
-
+  Proof. by rewrite /FromWand. Qed.                                         
+  
 End ProofMode.
 
 Module biInd.
@@ -636,8 +638,7 @@ Module weakestpre_gensym.
 
   Definition single (l : positive) (t : type) : iProp := MonPred (fun _ => hsingle l t) _.
 
-  Definition heap_ctx (h : heap) : iProp := MonPred (fun _ => hheap_ctx h) _.
-
+  Definition heap_ctx (h : heap) : iProp := MonPred (fun _ => hheap_ctx h) _. 
 
   Global Instance affine_heap_empty : Affine (heap_ctx ∅).
   Proof.
@@ -658,26 +659,27 @@ Module weakestpre_gensym.
     iIntros "HA". trivial.
   Qed.
 
-  Lemma pureIntro {X} (P0 : X -> iProp) : ∀ a b, P0 a -∗ pure_empty (a = b) -∗ P0 b.
+  Lemma pureIntro {X} (P : X -> iProp) : ∀ a b, P a ⊢ pure_empty (a = b) -∗ P b.
   Proof.
     iIntros (a b) "HA %". rewrite a0. iApply "HA".
   Qed.
 
   Notation "\⌜ P ⌝" := (pure_empty P)
-                         (at level 0, P at level 99, format "\⌜ P ⌝") : heap_scope.
+                         (at level 0, P at level 99, format "\⌜ P ⌝").
   
   Notation "l ↦ t" :=
     (single l t) (at level 20) : bi_scope.
+  Notation "\s l" := (∃ t, l ↦ t) (at level 10).
 
   Fixpoint mwp {X} (e1 : mon X) (Q : X -> iProp) : iProp :=
     match e1 with
     | ret v => Q v
     | op (Err e) => True
-    | op (Gensym t f) =>
-      ∀ l, l ↦ t -∗ mwp (f l) Q
+    | op (Gensym _ f) =>
+      ∀ l, \s l -∗ mwp (f l) Q
     end%I.
 
-
+  
   Notation "'WP' e |{ Φ } |" := (mwp e Φ)
                                   (at level 20, e, Φ at level 200, only parsing) : bi_scope.
 
@@ -695,11 +697,12 @@ Module weakestpre_gensym.
   (** Generic rules *)
   Lemma wp_value' {X} (Φ : X -> iProp) (v : X) : Φ v ⊢ WP ret v |{ Φ }|%I.
   Proof. auto. Qed.
-  Lemma wp_value_inv' {X} Φ (v : X) : WP ret v |{ Φ }| -∗ Φ v%I.
+  
+  Lemma wp_value_inv' {X} Φ (v : X) : WP ret v |{ Φ }| ⊢ Φ v%I.
   Proof. auto. Qed.
 
   Lemma wp_mono {X} e (Φ Ψ : X -> iProp) :
-    WP e |{ Φ }| -∗ (∀ (v : X), Φ v -∗ Ψ v) -∗ WP e |{ Ψ }|%I.
+    WP e |{ Φ }| ⊢ (∀ (v : X), Φ v -∗ Ψ v) -∗ WP e |{ Ψ }|%I.
   Proof.
     iIntros "HA HB". revert e. fix e 1.
     destruct e0.
@@ -712,7 +715,7 @@ Module weakestpre_gensym.
   Qed.
 
   Lemma wp_bind {X Y} (e : mon X) (f :  X → mon Y) (Φ : Y -> iProp)  (Φ' : X -> iProp) :
-    WP e |{ Φ' }| -∗ (∀ v,  Φ' v -∗ WP (f v) |{ Φ }|) -∗ WP bind e f |{ Φ }|%I.
+    WP e |{ Φ' }| ⊢ (∀ v,  Φ' v -∗ WP (f v) |{ Φ }|) -∗ WP bind e f |{ Φ }|%I.
   Proof.
     iIntros "HA HB". revert e. fix e 1.
     destruct e0.
@@ -725,9 +728,9 @@ Module weakestpre_gensym.
   Qed.
   
   (** Monad rules *)
-  Lemma wp_gensym (t : type) : emp -∗ WP gensym t |{ l, l ↦ t }|.
+  Lemma wp_gensym (t : type) : ⊢ WP gensym t |{ l, \s l }|.
   Proof.
-    simpl. iIntros. iFrame.
+    simpl. iIntros. auto.
   Qed.
   
   Lemma wp_frame_l {X} (e : mon X) Φ (R : iProp) : R ∗ WP e |{ Φ }| ⊢ WP e |{ v, R ∗ Φ v }|.
@@ -740,35 +743,32 @@ Module weakestpre_gensym.
   (** Generic rules *)
 
   Lemma ret_spec_complete {X} (v : X) H (Q : X -> iProp) :
-    (H -∗ Q v)
-      -∗
-      {{ H }} ret v {{ v', RET v'; Q v' }}.
+    (H ⊢ Q v) -> ⊢{{ H }} ret v {{ v', RET v'; Q v' }}.
   Proof.
-    iIntros "HA" (?) "HB HC". iDestruct ("HA" with "HB") as "HA". iApply "HC". iApply "HA".
+    iIntros (? ?) "HA HB". iDestruct (H0 with "HA") as "HA". iApply "HB". iApply "HA".
   Qed.
 
   Lemma ret_spec {X} (v : X) :
-    {{ emp }} ret v {{ v', RET v'; ⌜ v' = v ⌝  }}.
+    ⊢{{ emp }} ret v {{ v', RET v'; ⌜ v' = v ⌝  }}.
   Proof. iIntros (?) "HA HB". iApply "HB". auto. Qed.
-
+  
+  
   Lemma ret_spec_pure {X} (v : X) :
-    {{ emp }} ret v {{ v', RET v'; \⌜ v' = v ⌝  }}.
+    ⊢{{ emp }} ret v {{ v', RET v'; \⌜ v' = v ⌝  }}.
   Proof.
     iIntros (?) "HA HB". iApply "HB". auto.
   Qed.
-
+  
   Lemma ret_spec_bis {X} (v : X) (Q : X -> iProp) :
-    Q v
-      -∗
-      {{ emp }} ret v {{ v', RET v'; Q v' }}.
+    Q v ⊢{{ emp }} ret v {{ v', RET v'; Q v' }}.
   Proof.
-    iIntros "HA" (?) "HB HC". iApply "HC". iApply "HA".
+    iIntros "HA" (?) "_ HB". iApply "HB". iFrame.
   Qed.
   
   Lemma bind_spec {X Y} (e : mon X) (f : X -> mon Y) Φ' Φ'' H :
-    {{ H }} e {{ v, RET v; Φ'' v }} ->
-    (∀ v, {{ Φ'' v }} (f v) {{ v', RET v'; Φ' v' }}) ->
-    {{ H }} (bind e f) {{ v, RET v; Φ' v}}.
+    (⊢{{ H }} e {{ v, RET v; Φ'' v }}) ->
+    (∀ v, ⊢ {{ Φ'' v }} (f v) {{ v', RET v'; Φ' v' }}) ->
+    ⊢{{ H }} (bind e f) {{ v, RET v; Φ' v}}.
   Proof.
     intros. iIntros (?) "HA HB".
     iApply (wp_bind e f _ Φ'' with "[HA]").
@@ -777,8 +777,8 @@ Module weakestpre_gensym.
   Qed.
 
   Lemma frame_r {X} H R Φ' (e : mon X) :
-    {{ H }} e {{ v, RET v; Φ' v }} ->
-    {{ H ∗ R }} e {{ v, RET v; Φ' v ∗ R }}.
+    (⊢{{ H }} e {{ v, RET v; Φ' v }}) ->
+    ⊢{{ H ∗ R }} e {{ v, RET v; Φ' v ∗ R }}.
   Proof.
     intro P. iIntros (?) "[HA HC] HB".
     iApply (P with "[HA]"); auto.
@@ -786,8 +786,8 @@ Module weakestpre_gensym.
   Qed.
 
   Lemma frame_l {X} H R Φ' (e : mon X) :
-    {{ H }} e {{ v, RET v; Φ' v }} ->
-    {{ R ∗ H }} e {{ v, RET v; R ∗ Φ' v }}.
+    (⊢{{ H }} e {{ v, RET v; Φ' v }}) ->
+    ⊢{{ R ∗ H }} e {{ v, RET v; R ∗ Φ' v }}.
   Proof.
     intro P. iIntros (?) "HA HB". iDestruct "HA" as "[HA HC]".
     iApply (P with "[HC]"); auto.
@@ -795,8 +795,8 @@ Module weakestpre_gensym.
   Qed.
 
   Lemma exists_spec {X Y} v' H (Q : X -> Y -> iProp) (e : mon X) :
-    {{ H }} e {{ v, RET v; Q v v' }} ->
-    {{ H }} e {{ v, RET v; ∃ t, Q v t }}.
+    (⊢{{ H }} e {{ v, RET v; Q v v' }}) ->
+    ⊢{{ H }} e {{ v, RET v; ∃ t, Q v t }}.
   Proof.
     iIntros (? ?) "HA HB".
     iApply (H0 with "HA").
@@ -804,18 +804,18 @@ Module weakestpre_gensym.
   Qed.
 
   Lemma post_weaker {X} H (Q : X -> iProp) (Q' : X -> iProp) (e : mon X) :
-    {{ H }} e {{ v, RET v; Q' v }} ->
-    (forall v, Q' v -∗ Q v) ->
-    {{ H }} e {{ v, RET v; Q v }}.
+    (⊢{{ H }} e {{ v, RET v; Q' v }}) ->
+    (forall v, Q' v ⊢ Q v) ->
+    ⊢{{ H }} e {{ v, RET v; Q v }}.
   Proof.
     intros. iIntros (?) "HA HB". iApply (H0 with "HA"). iIntros (?) "HA". iApply "HB".
     iApply H1. iApply "HA".
   Qed.
 
   Lemma pre_stronger {X} H H' (Q : X -> iProp) (e : mon X) :
-    {{ H }} e {{ v, RET v; Q v }} ->
-    (H' -∗ H) ->
-    {{ H' }} e {{ v, RET v; Q v }}.
+    (⊢{{ H }} e {{ v, RET v; Q v }}) ->
+    (H' ⊢ H) ->
+    ⊢{{ H' }} e {{ v, RET v; Q v }}.
   Proof.
     intros. iIntros (?) "HA HB". iApply (H0 with "[HA]").
     - iApply H1. iApply "HA".
@@ -823,8 +823,8 @@ Module weakestpre_gensym.
   Qed.
 
   Lemma intro_true_l {X} H Φ' (e : mon X) :
-    {{ H ∗ emp }} e {{ v, RET v; Φ' v }} ->
-    {{ H }} e {{ v, RET v; Φ' v }}.
+    (⊢{{ H ∗ emp }} e {{ v, RET v; Φ' v }}) ->
+    ⊢{{ H }} e {{ v, RET v; Φ' v }}.
   Proof.
     intro P. iIntros (?) "HA HB". iApply (P with "[HA]").
     iFrame.
@@ -832,8 +832,8 @@ Module weakestpre_gensym.
   Qed.
 
   Lemma intro_true_r {X} H Φ' (e : mon X) :
-    {{ emp ∗ H }} e {{ v, RET v; Φ' v }} ->
-    {{ H }} e {{ v, RET v; Φ' v }}.
+    (⊢{{ emp ∗ H }} e {{ v, RET v; Φ' v }}) ->
+    ⊢{{ H }} e {{ v, RET v; Φ' v }}.
   Proof.
     intro P. iIntros (?) "HA HB". iApply (P with "[HA]").
     iFrame.
@@ -842,8 +842,8 @@ Module weakestpre_gensym.
 
 
   Lemma wand_post {X} H R Φ' (v : X):
-    {{ H ∗ R }} ret v {{ v, RET v; Φ' v }} ->
-    {{ H }} ret v {{ v, RET v; R -∗ Φ' v }}.
+    (⊢{{ H ∗ R }} ret v {{ v, RET v; Φ' v }}) ->
+    ⊢{{ H }} ret v {{ v, RET v; R -∗ Φ' v }}.
   Proof.
     iIntros (? ?) "HH HB". iApply "HB". iIntros "HR". iApply (H0 with "[HH HR]"). iFrame.
     iIntros. iFrame.
@@ -851,89 +851,89 @@ Module weakestpre_gensym.
 
   
   Lemma assoc_pre {X} H R Q Φ' (e : mon X):
-    {{ H ∗ R ∗ Q }} e {{ v, RET v; Φ' v }} <->
-    {{ (H ∗ R) ∗ Q}} e {{ v, RET v; Φ' v }}.
+    (⊢{{ H ∗ R ∗ Q }} e {{ v, RET v; Φ' v }}) <->
+    ⊢{{ (H ∗ R) ∗ Q}} e {{ v, RET v; Φ' v }}.
   Proof.
     split; iIntros (? ?) "[HA HC] HB"; iApply (H0 with "[HA HC]"); iFrame. iApply "HC".
   Qed.
 
   Lemma assoc_post {X} H R Q P (e : mon X) :
-    {{ P }} e {{ v, RET v; H v ∗ R v ∗ Q v }} <->
-    {{ P }} e {{ v, RET v; (H v ∗ R v) ∗ Q v}}.
+    (⊢{{ P }} e {{ v, RET v; H v ∗ R v ∗ Q v }}) <->
+    ⊢{{ P }} e {{ v, RET v; (H v ∗ R v) ∗ Q v}}.
   Proof.
     split; iIntros (? ?) "HA HB"; iApply (H0 with "HA"); iIntros (?) "[HA HC]"; iApply "HB"; iFrame.
     iApply "HC".
   Qed.
   
   Lemma comm_pre {X} H R Φ' (e : mon X):
-    {{ H ∗ R }} e {{ v, RET v; Φ' v }} <->
-    {{ R ∗ H }} e {{ v, RET v; Φ' v }}.
+    (⊢{{ H ∗ R }} e {{ v, RET v; Φ' v }}) <->
+    ⊢{{ R ∗ H }} e {{ v, RET v; Φ' v }}.
   Proof.
     split; iIntros (? ?) "[HA HC] HB"; iApply (H0 with "[HA HC]"); iFrame.
   Qed.
   
   Lemma comm_post {X} P H R (e : mon X):
-    {{ P }} e {{ v, RET v; H v ∗ R v }} <->
-    {{ P }} e {{ v, RET v; R v ∗ H v }}.
+    (⊢{{ P }} e {{ v, RET v; H v ∗ R v }}) <->
+    ⊢{{ P }} e {{ v, RET v; R v ∗ H v }}.
   Proof.
     split; iIntros (? ?) "HA HB"; iApply (H0 with "HA"); iIntros (?) "[HA HC]"; iApply "HB"; iFrame.
   Qed.
   
   Lemma forall_useless_post {X Y} P Q (e : mon X):
-    {{ P }} e {{ v, RET v; Q v }} ->
-    {{ P }} e {{ v, RET v; ∀ (t : Y), Q v }}.
+    (⊢{{ P }} e {{ v, RET v; Q v }}) ->
+    ⊢{{ P }} e {{ v, RET v; ∀ (t : Y), Q v }}.
   Proof.
     iIntros (? ?) "HA HB". iApply (H with "HA"). iIntros (?) "HA". iApply "HB"; iFrame.
     iIntros. trivial.
   Qed.
 
   Lemma wand_true_pre {X} P (Q : X -> iProp) e :
-    {{ P }} e {{ v, RET v; Q v }} ->
-    {{ \⌜True⌝ -∗ P }} e {{ v, RET v; Q v }}.
+    (⊢{{ P }} e {{ v, RET v; Q v }}) ->
+    ⊢{{ \⌜True⌝ -∗ P }} e {{ v, RET v; Q v }}.
   Proof.
     iIntros (? ?) "HA HB". iApply (H with "[HA]"). iApply "HA". trivial. iApply "HB".
   Qed.
 
   Lemma wand_true_post {X} P (Q : X -> iProp) e :
-    {{ P }} e {{ v, RET v; Q v }} ->
-    {{ P }} e {{ v, RET v; \⌜True⌝ -∗ Q v }}.
+    (⊢{{ P }} e {{ v, RET v; Q v }}) ->
+    ⊢{{ P }} e {{ v, RET v; \⌜True⌝ -∗ Q v }}.
   Proof.
     iIntros (? ?) "HA HB". iApply (H with "HA"). iIntros (v) "HA". iApply "HB". eauto.
   Qed.
 
   Lemma wand_true_pre_l {X} P H (Q : X -> iProp) e :
-    {{ P ∗ H }} e {{ v, RET v; Q v }} ->
-    {{ (\⌜True⌝ -∗ P) ∗ H }} e {{ v, RET v; Q v }}.
+    (⊢{{ P ∗ H }} e {{ v, RET v; Q v }}) ->
+    ⊢{{ (\⌜True⌝ -∗ P) ∗ H }} e {{ v, RET v; Q v }}.
   Proof.
     iIntros (? ?) "[HA HC] HB". iApply (H0 with "[HA HC]"); eauto. iFrame. iApply "HA". trivial.
   Qed.
  
   
   Lemma wand_true_pre_r {X} P H (Q : X -> iProp) e :
-    {{ P ∗ H }} e {{ v, RET v; Q v }} ->
-    {{ P ∗ (\⌜True⌝ -∗ H) }} e {{ v, RET v; Q v }}.
+    (⊢{{ P ∗ H }} e {{ v, RET v; Q v }}) ->
+    ⊢{{ P ∗ (\⌜True⌝ -∗ H) }} e {{ v, RET v; Q v }}.
   Proof.
     iIntros (? ?) "[HA HC] HB". iApply (H0 with "[HA HC]"); eauto. iFrame. iApply "HC". trivial.
   Qed.
 
   
   Lemma wand_true_post_l {X} P H (Q : X -> iProp) e :
-    {{ P }} e {{ v, RET v; Q v ∗ H v }} ->
-    {{ P }} e {{ v, RET v; (\⌜True⌝ -∗ Q v) ∗ H v }}.
+    (⊢{{ P }} e {{ v, RET v; Q v ∗ H v }}) ->
+    ⊢{{ P }} e {{ v, RET v; (\⌜True⌝ -∗ Q v) ∗ H v }}.
   Proof.
     iIntros (? ?) "HA HB". iApply (H0 with "HA"). iIntros (v) "[HA HC]". iApply "HB". iFrame. eauto.
   Qed.
   
   Lemma wand_true_post_r {X} P H (Q : X -> iProp) e :
-    {{ P }} e {{ v, RET v; Q v ∗ H v }} ->
-    {{ P }} e {{ v, RET v; Q v ∗ (\⌜True⌝ -∗ H v) }}.
+    (⊢{{ P }} e {{ v, RET v; Q v ∗ H v }}) ->
+    ⊢{{ P }} e {{ v, RET v; Q v ∗ (\⌜True⌝ -∗ H v) }}.
   Proof.
     iIntros (? ?) "HA HB". iApply (H0 with "HA"). iIntros (v) "[HA HC]". iApply "HB". iFrame. eauto.
   Qed.
   
   Lemma forall_wand_true_pre {X Y} P (Q : X -> iProp) e :
-    {{ ∀ (y : Y), P y }} e {{ v, RET v; Q v }} ->
-    {{ ∀ (y : Y), \⌜True⌝ -∗ P y }} e {{ v, RET v; Q v }}.
+    (⊢{{ ∀ (y : Y), P y }} e {{ v, RET v; Q v }}) ->
+    ⊢{{ ∀ (y : Y), \⌜True⌝ -∗ P y }} e {{ v, RET v; Q v }}.
   Proof.
     iIntros (? ?) "HA HB". iApply (H with "[HA]"); eauto. iIntros. iApply "HA". trivial.
   Qed.
@@ -945,14 +945,14 @@ Module weakestpre_gensym.
   
   (** Monad rules *)
   Lemma gensym_spec t :
-    {{ emp }} gensym t {{ l, RET l; l ↦ t }}.
+    ⊢{{ emp }} gensym t {{ l, RET l; \s l }}.
   Proof.
     iIntros (Φ) "HA HB". simpl.
     iIntros (σ) "HC". iApply "HB". iApply "HC".
   Qed.
   
   Lemma error_spec {X} (Q : X -> iProp) e :
-    {{ emp }} error e {{ v, RET v; Q v }}.
+    ⊢{{ emp }} error e {{ v, RET v; Q v }}.
   Proof.
     simpl. auto.
   Qed.
@@ -999,7 +999,7 @@ End weakestpre_gensym.
 Module adequacy.
   Export gensym.
   Export weakestpre_gensym.
-  Lemma soundness1 h (Φ : Prop) : (heap_ctx h ⊢ (⌜ Φ ⌝) : iProp) -> Φ.
+  Lemma soundness1 (Φ : Prop) h : (heap_ctx h ⊢ (⌜ Φ ⌝) : iProp) -> Φ.
   Proof.
     MonPred.unseal=> -[H]. repeat red in H.
     pose (H () h).
@@ -1016,14 +1016,14 @@ Module adequacy.
     - inversion P0. apply H0.
   Qed.
   
-  Lemma soundness2 (Φ : iProp) h : (heap_ctx h -∗ Φ) -> Φ () h.
+  Lemma soundness2 (Φ : iProp) h : (⊢heap_ctx h -∗ Φ) -> Φ () h.
   Proof.
     MonPred.unseal=> -[H]. repeat red in H.
     pose (H () heap_empty).
     simpl in *. edestruct e.
     - rewrite monPred_at_emp. split; auto; apply hempty_intro.
     - repeat red. exists heap_empty; exists heap_empty. repeat split; auto.
-    - inversion_star h P.
+    - inversion_star H0 h P.
       inversion P1.
       apply H1.
       exists heap_empty; exists h.
@@ -1031,26 +1031,27 @@ Module adequacy.
       repeat split; auto. apply map_disjoint_empty_l.
   Qed.
   
-  Lemma soundness3 (Φ : iProp) h : Φ () h -> heap_ctx h -∗ Φ.
+  Lemma soundness3 (Φ : iProp) h : Φ () h -> (⊢heap_ctx h -∗ Φ).
   Proof.
     MonPred.unseal. unfold monPred_wand_def. unfold monPred_upclosed. simpl. split.
     intros. simpl. repeat red. intros. exists emp. exists x; exists heap_empty.
     repeat split; auto. rewrite monPred_at_emp in H0. apply H0.
-    intros h0 P0. inversion_star h P. simpl in *. rewrite <- P2 in *. inversion P1. inversion H3.
+    intros h0 P0. inversion_star H h P. simpl in *. rewrite <- P2 in *. inversion P1. inversion H3.
     subst. rewrite heap_union_empty_l. rewrite <- P2. destruct a. apply H.
     apply map_disjoint_empty_r.
   Qed.
 
-  Lemma soundness4 (Φ : Prop) h : Φ -> heap_ctx h -∗ ⌜ Φ ⌝.
+  Lemma soundness4 (Φ : Prop) h : Φ -> (⊢heap_ctx h -∗ ⌜ Φ ⌝).
   Proof.
-    MonPred.unseal. unfold monPred_wand_def. unfold monPred_upclosed. simpl. split.
-    intros. simpl. repeat red. intros. exists emp. exists x; exists heap_empty.
-    repeat split; auto. rewrite monPred_at_emp in H0. apply H0.
-    apply map_disjoint_empty_r.
+    MonPred.unseal. split. MonPred.unseal. 
+    intros. repeat red. intros. exists emp. exists x; exists heap_empty. inversion H0. inversion H3. subst.
+    clear H3. clear H2. destruct a. clear H1. destruct i. 
+    repeat split; auto. clear H0. intros h0 H0. repeat red. exists heap_empty, h0.
+    repeat split; auto. apply map_disjoint_empty_l.
   Qed.
   
   
-  Lemma heap_ctx_split_sing h l t : h ##ₘ ({[l := t]}) -> heap_ctx (<[l := t]>h) -∗ heap_ctx h ∗ l ↦ t.
+  Lemma heap_ctx_split_sing h l t : h ##ₘ ({[l := t]}) -> (⊢heap_ctx (<[l := t]>h) -∗ heap_ctx h ∗ l ↦ t).
   Proof.
     intro.
     MonPred.unseal. repeat red.
@@ -1060,14 +1061,14 @@ Module adequacy.
     intro. intro P. intro. intros. repeat red. exists hempty. rewrite monPred_at_emp in H0.
     inversion H0; subst.
     exists heap_empty; exists heap_empty. repeat split; auto.
-    + repeat intro. inversion_star h P. inversion P1. subst.
+    + repeat intro. inversion_star H1 h P. inversion P1. subst.
       exists h; exists ({[l := t]} : heap). repeat split; auto. inversion P2; subst.
       rewrite heap_union_empty_l. rewrite insert_union_singleton_r. reflexivity.
       apply (map_disjoint_singleton_r) in H. apply H.
     + inversion H3. rewrite heap_union_empty_l. reflexivity.
   Qed.
 
-    Lemma heap_ctx_split h h' : h ##ₘ h' -> heap_ctx (h \u h') -∗ heap_ctx h ∗ heap_ctx h'.
+    Lemma heap_ctx_split h h' : h ##ₘ h' -> (⊢heap_ctx (h \u h') -∗ heap_ctx h ∗ heap_ctx h').
   Proof.
     intro.
     MonPred.unseal. repeat red.
@@ -1077,7 +1078,7 @@ Module adequacy.
     intro. intro P. intro. repeat red. exists hempty. rewrite monPred_at_emp in H0.
     inversion H0; subst.
     exists heap_empty; exists heap_empty. repeat split; auto.
-    + repeat intro. inversion_star h P. inversion P1. subst.
+    + repeat intro. inversion_star H1 h P. inversion P1. subst.
       exists h; exists h'. repeat split; auto. inversion P2; subst.
       rewrite heap_union_empty_l. reflexivity.
     + inversion H3. rewrite heap_union_empty_l. reflexivity.
@@ -1098,7 +1099,7 @@ Module adequacy.
         pose (fresh_ident_spec h).
         apply (map_disjoint_singleton_r h (fresh_ident h) t) in e0.
         iDestruct ((heap_ctx_split_sing _ _ _ e0) with "HA") as "[HA HB]".
-        iApply (H with "HA HB").
+        iApply (H with "HA [HB]"); auto.
   Qed.
 
   Lemma adequacy_triple {X} : forall (e : mon X) (Φ : X -> iProp) h v h' H,
@@ -1107,16 +1108,13 @@ Module adequacy.
       (Φ v) () h'.
   Proof.
     fix e 1. destruct e0; simpl; intros.
-    - apply soundness2.
-      inversion H1; subst.
-      iIntros "HA".
-      iDestruct (H0 with "HA") as "HA".
-      iDestruct "HA" as "[HA HB]".
-      iApply ("HA" with "HB"). iIntros. iFrame.
+    - apply soundness2. inversion H1; subst.
+      iIntros "HA". iDestruct (H0 with "HA") as "[HA HB]".
+      iApply ("HA" with "HB"). auto.
     - destruct s.
       + inversion H1.
-      + eapply e.
-        2 : apply H1.
+      + eapply (e _ _ _ _ _ _).
+        2: eapply H1.
         iIntros "HA". pose (fresh_ident_spec h).
         apply (map_disjoint_singleton_r h (fresh_ident h) t) in e0.
         iDestruct ((heap_ctx_split_sing _ _ _ e0) with "HA") as "[HA HB]".
@@ -1131,7 +1129,7 @@ Module adequacy.
       Φ v.
   Proof.
     fix e 1. destruct e0; simpl; intros.
-    - apply (soundness1 h).
+    - apply (soundness1 _ h).
       inversion H1; subst.
       iIntros "HA".
       iDestruct (H0 with "HA") as "[HA HB]".
@@ -1150,4 +1148,5 @@ Module adequacy.
   Qed.
     
 End adequacy.
-       
+
+
