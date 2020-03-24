@@ -1,0 +1,14 @@
+- On profite des avantages de la logique de séparation :
+  -- Spécification du programme similaire au programme
+  -- Le lien entre la spec et le programme se fait en parcourant une seule fois le programme (style Hoare)
+    --- La preuve est de la même forme que le programme :
+       ---- Preuve lisible (script)
+       ---- facilement automatisable (la construction d'une tactique est assez facile)
+  -- Manipulation de la heap implicite
+    --- Spec plus lisible/épuré
+    --- Beaucoup de petits lemmes deviennent obselètes car ils font partie de la définition de la logique de séparation
+
+- On profite des avantages de MoSel :
+  -- Les tactiques de MoSel sont proches de celle de Coq et la manipulation de la logique de séparation se fait très bien. (Facile à prendre en main, pas de manipulation supplémentaire)
+  -- Possibilité d'automatiser les morceaux de preuve dans proofmode ? La plupart se termine dans le proofmode et ces parties sont assez similaires. Il est possible que ce soit récurrent.
+     Voir la création de tactiques manipulant l'environnement spatial, je ne sais pas encore le faire.
