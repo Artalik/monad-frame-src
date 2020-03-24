@@ -36,13 +36,6 @@ Section SPEC.
   matching the given temporary environment [le].
    *)
 
-  Ltac tac2 :=
-    match goal with
-    | |- bi_emp_valid ({{ _ }} bind2 _ (fun _ _ => _) {{ _, RET _; _ }}) =>
-      eapply bind_spec; intros; tac2
-    | _ => tac
-    end.
-
   Definition dest_below (dst: destination) : iProp :=
     match dst with
     | For_set sd => \s (sd_temp sd)
@@ -56,7 +49,7 @@ Section SPEC.
     | For_effects => nil
     | For_set sd => do_set sd a
     end.
-      
+  
   (** Iris version *)
   Definition tr_rvalof (ty : type) (e1 : expr) (ls : list statement) (e : expr) : iProp :=
     if type_is_volatile ty
@@ -70,7 +63,7 @@ Section SPEC.
   Proof.
     MonPred.unseal. intros. split. red. red. MonPred.unseal. intros. repeat red.
     intros. exists emp. red. exists ∅. exists ∅. repeat split; auto.
-    - repeat red. intros. inversion_star H h P. clear H2.
+    - repeat red. intros. inversion_star h P. clear H2.
       inv P1. inv H3. exists heap_empty, h0. repeat split; auto. destruct a. eapply H; eauto.
     - inversion H0. inversion H3. rewrite heap_union_empty_l. reflexivity.
   Qed.
@@ -83,199 +76,199 @@ Section SPEC.
   Fixpoint tr_expr (le : temp_env) (dst : destination) (e : Csyntax.expr)
            (sl : list statement ) (a : expr) : iProp :=
     (<absorb> 
-    match e with
+     match e with
      | Csyntax.Evar id ty =>
        dest_below dst ∗ \⌜ sl = final dst (Evar id ty) /\  a = Evar id ty ⌝ 
      | Csyntax.Ederef e1 ty =>
        dest_below dst ∗ 
-       ∃ sl2 a2, tr_expr le For_val e1 sl2 a2 ∗
-      \⌜sl = sl2 ++ final dst (Ederef' a2 ty) /\ a = Ederef' a2 ty⌝
-    | Csyntax.Efield e1 f ty =>
-      dest_below dst ∗ ∃ sl2 a2, tr_expr le For_val e1 sl2 a2 ∗
-      \⌜ sl = sl2 ++ final dst (Efield a2 f ty) /\ a = Efield a2 f ty ⌝
-| Csyntax.Eval v ty =>
-  match dst with
-  | For_effects => \⌜sl = nil⌝
-  | For_val =>
-    (∀ tge e m, locally le (fun le' => ⌜eval_expr tge e le' m a v⌝))
-    ∗ \⌜ typeof a = ty /\ sl = nil ⌝
-  | For_set sd =>
-    (<absorb> dest_below dst) ∧
-    ∃ a,
-    (∀ tge e m, locally le (fun le' => ⌜eval_expr tge e le' m a v⌝))
-      ∗ ⌜ typeof a = ty /\ sl = do_set sd a ⌝
-                                       
-  end
-| Csyntax.Esizeof ty' ty =>
-  dest_below dst ∗ \⌜ sl = final dst (Esizeof ty' ty) /\ a = Esizeof ty' ty⌝
-| Csyntax.Ealignof ty' ty =>
-  dest_below dst ∗ \⌜ sl = final dst (Ealignof ty' ty) /\ a = Ealignof ty' ty ⌝
-| Csyntax.Evalof e1 ty =>
-  dest_below dst ∗ 
-  ∃ sl2 a2 sl3,
-    tr_expr le For_val e1 sl2 a2  ∗
-    tr_rvalof (Csyntax.typeof e1) a2 sl3 a  ∗
-    \⌜ sl = (sl2 ++ sl3 ++ final dst a) ⌝
-| Csyntax.Eaddrof e1 ty =>
-  dest_below dst ∗ 
-  ∃ sl2 a2, tr_expr le For_val e1 sl2 a2  ∗
-  \⌜ sl = sl2 ++ final dst (Eaddrof' a2 ty) /\ a = Eaddrof' a2 ty ⌝
-| Csyntax.Eunop ope e1 ty =>
-  dest_below dst ∗ 
-  ∃ sl2 a2, tr_expr le For_val e1 sl2 a2  ∗
-  \⌜ sl = sl2 ++ final dst (Eunop ope a2 ty) /\ a = Eunop ope a2 ty ⌝
-| Csyntax.Ebinop ope e1 e2 ty =>
-  dest_below dst ∗ 
-  ∃ sl2 a2 sl3 a3, tr_expr le For_val e1 sl2 a2  ∗
-  tr_expr le For_val e2 sl3 a3  ∗
-  \⌜ sl = sl2 ++ sl3 ++ final dst (Ebinop ope a2 a3 ty) /\ a = Ebinop ope a2 a3 ty ⌝
-| Csyntax.Ecast e1 ty =>
-  dest_below dst ∗ 
-  ∃ sl2 a2, tr_expr le For_val e1 sl2 a2  ∗
-  \⌜ sl = sl2 ++ final dst (Ecast a2 ty) /\ a = Ecast a2 ty ⌝
-| Csyntax.Eseqand e1 e2 ty =>
-  match dst with
-  | For_val =>
-    ∃ sl2 a2 sl3 a3 t,
-     tr_expr le For_val e1 sl2 a2 ∗
-     tr_expr le (For_set (sd_seqbool_val t ty)) e2 sl3 a3 ∗
-     \⌜ sl = sl2 ++ makeif a2 (makeseq sl3) (Sset t (Econst_int Int.zero ty)) :: nil /\
-               a = Etempvar t ty ⌝
-| For_effects =>
-  ∃ sl2 a2 sl3 a3, tr_expr le For_val e1 sl2 a2 ∗
-  tr_expr le For_effects e2 sl3 a3  ∗
-  \⌜  sl = sl2 ++ makeif a2 (makeseq sl3) Sskip :: nil ⌝
-| For_set sd =>
-  ∃ sl2 a2 sl3 a3,
-    tr_expr le For_val e1 sl2 a2
-    ∗ tr_expr le (For_set (sd_seqbool_set ty sd)) e2 sl3 a3
-    ∗ \⌜ sl = sl2 ++ makeif a2 (makeseq sl3) (makeseq (do_set sd (Econst_int Int.zero ty))) :: nil ⌝
-  end
-| Csyntax.Eseqor e1 e2 ty =>
-  match dst with
-  | For_val =>
-    ∃ sl2 a2 sl3 a3 t,
-     tr_expr le For_val e1 sl2 a2  ∗
-     tr_expr le (For_set (sd_seqbool_val t ty)) e2 sl3 a3 ∗
-     \⌜ sl = sl2 ++ makeif a2 (Sset t (Econst_int Int.one ty)) (makeseq sl3) :: nil /\
-              a = Etempvar t ty ⌝
-| For_effects =>
-  ∃ sl2 a2 sl3 a3, tr_expr le For_val e1 sl2 a2  ∗
-  tr_expr le For_effects e2 sl3 a3  ∗
-  \⌜ sl = sl2 ++ makeif a2 Sskip (makeseq sl3) :: nil ⌝
-| For_set sd =>
-  ∃ sl2 a2 sl3 a3,
-  tr_expr le For_val e1 sl2 a2 ∗
-  tr_expr le (For_set (sd_seqbool_set ty sd)) e2 sl3 a3 ∗
-    \⌜ sl = sl2 ++ makeif a2 (makeseq (do_set sd (Econst_int Int.one ty))) (makeseq sl3) :: nil ⌝
-  end
+                  ∃ sl2 a2, tr_expr le For_val e1 sl2 a2 ∗
+                                    \⌜sl = sl2 ++ final dst (Ederef' a2 ty) /\ a = Ederef' a2 ty⌝
+     | Csyntax.Efield e1 f ty =>
+       dest_below dst ∗ ∃ sl2 a2, tr_expr le For_val e1 sl2 a2 ∗
+                                          \⌜ sl = sl2 ++ final dst (Efield a2 f ty) /\ a = Efield a2 f ty ⌝
+     | Csyntax.Eval v ty =>
+       match dst with
+       | For_effects => \⌜sl = nil⌝
+       | For_val =>
+         (∀ tge e m, locally le (fun le' => ⌜eval_expr tge e le' m a v⌝))
+           ∗ \⌜ typeof a = ty /\ sl = nil ⌝
+       | For_set sd =>
+         (<absorb> dest_below dst) ∧
+         ∃ a,
+           (∀ tge e m, locally le (fun le' => ⌜eval_expr tge e le' m a v⌝))
+             ∗ ⌜ typeof a = ty /\ sl = do_set sd a ⌝
+                                             
+       end
+     | Csyntax.Esizeof ty' ty =>
+       dest_below dst ∗ \⌜ sl = final dst (Esizeof ty' ty) /\ a = Esizeof ty' ty⌝
+     | Csyntax.Ealignof ty' ty =>
+       dest_below dst ∗ \⌜ sl = final dst (Ealignof ty' ty) /\ a = Ealignof ty' ty ⌝
+     | Csyntax.Evalof e1 ty =>
+       dest_below dst ∗ 
+                  ∃ sl2 a2 sl3,
+                    tr_expr le For_val e1 sl2 a2  ∗
+                            tr_rvalof (Csyntax.typeof e1) a2 sl3 a  ∗
+                            \⌜ sl = (sl2 ++ sl3 ++ final dst a) ⌝
+     | Csyntax.Eaddrof e1 ty =>
+       dest_below dst ∗ 
+                  ∃ sl2 a2, tr_expr le For_val e1 sl2 a2  ∗
+                                    \⌜ sl = sl2 ++ final dst (Eaddrof' a2 ty) /\ a = Eaddrof' a2 ty ⌝
+     | Csyntax.Eunop ope e1 ty =>
+       dest_below dst ∗ 
+                  ∃ sl2 a2, tr_expr le For_val e1 sl2 a2  ∗
+                                    \⌜ sl = sl2 ++ final dst (Eunop ope a2 ty) /\ a = Eunop ope a2 ty ⌝
+     | Csyntax.Ebinop ope e1 e2 ty =>
+       dest_below dst ∗ 
+                  ∃ sl2 a2 sl3 a3, tr_expr le For_val e1 sl2 a2  ∗
+                                           tr_expr le For_val e2 sl3 a3  ∗
+                                           \⌜ sl = sl2 ++ sl3 ++ final dst (Ebinop ope a2 a3 ty) /\ a = Ebinop ope a2 a3 ty ⌝
+     | Csyntax.Ecast e1 ty =>
+       dest_below dst ∗ 
+                  ∃ sl2 a2, tr_expr le For_val e1 sl2 a2  ∗
+                                    \⌜ sl = sl2 ++ final dst (Ecast a2 ty) /\ a = Ecast a2 ty ⌝
+     | Csyntax.Eseqand e1 e2 ty =>
+       match dst with
+       | For_val =>
+         ∃ sl2 a2 sl3 a3 t,
+       tr_expr le For_val e1 sl2 a2 ∗
+               tr_expr le (For_set (sd_seqbool_val t ty)) e2 sl3 a3 ∗
+               \⌜ sl = sl2 ++ makeif a2 (makeseq sl3) (Sset t (Econst_int Int.zero ty)) :: nil /\
+       a = Etempvar t ty ⌝
+    | For_effects =>
+      ∃ sl2 a2 sl3 a3, tr_expr le For_val e1 sl2 a2 ∗
+                               tr_expr le For_effects e2 sl3 a3  ∗
+                               \⌜  sl = sl2 ++ makeif a2 (makeseq sl3) Sskip :: nil ⌝
+    | For_set sd =>
+      ∃ sl2 a2 sl3 a3,
+       tr_expr le For_val e1 sl2 a2
+               ∗ tr_expr le (For_set (sd_seqbool_set ty sd)) e2 sl3 a3
+               ∗ \⌜ sl = sl2 ++ makeif a2 (makeseq sl3) (makeseq (do_set sd (Econst_int Int.zero ty))) :: nil ⌝
+     end
+    | Csyntax.Eseqor e1 e2 ty =>
+      match dst with
+      | For_val =>
+        ∃ sl2 a2 sl3 a3 t,
+       tr_expr le For_val e1 sl2 a2  ∗
+               tr_expr le (For_set (sd_seqbool_val t ty)) e2 sl3 a3 ∗
+               \⌜ sl = sl2 ++ makeif a2 (Sset t (Econst_int Int.one ty)) (makeseq sl3) :: nil /\
+       a = Etempvar t ty ⌝
+    | For_effects =>
+      ∃ sl2 a2 sl3 a3, tr_expr le For_val e1 sl2 a2  ∗
+                               tr_expr le For_effects e2 sl3 a3  ∗
+                               \⌜ sl = sl2 ++ makeif a2 Sskip (makeseq sl3) :: nil ⌝
+    | For_set sd =>
+      ∃ sl2 a2 sl3 a3,
+       tr_expr le For_val e1 sl2 a2 ∗
+               tr_expr le (For_set (sd_seqbool_set ty sd)) e2 sl3 a3 ∗
+               \⌜ sl = sl2 ++ makeif a2 (makeseq (do_set sd (Econst_int Int.one ty))) (makeseq sl3) :: nil ⌝
+     end
 
-| Csyntax.Econdition e1 e2 e3 ty =>
-  match dst with
-  | For_val =>
-    ∃ sl2 a2 sl3 a3 sl4 a4 t,
-     tr_expr le For_val e1 sl2 a2 ∗
-     (tr_expr le (For_set (SDbase ty ty t)) e2 sl3 a3 ∧
-     tr_expr le (For_set (SDbase ty ty t)) e3 sl4 a4) ∗
-     \⌜ sl = sl2 ++ makeif a2 (makeseq sl3) (makeseq sl4) :: nil /\ a = Etempvar t ty⌝
-| For_effects =>
-  ∃ sl2 a2 sl3 a3 sl4 a4,
-    tr_expr le For_val e1 sl2 a2  ∗
-    tr_expr le For_effects e2 sl3 a3 ∗
-    tr_expr le For_effects e3 sl4 a4 ∗
-    \⌜ sl = sl2 ++ makeif a2 (makeseq sl3) (makeseq sl4) :: nil ⌝
+    | Csyntax.Econdition e1 e2 e3 ty =>
+      match dst with
+      | For_val =>
+        ∃ sl2 a2 sl3 a3 sl4 a4 t,
+       tr_expr le For_val e1 sl2 a2 ∗
+               (tr_expr le (For_set (SDbase ty ty t)) e2 sl3 a3 ∧
+                tr_expr le (For_set (SDbase ty ty t)) e3 sl4 a4) ∗
+               \⌜ sl = sl2 ++ makeif a2 (makeseq sl3) (makeseq sl4) :: nil /\ a = Etempvar t ty⌝
+    | For_effects =>
+      ∃ sl2 a2 sl3 a3 sl4 a4,
+       tr_expr le For_val e1 sl2 a2  ∗
+               tr_expr le For_effects e2 sl3 a3 ∗
+               tr_expr le For_effects e3 sl4 a4 ∗
+               \⌜ sl = sl2 ++ makeif a2 (makeseq sl3) (makeseq sl4) :: nil ⌝
     | For_set sd =>
       dest_below dst ∗ 
+                 ∃ sl2 a2 sl3 a3 sl4 a4 t,
+                   tr_expr le For_val e1 sl2 a2  ∗
+                           (tr_expr le (For_set (SDcons ty ty t sd)) e2 sl3 a3 ∧
+                            tr_expr le (For_set (SDcons ty ty t sd)) e3 sl4 a4) ∗
+                           \⌜ sl = sl2 ++ makeif a2 (makeseq sl3) (makeseq sl4) :: nil ⌝
+     end
+    | Csyntax.Eassign e1 e2 ty =>
+      match dst with
+      | For_effects =>
+        ∃ sl2 a2 sl3 a3,
+       tr_expr le For_val e1 sl2 a2  ∗
+               tr_expr le For_val e2 sl3 a3  ∗
+               \⌜ sl = sl2 ++ sl3 ++ make_assign a2 a3 :: nil ⌝
+    | _ =>
+      ∃ sl2 a2 sl3 a3 t,
+       tr_expr le For_val e1 sl2 a2  ∗
+               tr_expr le For_val e2 sl3 a3  ∗
+               \s t ∗ dest_below dst ∗ 
+               \⌜ sl = sl2 ++ sl3 ++ Sset t (Ecast a3 (Csyntax.typeof e1)) :: make_assign a2 (Etempvar t (Csyntax.typeof e1)) :: final dst (Etempvar t (Csyntax.typeof e1)) /\ a = Etempvar t (Csyntax.typeof e1)⌝
+     end
+    | Csyntax.Eassignop ope e1 e2 tyres ty =>
+      match dst with
+      | For_effects =>
+        ∃ sl2 a2 sl3 a3 sl4 a4,
+       tr_expr le For_val e1 sl2 a2  ∗
+               tr_expr le For_val e2 sl3 a3  ∗
+               tr_rvalof (Csyntax.typeof e1) a2 sl4 a4  ∗
+               \⌜sl = sl2 ++ sl3 ++ sl4 ++ make_assign a2 (Ebinop ope a4 a3 tyres) :: nil ⌝
+    | _ =>
       ∃ sl2 a2 sl3 a3 sl4 a4 t,
-     tr_expr le For_val e1 sl2 a2  ∗
-    (tr_expr le (For_set (SDcons ty ty t sd)) e2 sl3 a3 ∧
-     tr_expr le (For_set (SDcons ty ty t sd)) e3 sl4 a4) ∗
-     \⌜ sl = sl2 ++ makeif a2 (makeseq sl3) (makeseq sl4) :: nil ⌝
-  end
-| Csyntax.Eassign e1 e2 ty =>
-  match dst with
-  | For_effects =>
-    ∃ sl2 a2 sl3 a3,
-    tr_expr le For_val e1 sl2 a2  ∗
-    tr_expr le For_val e2 sl3 a3  ∗
-    \⌜ sl = sl2 ++ sl3 ++ make_assign a2 a3 :: nil ⌝
-| _ =>
-  ∃ sl2 a2 sl3 a3 t,
-    tr_expr le For_val e1 sl2 a2  ∗
-    tr_expr le For_val e2 sl3 a3  ∗
-    \s t ∗ dest_below dst ∗ 
-    \⌜ sl = sl2 ++ sl3 ++ Sset t (Ecast a3 (Csyntax.typeof e1)) :: make_assign a2 (Etempvar t (Csyntax.typeof e1)) :: final dst (Etempvar t (Csyntax.typeof e1)) /\ a = Etempvar t (Csyntax.typeof e1)⌝
-  end
-| Csyntax.Eassignop ope e1 e2 tyres ty =>
-  match dst with
-  | For_effects =>
-    ∃ sl2 a2 sl3 a3 sl4 a4,
-    tr_expr le For_val e1 sl2 a2  ∗
-    tr_expr le For_val e2 sl3 a3  ∗
-    tr_rvalof (Csyntax.typeof e1) a2 sl4 a4  ∗
-    \⌜sl = sl2 ++ sl3 ++ sl4 ++ make_assign a2 (Ebinop ope a4 a3 tyres) :: nil ⌝
-| _ =>
-  ∃ sl2 a2 sl3 a3 sl4 a4 t,
-    tr_expr le For_val e1 sl2 a2  ∗
-    tr_expr le For_val e2 sl3 a3  ∗
-    tr_rvalof (Csyntax.typeof e1) a2 sl4 a4  ∗
-    \s t ∗ dest_below dst ∗ 
-    \⌜ sl = sl2 ++ sl3 ++ sl4 ++ Sset t (Ecast (Ebinop ope a4 a3 tyres) (Csyntax.typeof e1)) :: make_assign a2 (Etempvar t (Csyntax.typeof e1)) :: final dst (Etempvar t (Csyntax.typeof e1))
-    /\ a = Etempvar t (Csyntax.typeof e1) ⌝
-  end
-| Csyntax.Epostincr id e1 ty =>
-  ∃ sl2 a2,
-    tr_expr le For_val e1 sl2 a2  ∗
-    match dst with
+       tr_expr le For_val e1 sl2 a2  ∗
+               tr_expr le For_val e2 sl3 a3  ∗
+               tr_rvalof (Csyntax.typeof e1) a2 sl4 a4  ∗
+               \s t ∗ dest_below dst ∗ 
+               \⌜ sl = sl2 ++ sl3 ++ sl4 ++ Sset t (Ecast (Ebinop ope a4 a3 tyres) (Csyntax.typeof e1)) :: make_assign a2 (Etempvar t (Csyntax.typeof e1)) :: final dst (Etempvar t (Csyntax.typeof e1))
+       /\ a = Etempvar t (Csyntax.typeof e1) ⌝
+     end
+    | Csyntax.Epostincr id e1 ty =>
+      ∃ sl2 a2,
+       tr_expr le For_val e1 sl2 a2  ∗
+               match dst with
+               | For_effects =>
+                 ∃ sl3 a3, tr_rvalof (Csyntax.typeof e1) a2 sl3 a3  ∗
+                                     \⌜ sl = sl2 ++ sl3 ++ make_assign a2 (transl_incrdecr id a3 (Csyntax.typeof e1)) :: nil ⌝
+    | _ =>
+      ∃ t, \s t  ∗ dest_below dst ∗ 
+            \⌜ sl = sl2 ++ make_set t a2 ::make_assign a2 (transl_incrdecr id (Etempvar t (Csyntax.typeof e1)) (Csyntax.typeof e1)) :: final dst (Etempvar t (Csyntax.typeof e1)) /\ a = Etempvar t (Csyntax.typeof e1)⌝
+     end
+
+    | Csyntax.Ecomma e1 e2 ty =>
+      ∃ sl2 a2 sl3,
+       tr_expr le For_effects e1 sl2 a2  ∗
+               tr_expr le dst e2 sl3 a ∗
+               \⌜ sl = sl2 ++ sl3 ⌝
+
+    | Csyntax.Ecall e1 el2 ty =>
+      match dst with
+      | For_effects =>
+        ∃ sl2 a2 sl3 al3,
+       tr_expr le For_val e1 sl2 a2  ∗
+               tr_exprlist le el2 sl3 al3  ∗
+               \⌜  sl = sl2 ++ sl3 ++ Scall None a2 al3 :: nil ⌝
+    | _ =>
+      ∃ sl2 a2 sl3 al3 t,
+       \s t ∗ dest_below dst ∗ 
+        tr_expr le For_val e1 sl2 a2  ∗
+        tr_exprlist le el2 sl3 al3  ∗
+        \⌜ sl = sl2 ++ sl3 ++ Scall (Some t) a2 al3 :: final dst (Etempvar t ty) /\
+       a = Etempvar t ty⌝
+     end
+
+    | Csyntax.Ebuiltin ef tyargs el ty =>
+      match dst with
+      | For_effects =>
+        ∃ sl2 al2,
+       tr_exprlist le el sl2 al2 ∗
+                   \⌜ sl = sl2 ++ Sbuiltin None ef tyargs al2 :: nil ⌝
+    | _ =>
+      ∃ sl2 al2 t,
+       tr_exprlist le el sl2 al2  ∗
+                   \s t  ∗ dest_below dst ∗ 
+                   \⌜ sl = sl2 ++ Sbuiltin (Some t) ef tyargs al2 :: final dst (Etempvar t ty) /\
+       a = Etempvar t ty⌝
+     end
+    | Csyntax.Eparen e1 tycast ty =>
+      match dst with
+      | For_val =>
+        ∃ a2 t, tr_expr le (For_set (SDbase tycast ty t)) e1 sl a2 ∗ \⌜ a = Etempvar t ty ⌝
     | For_effects =>
-    ∃ sl3 a3, tr_rvalof (Csyntax.typeof e1) a2 sl3 a3  ∗
-    \⌜ sl = sl2 ++ sl3 ++ make_assign a2 (transl_incrdecr id a3 (Csyntax.typeof e1)) :: nil ⌝
-| _ =>
-  ∃ t, \s t  ∗ dest_below dst ∗ 
-        \⌜ sl = sl2 ++ make_set t a2 ::make_assign a2 (transl_incrdecr id (Etempvar t (Csyntax.typeof e1)) (Csyntax.typeof e1)) :: final dst (Etempvar t (Csyntax.typeof e1)) /\ a = Etempvar t (Csyntax.typeof e1)⌝
-  end
-
-| Csyntax.Ecomma e1 e2 ty =>
-  ∃ sl2 a2 sl3,
-    tr_expr le For_effects e1 sl2 a2  ∗
-    tr_expr le dst e2 sl3 a ∗
-    \⌜ sl = sl2 ++ sl3 ⌝
-
-| Csyntax.Ecall e1 el2 ty =>
-  match dst with
-  | For_effects =>
-    ∃ sl2 a2 sl3 al3,
-    tr_expr le For_val e1 sl2 a2  ∗
-    tr_exprlist le el2 sl3 al3  ∗
-    \⌜  sl = sl2 ++ sl3 ++ Scall None a2 al3 :: nil ⌝
-| _ =>
-  ∃ sl2 a2 sl3 al3 t,
-    \s t ∗ dest_below dst ∗ 
-     tr_expr le For_val e1 sl2 a2  ∗
-     tr_exprlist le el2 sl3 al3  ∗
-     \⌜ sl = sl2 ++ sl3 ++ Scall (Some t) a2 al3 :: final dst (Etempvar t ty) /\
-              a = Etempvar t ty⌝
-  end
-
-| Csyntax.Ebuiltin ef tyargs el ty =>
-  match dst with
-  | For_effects =>
-    ∃ sl2 al2,
-    tr_exprlist le el sl2 al2 ∗
-    \⌜ sl = sl2 ++ Sbuiltin None ef tyargs al2 :: nil ⌝
-| _ =>
-  ∃ sl2 al2 t,
-    tr_exprlist le el sl2 al2  ∗
-    \s t  ∗ dest_below dst ∗ 
-    \⌜ sl = sl2 ++ Sbuiltin (Some t) ef tyargs al2 :: final dst (Etempvar t ty) /\
-    a = Etempvar t ty⌝
-  end
-| Csyntax.Eparen e1 tycast ty =>
-  match dst with
-  | For_val =>
-    ∃ a2 t, tr_expr le (For_set (SDbase tycast ty t)) e1 sl a2 ∗ \⌜ a = Etempvar t ty ⌝
-| For_effects =>
-  ∃ a2, tr_expr le For_effects e1 sl a2
+      ∃ a2, tr_expr le For_effects e1 sl a2
     | For_set sd =>
       ∃ a2 t0, if Pos.eq_dec t0 (sd_temp sd)
                then
@@ -296,19 +289,97 @@ Section SPEC.
             \⌜ sl = sl2 ++ sl3 /\ a = a2 :: al3⌝
   end.
 
+  
+  Ltac tac :=
+    match goal with
+    | |- bi_emp_valid ({{ _ }} bind2 _ (fun _ _ => _) {{ _, RET _; _ }}) =>
+      eapply bind_spec; intros; tac
+    | |- bi_emp_valid ({{ _ }} bind _ (fun _ => _) {{ _, RET _; _ }}) =>
+      eapply bind_spec; [> tac | intro; tac]
+    | |- bi_emp_valid ({{ _ }} ret _ {{ _, RET _; ∃ _, _ }}) => eapply exists_spec; tac
+    | |- bi_emp_valid ({{ _ }} error _ {{ _, RET _; _ }}) => apply error_spec
+    | |- bi_emp_valid ({{ emp }} gensym _ {{ _, RET _; _ }}) => apply gensym_spec
+    | |- bi_emp_valid ({{ _ }} gensym _ {{ _, RET _; _ }}) => frameR; apply gensym_spec 
+    | |- bi_emp_valid ({{ emp }} _ {{ v', RET v'; ∀ _, _ }}) => apply forall_useless_post; tac
+    | |- bi_emp_valid ({{ _ }} _ {{ v', RET v'; \⌜True⌝ -∗ _ }}) => apply wand_true_post; tac
+    | |- bi_emp_valid ({{ _ }} _ {{ v', RET v'; dest_below For_val -∗ _ }}) =>
+      apply wand_true_post; tac
+    | |- bi_emp_valid ({{ _ }} _ {{ v', RET v'; dest_below For_effects -∗ _ }}) =>
+      apply wand_true_post; tac 
+    | |- bi_emp_valid ({{ _ }} _ {{ v', RET v'; (\⌜True⌝ -∗ _) ∗ _ }}) => apply wand_true_post_l; tac
+    | |- bi_emp_valid ({{ _ }} _ {{ v', RET v'; _ ∗ (\⌜True⌝ -∗ _) }}) => apply wand_true_post_r; tac
+    | |- bi_emp_valid ({{ \⌜True⌝ -∗ _ }} _ {{ v', RET v'; _ }}) => apply wand_true_pre; tac
+    | |- bi_emp_valid ({{ dest_below For_val -∗ _ }} _ {{ v', RET v'; _ }}) =>
+      apply wand_true_pre; tac
+    | |- bi_emp_valid ({{ dest_below For_effects -∗ _ }} _ {{ v', RET v'; _ }}) =>
+      apply wand_true_pre; tac
+    | |- bi_emp_valid ({{ (\⌜True⌝ -∗ _) ∗ _ }} _ {{ v', RET v'; _ }}) => apply wand_true_pre_l; tac
+    | |- bi_emp_valid ({{ _ ∗ (\⌜True⌝ -∗ _) }} _ {{ v', RET v'; _ }}) => apply wand_true_pre_r; tac
+    | |- bi_emp_valid ({{ ∀ _, \⌜True⌝ -∗ _ }} _ {{ v', RET v'; _ }}) => apply forall_wand_true_pre; tac
+    | |- bi_emp_valid ({{ emp }} ret ?v {{ v', RET v'; ⌜ v' = ?v ⌝ }}) => apply ret_spec
+    | |- bi_emp_valid ({{ emp }} ret ?v {{ v', RET v'; \⌜ v' = ?v ⌝ }}) => apply ret_spec_pure
+                                                                               
+    | H : (forall _ _, bi_emp_valid ({{ emp }} transl_valof _ _ {{ _, RET _; _}}))
+      |- bi_emp_valid ({{ emp }} transl_valof _ _ {{ _, RET _; _ }}) =>
+      apply H; tac
+    | H : (forall _ _, bi_emp_valid ({{ emp }} transl_valof _ _ {{ _, RET _; _}}))
+      |- bi_emp_valid ({{ _ }} transl_valof _ _ {{ _, RET _; _ }}) =>
+      frameR; apply H; tac
+
+    | H : (forall _ _, bi_emp_valid ({{ emp }} transl_expr _ _ {{ _, RET _; _}}))
+      |- bi_emp_valid ({{ emp }} transl_expr _ _ {{ _, RET _; _ }}) =>
+      apply H; tac
+    | H : (forall _ _, bi_emp_valid ({{ emp }} transl_expr _ _ {{ _, RET _; _}}))
+      |- bi_emp_valid ({{ _ }} transl_expr _ _ {{ _, RET _; _ }}) =>
+      frameR; apply H; tac
+
+    | H : (forall _, bi_emp_valid ({{ emp }} transl_expr _ ?l {{ _, RET _; _}}))
+      |- bi_emp_valid ({{ emp }} transl_expr _ ?l {{ _, RET _; _ }}) =>
+      apply H; tac
+    | H : (forall _, bi_emp_valid ({{ emp }} transl_expr _ ?l {{ _, RET _; _}}))
+      |- bi_emp_valid ({{ _ }} transl_expr _ ?l {{ _, RET _; _ }}) =>
+      frameR; apply H; tac
+                                          
+    | H :(forall _, bi_emp_valid ({{ emp }} transl_exprlist _ {{ _, RET _; _}}))
+      |- bi_emp_valid ({{ emp }} transl_exprlist _ {{ _, RET _; _ }}) =>
+      apply H; tac
+    | H :(forall _, bi_emp_valid ({{ emp }} transl_exprlist _ {{ _, RET _; _}}))
+      |- bi_emp_valid ({{ _ }} transl_exprlist _ {{ _, RET _; _ }}) =>
+      frameR; apply H; tac
+                         
+    | H : bi_emp_valid ({{ emp }} transl_exprlist ?l {{ _, RET _; _}})
+      |- bi_emp_valid ({{ emp }} transl_exprlist ?l {{ _, RET _; _ }}) =>
+      apply H; tac
+    | H : bi_emp_valid ({{ emp }} transl_exprlist ?l {{ _, RET _; _}})
+      |- bi_emp_valid ({{ _ }} transl_exprlist ?l {{ _, RET _; _ }}) =>
+      frameR; apply H; tac
+                         
+    | |- bi_emp_valid ({{ _ }} match ?a with
+                              | _ => _
+                              end  {{ _, RET _; _ }}) =>
+      destruct a eqn:?; tac
+    | _ => idtac
+    end.
+  
+  Ltac tac2 :=
+    match goal with
+    | |- bi_emp_valid ({{ emp }} ret _  {{ _, RET _; _ }}) => iApply ret_spec_bis; auto
+    | |- bi_emp_valid ({{ _ }} ret _  {{ _, RET _; _ }}) => iApply ret_spec_complete; auto
+    | _ => (progress tac); tac2
+    | _ => idtac
+    end.
+  
   Lemma transl_valof_meets_spec ty a :
     ⊢{{ emp }} transl_valof ty a {{ r, RET r; tr_rvalof ty a r.1 r.2 }}.
   Proof.
     unfold transl_valof. unfold tr_rvalof. 
-    destruct (type_is_volatile ty); tac2. 
-    iApply ret_spec_complete; eauto. 
-    iApply ret_spec_bis; eauto.
+    destruct (type_is_volatile ty); tac2.
   Qed.
 
-  Local Set Warnings "-deprecated".
   
   Lemma tr_expr_abs : forall r le dst sl a, <absorb> tr_expr le dst r sl a ⊢ tr_expr le dst r sl a.
   Proof. induction r; iIntros "* >$". Qed.
+  
   (** ** Top-level translation *)
 
   (** The "top-level" translation is equivalent to [tr_expr] above
@@ -335,188 +406,87 @@ Section SPEC.
     Ltac iApplyB := iDestruct ("HB" with "[]") as "HB"; eauto.
     Ltac iApplyC := iDestruct ("HC" with "[]") as "HC"; eauto.
     Ltac iApplyD := iDestruct ("HD" with "[]") as "HD"; eauto.
-    
+    Ltac EvalTac dst := iIntros; iModIntro; destruct dst; auto; iSplit; auto; repeat iExists _;
+                    repeat iSplit; auto; iIntros; eauto; iApply locally_simpl; iIntros; iPureIntro;
+                    econstructor.
     pose transl_valof_meets_spec.
     apply tr_expr_exprlist; intros; rewrite /transl_expr; rewrite /transl_exprlist;
-      fold transl_exprlist; fold transl_expr; tac2; rewrite /tr_expr; fold tr_expr; tac2.
-    - edestruct v; try apply error_spec; iApply ret_spec_bis; iIntros; iModIntro; destruct dst; auto;
-        iSplit; auto; repeat iExists _; repeat iSplit; iIntros;
-          try iApply locally_simpl; iPureIntro; intros; try (split; eauto); econstructor.
-    - iApply ret_spec_complete. iIntros "[_ HA] *". iFrame. destruct dst; eauto.
-    - iApply ret_spec_complete. iIntros "[HA HB] *". iSplitL "HB"; eauto. repeat iExists _.
-      destruct dst.
-      + iSplitL; eauto; [iDestruct ("HA" with "[]") as "HA"; eauto | simpl; simpl_list; eauto].
-      + iSplitL; eauto; [iDestruct ("HA" with "[]") as "HA"; eauto | simpl; simpl_list; eauto].
-      + iSplitL; eauto. iDestruct ("HA" with "[]") as "HA"; eauto. 
-    - frameR; apply b.
-    - iApply ret_spec_complete.
-      iIntros "[[HA HC] $] *". repeat iExists _.
-      iSplitL "HC"; eauto. iApplyC.
-      destruct dst; iSplitL "HA"; simpl; simpl_list; eauto.
-      rewrite app_assoc. eauto.
-    - iApply ret_spec_complete. 
-      iIntros "[HA $] *". repeat iExists _. iSplitL; eauto.
-      iApplyA. destruct dst; simpl; simpl_list; eauto.
-    - iApply ret_spec_complete. 
-      iIntros "[HA $] *". repeat iExists _. iSplitL; eauto. iApplyA.
-      destruct dst; simpl; simpl_list; eauto.
-    - iApply ret_spec_complete. 
-      iIntros "[HA $] *" . repeat iExists _. iSplitL; eauto.
-      iApplyA. destruct dst; simpl; simpl_list; eauto.
-    - frameR. apply H0.
-    - iApply ret_spec_complete. iIntros "[[HA HC] $] *". repeat iExists _.
-      iSplitL "HC"; eauto. iApplyC.
-      iSplitL "HA"; eauto. iApplyA. 
-      destruct dst; simpl; simpl_list; eauto.
-      rewrite app_assoc. auto. 
-    - iApply ret_spec_complete.
-      iIntros "[HA $] * ". repeat iExists _.
-      iSplitL; auto. iApplyA.
-      destruct dst; simpl; simpl_list; eauto.
-    - destruct dst; repeat tac2.
-      + frameR. apply H0.
-      + iApply ret_spec_complete. iIntros "[[HA [HC HD]] _] * !>". repeat iExists _.
-        iDestruct ("HA" with "[HC]") as "HA"; auto. 
-        iSplitL "HD"; eauto. iApplyD.
-      + frameR. apply H0.
-      + iApply ret_spec_complete.
-        iIntros "[[HA HB] _] * !>". repeat iExists _.
-        iSplitL "HB"; eauto. iApplyB. iSplitL "HA"; eauto. iApplyA.
-      + frameR. apply H0.
-      + iApply ret_spec_complete.
-        iIntros "[[HA HB] HC] * !>". repeat iExists _.
-        iSplitL "HB"; eauto. iApplyB. iDestruct ("HA" with "HC") as "HA". 
-        iSplitL; eauto.
-        
-    - destruct dst; repeat tac2.
-      + frameR. apply H0.
-      + iApply ret_spec_complete. iIntros "[[HA [HC HD]] _] * !>". repeat iExists _.
-        iDestruct ("HA" with "HC") as "HA". iSplitL "HD"; eauto. iApplyD.
-      + frameR. apply H0.
-      + iApply ret_spec_complete. iIntros "[[HA HC] _] *". iModIntro. repeat iExists _.
-        iSplitL "HC"; eauto. iApplyC. iSplitL "HA"; eauto. iApplyA.
-      + frameR. apply H0.
-      + iApply ret_spec_complete. iIntros "[[HA HB] HC] * !>". repeat iExists _. 
-        iSplitL "HB"; auto. iApplyB. iSplitL; eauto. iApply ("HA" with "HC").
-        
-    - destruct dst; repeat tac2.
-      + frameR. apply H0.
-      + frameR. apply H1.
-      + iApply ret_spec_complete. iIntros "[[HA [HB [HC HD]]] _] * !>". repeat iExists _.
-        iSplitL "HD"; eauto. iApplyD.
-        iSplitL. iSplit; iApply tr_expr_abs.
-        * iClear "HA". iModIntro. iDestruct ("HB" with "HC") as "HB". iApply "HB".
-        * iClear "HB". iModIntro. iDestruct ("HA" with "HC") as "HB". iApply "HB".
-        * simpl. auto.
-      + frameR. apply H0.
-      + frameR. apply H1.
-      + iApply ret_spec_complete.
-         iIntros "[[HA [HB HD]] _] * !>". repeat iExists _.
-         iSplitL "HD"; eauto. iApplyD.
-         iSplitL "HB"; eauto. iApplyB.
-         iSplitL "HA"; eauto. iApplyA.
-      + frameR. apply H0.
-      + frameR. apply H1.
-      + iApply ret_spec_complete.
-        iIntros "[[HA [HB [HC HD]]] $] *". iModIntro. repeat iExists _.
-        iSplitL "HD"; eauto. iApplyD.
-        iSplitL. iSplit; iApply tr_expr_abs.
-        * iClear "HA". iModIntro. iDestruct ("HB" with "HC") as "HB". iApply "HB".
-        * iClear "HB". iModIntro. iDestruct ("HA" with "HC") as "HB". iApply "HB".
-        * simpl. auto.        
-    - iApply ret_spec_complete. iIntros "[HA $] *". iClear "HA". iModIntro. iPureIntro.
-      destruct dst; simpl; simpl_list; eauto.
-    - iApply ret_spec_complete. iIntros "[HA $] *". iClear "HA". iModIntro. iPureIntro.
-      destruct dst; simpl; simpl_list; eauto.
-    - frameR. eapply H0.
-    - destruct dst; tac2.
-      + iApply ret_spec_complete.
-        iIntros "[[HA [HB HD]] $] *". repeat iExists _.
-        iSplitL "HD"; eauto. iApplyD.
-        iSplitL "HB"; eauto. iApplyB.
-      + iApply ret_spec_complete.
-        iIntros "[[HA HB] _] *". repeat iExists _.
-        iSplitL "HB"; eauto. iApplyB.
-        iSplitL; eauto. iApplyA.
-      + iApply ret_spec_complete.
-        iIntros "[[HA [HB HD]] $] *". repeat iExists _.
-        iSplitL "HD"; eauto. iApplyD.
-        iSplitL "HB"; eauto. iApplyB.
-        iSplitL "HA"; eauto.        
-        iPureIntro. simpl. split; auto.
-        rewrite <- app_assoc. f_equal. rewrite <- app_assoc. f_equal.
-    - frameR. apply H0.
-    - frameR. apply transl_valof_meets_spec.
-    - destruct dst; tac2.
-      + iApply ret_spec_complete.
-        iIntros "[[HA [HB [HD HC]]] $] *". repeat iExists _.
-        iSplitL "HC"; eauto. iApplyC.
-        iSplitL "HD"; eauto. iApplyD.
-        iSplitL "HB"; eauto.
-      + iApply ret_spec_complete.
-        iIntros "[[HA [HD HB]] _] *". repeat iExists _.
-        iSplitL "HB"; eauto. iApplyB.
-        iSplitL "HD"; eauto. iApplyD.
-      + iApply ret_spec_complete.
-        iIntros "[[HA [HB [HD HC]]] $] * !>". repeat iExists _.
-        iSplitL "HC"; eauto. iApplyC.
-        iSplitL "HD"; eauto. iApplyD.
-        iSplitL "HB". eauto.
-        iSplitL "HA"; eauto.
-        iPureIntro. simpl. split; auto.
-        rewrite <- app_assoc. f_equal. rewrite <- app_assoc. f_equal.
-        rewrite <- app_assoc. auto.
-    - destruct dst; tac2.
-      + iApply ret_spec_complete.
-        iIntros "[[HA HB] $] *". repeat iExists _.
-        iSplitL "HB"; eauto. iApplyB.
-      + frameR. apply b.
-      + iApply ret_spec_complete.
-        iIntros "[[HA HB] _] *". repeat iExists _.
-        iSplitL "HB"; eauto. iApplyB.
-      + iApply ret_spec_complete.
-        iIntros "[[HA HB] $] *". repeat iExists _.
-        iSplitL "HB"; eauto. iApplyB.
-        iExists v0. iSplitL "HA"; eauto.
-        iPureIntro. simpl. split; auto.
-        rewrite <- app_assoc. f_equal. 
-    - frameR. apply H0.
-    - iApply ret_spec_complete.
-      iIntros "[[HA HB] HC] * !>". repeat iExists _.
-      iSplitL "HB"; auto. iApplyB.
-      iSplitL; eauto. iApply ("HA" with "HC"). 
-    - destruct dst; tac2; fold tr_exprlist; fold tr_expr.
-      + iApply ret_spec_complete. 
-        iIntros "[[HA [HB HD]] $] * ". repeat iExists _.
-        iSplitL "HA"; eauto.
-        iSplitL "HD"; eauto. iApplyD.
-      + iApply ret_spec_complete. 
-        iIntros "[[HA HB] _] *". repeat iExists _.
-        iSplitL "HB"; eauto. iApplyB.
-      + iApply ret_spec_complete. 
-        iIntros "[[HA [HB HD]] $] *". repeat iExists _.
-        iSplitL "HA"; eauto.
-        iSplitL "HD"; eauto. iApplyD.
-        iSplitL; eauto. 
-        iPureIntro. simpl. split; auto.
-        rewrite <- app_assoc. f_equal. rewrite <- app_assoc. f_equal.
-    - fold tr_exprlist. destruct dst; tac2.
-      + iApply ret_spec_complete. 
-        iIntros "[[HA HB] $] *". repeat iExists _.
-        iSplitR "HA"; auto.
-      + iApply ret_spec_complete.
-        iIntros "[HA _] * ". repeat iExists _. iSplitL "HA"; eauto. 
-      + iApply ret_spec_complete. 
-        iIntros "[[HA HB] $] *". repeat iExists _.
-        iSplitR "HA"; auto. iSplitL "HA"; eauto.
-        iPureIntro. simpl. split; auto. rewrite <- app_assoc. f_equal.
-    - iApply ret_spec_bis. eauto.
-    - rewrite /tr_exprlist; fold tr_exprlist; fold tr_expr; tac2.
-      iApply ret_spec_complete. 
-      iIntros "[HA HB] * ". repeat iExists _.
+      fold transl_exprlist; fold transl_expr; tac; simpl ((fun _ => _) _); tac; tac2.
+    
+    - EvalTac dst.
+    - EvalTac dst.
+    - EvalTac dst.
+    - EvalTac dst.
+    - EvalTac dst.
+    - iIntros; simpl; iModIntro; iFrame; repeat iExists _; destruct dst; simpl; simpl_list; eauto.
+    - iIntros "[HA HB] HC *". simpl. iModIntro. iFrame. repeat iExists _.
+      destruct dst; simpl; iFrame; simpl_list; eauto. rewrite <- app_assoc. eauto.
+    - iIntros; simpl; iModIntro; iFrame; repeat iExists _; destruct dst; simpl; simpl_list; eauto.
+    - iIntros; simpl; iModIntro; iFrame; repeat iExists _; destruct dst; simpl; simpl_list; eauto.
+    - iIntros; simpl; iModIntro; iFrame; repeat iExists _; destruct dst; simpl; simpl_list; eauto.
+    - iIntros "[HA HB] HC *". simpl. iModIntro. iFrame. repeat iExists _.
+      iSplitL "HB"; eauto. iSplitL "HA"; eauto. destruct dst; simpl; simpl_list; auto.
+      rewrite <- app_assoc. eauto. 
+    - iIntros; simpl; iModIntro; iFrame; repeat iExists _; destruct dst; simpl; simpl_list; eauto.
+    - iIntros "[HA [HB HC]] *". simpl. iModIntro. repeat iExists _.
+      iSplitL "HC". iApplyC. iDestruct ("HA" with "HB") as "HA". iSplitL "HA"; eauto.
+    - iIntros "[HA HB] *". simpl. iModIntro. repeat iExists _.
+      iSplitL "HB"; eauto. iSplitL "HA"; auto. iApplyA.
+    - iIntros "[HA HB] HC *". simpl. iModIntro. iFrame. repeat iExists _.
+      iSplitL "HB"; eauto. iSplitL; eauto. iApply ("HA" with "HC"). 
+    - iIntros "[HA [HB HC]] *". simpl. iModIntro. repeat iExists _.
+      iSplitL "HC". iApplyC. iDestruct ("HA" with "HB") as "HA". iSplitL "HA"; eauto.
+    - iIntros "[HA HB] *". simpl. iModIntro. repeat iExists _.
+      iSplitL "HB"; eauto. iSplitL; eauto. iApplyA.
+    - iIntros "[HA HB] HC *". simpl. iModIntro. repeat iExists _.
+      iSplitL "HB"; eauto. iSplitL; eauto. iApply ("HA" with "HC").
+    - iIntros "[HA [HB [HC HD]]] *". simpl. iModIntro. repeat iExists _.
+      iSplitL "HD". iApplyD. iSplitL; eauto. iSplit; iApply tr_expr_abs.
+      iApply ("HB" with "HC"). iApply ("HA" with "HC").
+    - iIntros "[HA [HB HC]] *". simpl. iModIntro. repeat iExists _.
+      iSplitL "HC"; eauto. iSplitL "HB". iApplyB. iSplitL; eauto. iApplyA.
+    - iIntros "[HA [HB [HC HD]]] HE *". simpl. iModIntro. iFrame. repeat iExists _.
+      iSplitL "HD". iApplyD. iSplitL; eauto. iSplit; iApply tr_expr_abs.
+      iApply ("HB" with "HC"). iApply ("HA" with "HC").
+    - iIntros; simpl; iModIntro; iFrame; repeat iExists _; destruct dst; simpl; simpl_list; eauto.
+    - iIntros; simpl; iModIntro; iFrame; repeat iExists _; destruct dst; simpl; simpl_list; eauto.
+    - iIntros "[HA [HB HC]] *". simpl. iModIntro. repeat iExists _.
+      iSplitL "HC"; eauto. iSplitL "HB". iApplyB. iSplitL; eauto. 
+    - iIntros "[HA HB] *". simpl. iModIntro. repeat iExists _.
+      iSplitL "HB"; eauto. iSplitL "HA"; eauto. iApplyA.
+    - iIntros "[HA [HB HC]] HD *". simpl. iModIntro. repeat iExists _.
+      iSplitL "HC"; eauto. iSplitL "HB". iApplyB. iSplitL "HA"; eauto. iSplitL; eauto.
+      iPureIntro. split; auto. do 2 (rewrite <- app_assoc; f_equal).
+    - iIntros "[HA [HB [HC HD]]] *". simpl. iModIntro. repeat iExists _. iFrame.
+      iSplitL "HD"; eauto. iSplitL "HC"; eauto. iApplyC. 
+    - iIntros "[HA [HB HC]] *". simpl. iModIntro. repeat iExists _. iFrame.
+      iSplitL "HC"; eauto. iSplitL "HB"; auto. iApplyB. 
+    - iIntros "[HA [HB [HC HD]]] HE *". simpl. iModIntro. repeat iExists _. iSplitL "HD"; auto.
+      iSplitL "HC"; eauto. iApplyC. iSplitL "HB"; auto. iSplitL "HA"; eauto. iSplitL; auto.
+      iPureIntro. split; auto. do 3 (rewrite <- app_assoc; f_equal).
+    - iIntros "[HA HB] *". simpl. iModIntro. repeat iExists _.
       iSplitL "HB"; eauto. iApplyB.
+    - iIntros "[HA HB] *". simpl. iModIntro. repeat iExists _. iSplitL "HB"; eauto.
+    - iIntros "[HA HB] HC *". simpl. iModIntro. repeat iExists _.
+      iSplitL "HB"; eauto. iExists v0. iFrame. iPureIntro. split; auto.
+      rewrite <- app_assoc; f_equal.
+    - iIntros "[HA HB] HC *". simpl. iModIntro. repeat iExists _.
+      iSplitL "HB"; eauto. iSplitL; auto. iApply ("HA" with "HC").
+    - iIntros "[HA [HB HC]] *". simpl. iModIntro. repeat iExists _. iFrame. iSplitR; auto.
+      iSplitL "HC"; eauto.
+    - iIntros "[HA HB] *". simpl. iModIntro. repeat iExists _. iSplitL "HB"; eauto.
+    - iIntros "[HA [HB HC]] HD *". simpl. iModIntro. repeat iExists _. iSplitL "HA"; auto. iFrame.
+      iSplitL "HC"; eauto. iSplitL "HB"; eauto. iPureIntro. split; auto.
+      do 2 (rewrite <- app_assoc; f_equal).
+    - iIntros "[HA HB] *". simpl. iModIntro. repeat iExists _. iFrame. iSplitL "HB"; auto.
+    - iIntros. simpl. iModIntro. repeat iExists _. iSplitL; auto.
+    - iIntros "[HA HB] HD *". simpl. iModIntro. repeat iExists _. iSplitL "HB"; auto.
+      iSplitL "HA"; eauto. iSplitL "HD"; eauto. iPureIntro. split; auto.
+      rewrite <- app_assoc; f_equal.
+    - iIntros "[HA HB] *". simpl. repeat iExists _. iSplitL "HB"; auto.
   Qed.
-  
+
+
   Section TR_TOP.
 
     Variable ge: genv.
@@ -536,7 +506,10 @@ Section SPEC.
 
     
 (** Translation of statements *)
-
+  Lemma start_proof (P Q : iProp) tmps : P () tmps -> (⊢ P -∗ Q) -> Q () tmps.
+  Proof.
+    intros. apply soundness3 in H. apply soundness2. iIntros. iApply H0. iApply H. auto.
+  Qed.
   
   Lemma transl_expr_meets_spec:
     forall r dst,
@@ -546,10 +519,11 @@ Section SPEC.
     iIntros (?) "_ HA".
     iApply H; eauto. iIntros (res) "HB". iApply "HA". iIntros "HA".
     iDestruct ("HB" with "HA") as "HB".
-    iStopProof. apply test3. apply test2. intros. exists tmps. intros. econstructor.
-    apply soundness2. apply soundness3 in H0.
-    iIntros "HA". iApply (H0 with "HA"). 
+    iStopProof. apply test3. apply test2. intros. exists tmps. intros. constructor.
+    apply (start_proof _ _ _ H0). auto.
   Qed.
+
+  
   
   Inductive tr_expression: Csyntax.expr -> statement -> expr -> Prop :=
   | tr_expression_intro: forall r sl a tmps,
@@ -561,8 +535,7 @@ Section SPEC.
       ⊢ {{ emp }} transl_expression r {{ res, RET res; ⌜ tr_expression r res.1 res.2 ⌝ }}.
   Proof.
     intro. unfold transl_expression. epose transl_expr_meets_spec. tac2.
-    - apply (b r For_val).
-    - iApply ret_spec_complete. iIntros "%". iPureIntro. destruct a; eauto. econstructor; eauto.
+    iIntros "%". iPureIntro. destruct a; eauto. econstructor; eauto.
   Qed.
 
   
@@ -575,9 +548,7 @@ Section SPEC.
       ⊢ {{ emp }} transl_expr_stmt r {{ res, RET res; ⌜ tr_expr_stmt r res ⌝}}.
   Proof.
     intro. unfold transl_expr_stmt. epose transl_expr_meets_spec. tac2.
-    - apply b.
-    - iApply ret_spec_complete. iIntros "%". iPureIntro. destruct a; auto.
-      econstructor. eapply H.
+    iIntros "%". iPureIntro. destruct a; auto. econstructor. eapply H.
   Qed.
 
   Inductive tr_if: Csyntax.expr -> statement -> statement -> statement -> Prop :=
@@ -589,9 +560,7 @@ Section SPEC.
       ⊢ {{ emp }} transl_if r s1 s2 {{ res, RET res; ⌜ tr_if r s1 s2 res ⌝ }}.
   Proof.
     intros. epose transl_expr_meets_spec. unfold transl_if; tac2.
-    - apply b.
-    - iApply ret_spec_complete. iIntros "%". iPureIntro.
-      destruct a; auto. econstructor. apply H.
+    iIntros "%". iPureIntro. destruct a; auto. econstructor. apply H.
   Qed.
 
   Inductive tr_stmt: Csyntax.statement -> statement -> Prop :=
@@ -661,6 +630,64 @@ with tr_lblstmts: Csyntax.labeled_statements -> labeled_statements -> Prop :=
       tr_lblstmts ls tls ->
       tr_lblstmts (Csyntax.LScons c s ls) (LScons c ts tls).
 
+  Ltac tac3 :=
+    match goal with
+    | H : forall _, bi_emp_valid ({{ emp }} transl_expression _ {{ _, RET _; _ }})
+      |- bi_emp_valid ({{ emp }} transl_expression _ {{ _, RET _; _ }}) =>
+      apply H; tac3
+    | H : forall _, bi_emp_valid ({{ emp }} transl_expression _ {{ _, RET _; _ }})
+      |- bi_emp_valid ({{ _ }} transl_expression _ {{ _, RET _; _ }}) =>
+      frameR; apply H; tac3
+
+    | H : forall _, bi_emp_valid ({{ emp }} transl_expr_stmt _ {{ _, RET _; _}})
+      |- bi_emp_valid ({{ emp }} transl_expr_stmt _ {{ _, RET _; _}}) =>
+      apply H; tac3 
+    | H : forall _, bi_emp_valid ({{ emp }} transl_expr_stmt _ {{ _, RET _; _}})
+      |- bi_emp_valid ({{ _ }} transl_expr_stmt _ {{ _, RET _; _}}) =>
+      frameR; apply H; tac3
+
+    | H: forall _ _ _, bi_emp_valid ({{ emp }} transl_if _ _ _ {{ _, RET _; _ }})
+      |- bi_emp_valid ({{ emp }} transl_if _ _ _ {{ _, RET _; _ }}) =>
+      apply H; tac3
+    | H: forall _ _ _, bi_emp_valid ({{ emp }} transl_if _ _ _ {{ _, RET _; _ }})
+      |- bi_emp_valid ({{ _ }} transl_if _ _ _ {{ _, RET _; _ }}) =>
+      frameR; apply H; tac3
+
+    | H: bi_emp_valid ({{ emp }} transl_stmt ?s {{ _, RET _; _ }})
+      |- bi_emp_valid ({{ emp }} transl_stmt ?s {{ _, RET _; _ }}) =>
+      apply H; tac3
+    | H: bi_emp_valid ({{ emp }} transl_stmt ?s {{ _, RET _; _ }})
+      |- bi_emp_valid ({{ _ }} transl_stmt ?s {{ _, RET _; _ }}) =>
+      frameR; apply H; tac3
+
+    | H: (forall _, bi_emp_valid ({{ emp }} transl_stmt _ {{ _, RET _; _ }}))
+      |- bi_emp_valid ({{ emp }} transl_stmt _ {{ _, RET _; _ }}) =>
+      apply H; tac3
+    | H:(forall _, bi_emp_valid ({{ emp }} transl_stmt _ {{ _, RET _; _ }}))
+      |- bi_emp_valid ({{ _ }} transl_stmt ?s {{ _, RET _; _ }}) =>
+      frameR; apply H; tac3
+
+
+    | H: (⊢ {{ emp }} transl_lblstmt ?l {{ _, RET _; _ }})
+      |- (⊢ {{ emp }} transl_lblstmt ?l {{ _, RET _; _ }}) =>
+      apply H; tac3
+    | H: (⊢ {{ emp }} transl_lblstmt ?l {{ _, RET _; _ }})
+      |- (⊢ {{ _ }} transl_lblstmt ?l {{ _, RET _; _ }}) =>
+      frameR; apply H; tac3
+    
+    | H: (forall _, ⊢ {{ emp }} transl_lblstmt _ {{ _, RET _; _ }})
+      |- (⊢ {{ emp }} transl_lblstmt _ {{ _, RET _; _ }}) =>
+      apply H; tac3
+    | H: (forall _, ⊢ {{ emp }} transl_lblstmt _ {{ _, RET _; _ }})
+      |- (⊢ {{ _ }} transl_lblstmt _ {{ _, RET _; _ }}) =>
+      frameR; apply H; tac3
+                         
+    | _ => (progress tac); tac3
+    | _ => (progress tac2); tac3
+    | _ => idtac
+    end.
+                       
+  
   Lemma transl_stmt_meets_spec : forall s,
       ⊢ {{ emp }} transl_stmt s {{ res, RET res; ⌜ tr_stmt s res ⌝}}
   with transl_lblstmt_meets_spec:
@@ -669,37 +696,29 @@ with tr_lblstmts: Csyntax.labeled_statements -> labeled_statements -> Prop :=
   Proof.
     pose transl_expression_meets_spec. pose transl_if_meets_spec. pose transl_expr_stmt_meets_spec.
     clear transl_stmt_meets_spec.
-    intro. induction s; rewrite /transl_stmt; fold transl_stmt; tac2.
-    - iApply ret_spec_bis. iPureIntro. constructor.
+    intro. induction s; rewrite /transl_stmt; fold transl_stmt; fold transl_lblstmt; tac3.
+    - iPureIntro. constructor.
     - apply (post_weaker _ _ _ _ (b1 e)). iIntros. iPureIntro. apply (tr_do _ _ a).
-    - iApply ret_spec_complete. iIntros "[% %]".
-      iPureIntro. apply (tr_seq _ _  _ _ H0 H).
-    - tac2. frameR. apply transl_expression_meets_spec.
-      destruct (is_Sskip s1); destruct (is_Sskip s2) eqn:?; iApply ret_spec_complete;
-        iIntros "[% [% %]]"; iPureIntro; subst.
-      1 : apply (tr_ifthenelse_empty _ _ _ H).
-      all : apply (tr_ifthenelse _ _ _ _ _ _ _ H H1 H0).
-    - iApply ret_spec_complete.
-      iIntros "[% %]". iPureIntro. apply (tr_while _ _ _ _ H0 H).
-    - iApply ret_spec_complete.
-      iIntros "[% %]". iPureIntro. apply (tr_dowhile _ _ _ _ H0 H).
-    - frameR. apply transl_if_meets_spec.
-    - destruct (is_Sskip); iApply ret_spec_complete;
-        iIntros "[% [% [% %]]]"; iPureIntro; subst.
-      + apply (tr_for_1 _ _ _ _ _ _ H1 H0 H).
-      + apply (tr_for_2 _ _ _ _ _ _ _ _ H1 n H2 H0 H).
-    - iApply ret_spec_bis. iPureIntro. constructor.
-    - iApply ret_spec_bis. iPureIntro. constructor.
-    - destruct o; tac2.
-      + iApply ret_spec_complete. iIntros. iPureIntro. apply (tr_return_some _ _ _ a).
-      + iApply ret_spec_bis. iPureIntro. constructor. 
-    - fold transl_lblstmt. frameR. apply transl_lblstmt_meets_spec.
-    - iApply ret_spec_complete. iIntros "[% %]". iPureIntro. constructor; auto.
-    - iApply ret_spec_complete. iIntros "%". iPureIntro. constructor; auto.
-    - iApply ret_spec_bis. iPureIntro. constructor.
-    - induction s; rewrite /transl_lblstmt; fold transl_lblstmt; fold transl_stmt; tac2.
-      + iApply ret_spec_bis. iPureIntro. constructor.
-      + iApply ret_spec_complete. iIntros "[% %]". iPureIntro. constructor; auto.
+    - iIntros "[% %]". iPureIntro. constructor; auto.
+    - iIntros"[% [% %]]". iPureIntro. pose Heqb2. apply Is_true_eq_left in e0.
+      apply andb_prop_elim in e0 as (P0&P1). 
+      destruct (is_Sskip s1); destruct (is_Sskip s2) eqn:?; try contradiction. subst.
+      eapply tr_ifthenelse_empty; eauto. 
+    - iIntros"[% [% %]]". iPureIntro. apply (tr_ifthenelse _ _ _ _ _ _ _ H H1 H0).
+    - iIntros "[% %]". iPureIntro. apply (tr_while _ _ _ _ H0 H).
+    - iIntros "[% %]". iPureIntro. apply (tr_dowhile _ _ _ _ H0 H).
+    - iIntros "[% [% [% %]]]"; iPureIntro; subst. apply (tr_for_1 _ _ _ _ _ _ H1 H0 H).
+    - iIntros "[% [% [% %]]]"; iPureIntro; subst. apply (tr_for_2 _ _ _ _ _ _ _ _ H1 n H2 H0 H).
+    - iPureIntro. constructor.
+    - iPureIntro. constructor.
+    - iIntros. iPureIntro. apply (tr_return_some _ _ _ a).
+    - iPureIntro. constructor. 
+    - iIntros "[% %]". iPureIntro. constructor; auto.
+    - iIntros "%". iPureIntro. constructor; auto.
+    - iPureIntro. constructor.
+    - induction s; rewrite /transl_lblstmt; fold transl_lblstmt; fold transl_stmt; tac3.
+      + iPureIntro. constructor.
+      + iIntros "[% %]". iPureIntro. constructor; auto.
   Qed.
 
  
