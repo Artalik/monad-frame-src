@@ -12,3 +12,14 @@
   -- Les tactiques de MoSel sont proches de celle de Coq et la manipulation de la logique de séparation se fait très bien. (Facile à prendre en main, pas de manipulation supplémentaire)
   -- Possibilité d'automatiser les morceaux de preuve dans proofmode ? La plupart se termine dans le proofmode et ces parties sont assez similaires. Il est possible que ce soit récurrent.
      Voir la création de tactiques manipulant l'environnement spatial, je ne sais pas encore le faire.
+
+- Désavantages :
+  -- Comprendre comment éviter que la notation du triplet ne se retire avec un "simpl" (passer par une définition puis une notation ?)
+  -- Pas de structures "Inductive" : Pourrait-être compenser si la manipulation du contexte spatial avec des tactiques est facile ?
+     En effet, "inversion" sur un inductive évite une grosse quantité de destruct.
+  -- Locally : la preuve de tr_expr_invariant est beaucoup plus lourde que l'ancienne. Même si une manipulation du contexte spatial pourrait simplifier, elle ne sera pas si courte.
+  -- Preuve de nolabel_expr : Beaucoup plus longue. Pourrait être similaire si je savais manipuler le contexte spatial. Possibilité de créer un équivalent à NoLabelTac.
+  -- Tactiques beaucoup plus lente. Ne pas charger la pile de lemme utilisé par auto, sinon catastrophe lors de l'utilisation des tactiques proofmode.
+  -- Pas très élégant d'instancier une heap dans certains cas pour sortir de proofmode, progresser et retourner dans proofmode. (Lemma instance_heap)
+     Possibilité ?: créer une tactique qui permet d'avancer d'une étape ?
+  -- Clarifier comment sortir de iProp. Pour le moment tr_top s'en occupe et c'est pas dégueu mais est-ce la méthode classique ? ([exists tmp, ... tmp]).
