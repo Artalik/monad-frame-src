@@ -399,9 +399,6 @@ Section PRESERVATION.
     induction 1; intros; auto.
   Qed.
   
-  (* Lemma test3 (P Q : iProp) : (emp ⊢ P -∗ Q) -> (P ⊢ Q). *)
-  (* Proof. intro. iIntros "HA". iDestruct H as "HB". iApply "HB"; eauto. Qed. *)
-
   Lemma tr_expr_invariant :
     (forall r dst sl a le, ⊢ tr_expr le dst r sl a -∗ locally le (fun le' => tr_expr le' dst r sl a))
     /\
@@ -1698,7 +1695,7 @@ Qed.
 Lemma pure_next_step P (R : Prop) (Q : iProp) :
   (forall tmp, Q () tmp -> R) -> (⊢P -∗ Q) -> (P -∗ ⌜R⌝)%stdpp.
 Proof.
-  intros. apply test3. apply test2. intros. apply (H tmps). apply soundness2.
+  intros. apply instance_heap. intros. apply (H tmps). apply soundness2.
   apply soundness3 in H1. iIntros "HA". iDestruct (H1 with "HA") as "HA". iApply (H0 with "HA").
 Qed.
 
@@ -2507,7 +2504,7 @@ Proof.
           econstructor; eauto. rewrite <- H9; eauto.
           exploit type_of_fundef_preserved; eauto. congruence.
           traceEq.
-       -- iClear "HB HC". iStopProof. apply test3. apply test2. intros.
+       -- iClear "HB HC". iStopProof. apply instance_heap. intros.
           econstructor; eauto. econstructor; eauto. intros. econstructor.
           apply soundness2. apply soundness3 in H5. iIntros "HA".
           iDestruct (H5 with "HA") as "[HA HD]".
@@ -2526,7 +2523,7 @@ Proof.
           econstructor; eauto. rewrite <- H8; eauto.
           exploit type_of_fundef_preserved; eauto. congruence.
           traceEq.
-       -- iStopProof. apply test3. apply test2. intros.
+       -- iStopProof. apply instance_heap. intros.
           econstructor; eauto. econstructor; eauto. intros. econstructor.
           apply soundness2. apply soundness3 in H5. iIntros "HA".
           iDestruct (H5 with "HA") as "[HA [HB HC]]".
@@ -2542,7 +2539,7 @@ Proof.
           econstructor; eauto. rewrite <- H9; eauto.
           exploit type_of_fundef_preserved; eauto. congruence.
           traceEq.
-       -- iClear "HB HC". iStopProof. apply test3. apply test2. intros.
+       -- iClear "HB HC". iStopProof. apply instance_heap. intros.
           econstructor; eauto. econstructor; eauto. intros. econstructor.
           apply soundness2. apply soundness3 in H5. iIntros "HA".
           iDestruct (H5 with "HA") as "[HA [HB HD]]".

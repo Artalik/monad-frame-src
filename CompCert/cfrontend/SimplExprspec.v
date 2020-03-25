@@ -59,18 +59,11 @@ Section SPEC.
       \⌜ls =nil /\ e = e1⌝%I.
 
   
-  Lemma test2 : forall (P : iProp) (Q : Prop), (forall tmps, P () tmps -> Q) -> (⊢P -∗ ⌜Q⌝).
+  Lemma instance_heap : forall (P : iProp) (Q : Prop), (forall tmps, P () tmps -> Q) -> (P ⊢ ⌜Q⌝).
   Proof.
-    MonPred.unseal. intros. split. red. red. MonPred.unseal. intros. repeat red.
-    intros. exists emp. red. exists ∅. exists ∅. repeat split; auto.
-    - repeat red. intros. inversion_star h P. clear H2.
-      inv P1. inv H3. exists heap_empty, h0. repeat split; auto. destruct a. eapply H; eauto.
-    - inversion H0. inversion H3. rewrite heap_union_empty_l. reflexivity.
-  Qed.
-  
-  Lemma test3 (P Q : iProp) : (emp ⊢ P -∗ Q) -> (P ⊢ Q).
-  Proof.
-    intro. iIntros "HA". iDestruct H as "HB". iApply "HB"; eauto.
+    MonPred.unseal. intros. split. repeat red. intros.
+    exists heap_empty, x. repeat split; auto with heap_scope. destruct i. eapply H. eauto.
+    apply map_disjoint_empty_l.
   Qed.
   
   Fixpoint tr_expr (le : temp_env) (dst : destination) (e : Csyntax.expr)
@@ -519,7 +512,7 @@ Section SPEC.
     iIntros (?) "_ HA".
     iApply H; eauto. iIntros (res) "HB". iApply "HA". iIntros "HA".
     iDestruct ("HB" with "HA") as "HB".
-    iStopProof. apply test3. apply test2. intros. exists tmps. intros. constructor.
+    iStopProof. apply instance_heap. intros. exists tmps. intros. constructor.
     apply (start_proof _ _ _ H0). auto.
   Qed.
 
