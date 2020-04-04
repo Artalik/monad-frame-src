@@ -57,14 +57,6 @@ Section SPEC.
       (∃ t, \⌜ ls = make_set t e1 :: nil /\ e = Etempvar t ty⌝ ∗ \s t)%I
     else
       \⌜ls =nil /\ e = e1⌝%I.
-
-  
-  Lemma instance_heap : forall (P : iProp) (Q : Prop), (forall tmps, P () tmps -> Q) -> (P ⊢ ⌜Q⌝).
-  Proof.
-    MonPred.unseal. intros. split. repeat red. intros.
-    exists heap_empty, x. repeat split; auto with heap_scope. destruct i. eapply H. eauto.
-    apply map_disjoint_empty_l.
-  Qed.
   
   Fixpoint tr_expr (le : temp_env) (dst : destination) (e : Csyntax.expr)
            (sl : list statement ) (a : expr) : iProp :=
@@ -293,60 +285,36 @@ Section SPEC.
     | |- bi_emp_valid ({{ _ }} error _ {{ _, RET _; _ }}) => apply error_spec
     | |- bi_emp_valid ({{ emp }} gensym _ {{ _, RET _; _ }}) => apply gensym_spec
     | |- bi_emp_valid ({{ _ }} gensym _ {{ _, RET _; _ }}) => frameR; apply gensym_spec 
-    | |- bi_emp_valid ({{ emp }} _ {{ v', RET v'; ∀ _, _ }}) => apply forall_useless_post; tac
-    | |- bi_emp_valid ({{ _ }} _ {{ v', RET v'; \⌜True⌝ -∗ _ }}) => apply wand_true_post; tac
-    | |- bi_emp_valid ({{ _ }} _ {{ v', RET v'; dest_below For_val -∗ _ }}) =>
-      apply wand_true_post; tac
-    | |- bi_emp_valid ({{ _ }} _ {{ v', RET v'; dest_below For_effects -∗ _ }}) =>
-      apply wand_true_post; tac 
-    | |- bi_emp_valid ({{ _ }} _ {{ v', RET v'; (\⌜True⌝ -∗ _) ∗ _ }}) => apply wand_true_post_l; tac
-    | |- bi_emp_valid ({{ _ }} _ {{ v', RET v'; _ ∗ (\⌜True⌝ -∗ _) }}) => apply wand_true_post_r; tac
-    | |- bi_emp_valid ({{ \⌜True⌝ -∗ _ }} _ {{ v', RET v'; _ }}) => apply wand_true_pre; tac
-    | |- bi_emp_valid ({{ dest_below For_val -∗ _ }} _ {{ v', RET v'; _ }}) =>
-      apply wand_true_pre; tac
-    | |- bi_emp_valid ({{ dest_below For_effects -∗ _ }} _ {{ v', RET v'; _ }}) =>
-      apply wand_true_pre; tac
-    | |- bi_emp_valid ({{ (\⌜True⌝ -∗ _) ∗ _ }} _ {{ v', RET v'; _ }}) => apply wand_true_pre_l; tac
-    | |- bi_emp_valid ({{ _ ∗ (\⌜True⌝ -∗ _) }} _ {{ v', RET v'; _ }}) => apply wand_true_pre_r; tac
-    | |- bi_emp_valid ({{ ∀ _, \⌜True⌝ -∗ _ }} _ {{ v', RET v'; _ }}) => apply forall_wand_true_pre; tac
-    | |- bi_emp_valid ({{ emp }} ret ?v {{ v', RET v'; ⌜ v' = ?v ⌝ }}) => apply ret_spec
-    | |- bi_emp_valid ({{ emp }} ret ?v {{ v', RET v'; \⌜ v' = ?v ⌝ }}) => apply ret_spec_pure
-                                                                               
     | H : (forall _ _, bi_emp_valid ({{ emp }} transl_valof _ _ {{ _, RET _; _}}))
       |- bi_emp_valid ({{ emp }} transl_valof _ _ {{ _, RET _; _ }}) =>
       apply H; tac
     | H : (forall _ _, bi_emp_valid ({{ emp }} transl_valof _ _ {{ _, RET _; _}}))
       |- bi_emp_valid ({{ _ }} transl_valof _ _ {{ _, RET _; _ }}) =>
       frameR; apply H; tac
-
     | H : (forall _ _, bi_emp_valid ({{ emp }} transl_expr _ _ {{ _, RET _; _}}))
       |- bi_emp_valid ({{ emp }} transl_expr _ _ {{ _, RET _; _ }}) =>
       apply H; tac
     | H : (forall _ _, bi_emp_valid ({{ emp }} transl_expr _ _ {{ _, RET _; _}}))
       |- bi_emp_valid ({{ _ }} transl_expr _ _ {{ _, RET _; _ }}) =>
       frameR; apply H; tac
-
     | H : (forall _, bi_emp_valid ({{ emp }} transl_expr _ ?l {{ _, RET _; _}}))
       |- bi_emp_valid ({{ emp }} transl_expr _ ?l {{ _, RET _; _ }}) =>
       apply H; tac
     | H : (forall _, bi_emp_valid ({{ emp }} transl_expr _ ?l {{ _, RET _; _}}))
       |- bi_emp_valid ({{ _ }} transl_expr _ ?l {{ _, RET _; _ }}) =>
       frameR; apply H; tac
-                                          
     | H :(forall _, bi_emp_valid ({{ emp }} transl_exprlist _ {{ _, RET _; _}}))
       |- bi_emp_valid ({{ emp }} transl_exprlist _ {{ _, RET _; _ }}) =>
       apply H; tac
     | H :(forall _, bi_emp_valid ({{ emp }} transl_exprlist _ {{ _, RET _; _}}))
       |- bi_emp_valid ({{ _ }} transl_exprlist _ {{ _, RET _; _ }}) =>
       frameR; apply H; tac
-                         
     | H : bi_emp_valid ({{ emp }} transl_exprlist ?l {{ _, RET _; _}})
       |- bi_emp_valid ({{ emp }} transl_exprlist ?l {{ _, RET _; _ }}) =>
       apply H; tac
     | H : bi_emp_valid ({{ emp }} transl_exprlist ?l {{ _, RET _; _}})
       |- bi_emp_valid ({{ _ }} transl_exprlist ?l {{ _, RET _; _ }}) =>
       frameR; apply H; tac
-                         
     | |- bi_emp_valid ({{ _ }} match ?a with
                               | _ => _
                               end  {{ _, RET _; _ }}) =>
@@ -356,6 +324,8 @@ Section SPEC.
   
   Ltac tac2 :=
     match goal with
+    | |- bi_emp_valid ({{ emp }} ret ?v {{ v', RET v'; ⌜ v' = ?v ⌝ }}) => apply ret_spec
+    | |- bi_emp_valid ({{ emp }} ret ?v {{ v', RET v'; \⌜ v' = ?v ⌝ }}) => apply ret_spec_pure   
     | |- bi_emp_valid ({{ emp }} ret _  {{ _, RET _; _ }}) => iApply ret_spec_bis; auto
     | |- bi_emp_valid ({{ _ }} ret _  {{ _, RET _; _ }}) => iApply ret_spec_complete; auto
     | _ => (progress tac); tac2
@@ -399,84 +369,63 @@ Section SPEC.
     Ltac iApplyB := iDestruct ("HB" with "[]") as "HB"; eauto.
     Ltac iApplyC := iDestruct ("HC" with "[]") as "HC"; eauto.
     Ltac iApplyD := iDestruct ("HD" with "[]") as "HD"; eauto.
-    Ltac EvalTac dst := iIntros; iModIntro; destruct dst; auto; iSplit; auto; repeat iExists _;
-                    repeat iSplit; auto; iIntros; eauto; iApply locally_simpl; iIntros; iPureIntro;
-                    econstructor.
     pose transl_valof_meets_spec.
     apply tr_expr_exprlist; intros; rewrite /transl_expr; rewrite /transl_exprlist;
-      fold transl_exprlist; fold transl_expr; tac; simpl ((fun _ => _) _); tac; tac2.
+      fold transl_exprlist; fold transl_expr; tac2; simpl; iIntros; norm_all; try iModIntro.
+    Ltac EvalTac dst :=
+      destruct dst; auto; iSplit; auto; repeat iExists _; repeat iSplit; auto; iIntros; eauto;
+      iApply locally_simpl; iIntros; iPureIntro;econstructor.
     
     - EvalTac dst.
     - EvalTac dst.
     - EvalTac dst.
     - EvalTac dst.
     - EvalTac dst.
-    - iIntros; simpl; iModIntro; iFrame; repeat iExists _; destruct dst; simpl; simpl_list; eauto.
-    - iIntros "[HA HB] HC *". simpl. iModIntro. iFrame. repeat iExists _.
-      destruct dst; simpl; iFrame; simpl_list; eauto. rewrite <- app_assoc. eauto.
-    - iIntros; simpl; iModIntro; iFrame; repeat iExists _; destruct dst; simpl; simpl_list; eauto.
-    - iIntros; simpl; iModIntro; iFrame; repeat iExists _; destruct dst; simpl; simpl_list; eauto.
-    - iIntros; simpl; iModIntro; iFrame; repeat iExists _; destruct dst; simpl; simpl_list; eauto.
-    - iIntros "[HA HB] HC *". simpl. iModIntro. iFrame. repeat iExists _.
-      iSplitL "HB"; eauto. iSplitL "HA"; eauto. destruct dst; simpl; simpl_list; auto.
-      rewrite <- app_assoc. eauto. 
-    - iIntros; simpl; iModIntro; iFrame; repeat iExists _; destruct dst; simpl; simpl_list; eauto.
-    - iIntros "[HA [HB HC]] *". simpl. iModIntro. repeat iExists _.
-      iSplitL "HC". iApplyC. iDestruct ("HA" with "HB") as "HA". iSplitL "HA"; eauto.
-    - iIntros "[HA HB] *". simpl. iModIntro. repeat iExists _.
-      iSplitL "HB"; eauto. iSplitL "HA"; auto. iApplyA.
-    - iIntros "[HA HB] HC *". simpl. iModIntro. iFrame. repeat iExists _.
-      iSplitL "HB"; eauto. iSplitL; eauto. iApply ("HA" with "HC"). 
-    - iIntros "[HA [HB HC]] *". simpl. iModIntro. repeat iExists _.
-      iSplitL "HC". iApplyC. iDestruct ("HA" with "HB") as "HA". iSplitL "HA"; eauto.
-    - iIntros "[HA HB] *". simpl. iModIntro. repeat iExists _.
-      iSplitL "HB"; eauto. iSplitL; eauto. iApplyA.
-    - iIntros "[HA HB] HC *". simpl. iModIntro. repeat iExists _.
-      iSplitL "HB"; eauto. iSplitL; eauto. iApply ("HA" with "HC").
-    - iIntros "[HA [HB [HC HD]]] *". simpl. iModIntro. repeat iExists _.
-      iSplitL "HD". iApplyD. iSplitL; eauto. iSplit; iApply tr_expr_abs.
-      iApply ("HB" with "HC"). iApply ("HA" with "HC").
-    - iIntros "[HA [HB HC]] *". simpl. iModIntro. repeat iExists _.
-      iSplitL "HC"; eauto. iSplitL "HB". iApplyB. iSplitL; eauto. iApplyA.
-    - iIntros "[HA [HB [HC HD]]] HE *". simpl. iModIntro. iFrame. repeat iExists _.
-      iSplitL "HD". iApplyD. iSplitL; eauto. iSplit; iApply tr_expr_abs.
-      iApply ("HB" with "HC"). iApply ("HA" with "HC").
-    - iIntros; simpl; iModIntro; iFrame; repeat iExists _; destruct dst; simpl; simpl_list; eauto.
-    - iIntros; simpl; iModIntro; iFrame; repeat iExists _; destruct dst; simpl; simpl_list; eauto.
-    - iIntros "[HA [HB HC]] *". simpl. iModIntro. repeat iExists _.
-      iSplitL "HC"; eauto. iSplitL "HB". iApplyB. iSplitL; eauto. 
-    - iIntros "[HA HB] *". simpl. iModIntro. repeat iExists _.
-      iSplitL "HB"; eauto. iSplitL "HA"; eauto. iApplyA.
-    - iIntros "[HA [HB HC]] HD *". simpl. iModIntro. repeat iExists _.
-      iSplitL "HC"; eauto. iSplitL "HB". iApplyB. iSplitL "HA"; eauto. iSplitL; eauto.
+    - iFrame; repeat iExists _; destruct dst; simpl; simpl_list; eauto.
+    - iFrame. repeat iExists _. destruct dst; simpl; iFrame; simpl_list; eauto.
+      rewrite <- app_assoc. eauto.
+    - iFrame; repeat iExists _; destruct dst; simpl; simpl_list; eauto.
+    - iFrame; repeat iExists _; destruct dst; simpl; simpl_list; eauto.
+    - iFrame; repeat iExists _; destruct dst; simpl; simpl_list; eauto.
+    - iFrame. repeat iExists _. iSplitL "HD"; eauto. iSplitL "HC"; eauto.
+      destruct dst; simpl; simpl_list; auto. rewrite <- app_assoc. eauto. 
+    - iFrame; repeat iExists _; destruct dst; simpl; simpl_list; eauto.
+    - repeat iExists _. iSplitL "HE"; auto. iDestruct ("HB" with "[HD]") as "HA"; auto.
+    - repeat iExists _. iSplitL "HC"; eauto.
+    - repeat iExists _. iSplitL "HD"; eauto. iSplitL; eauto. iApply ("HC" with "[HF]"); auto.
+    - repeat iExists _. iSplitL "HE"; auto. iSplitL; eauto. iApply ("HB" with "[HD]"); auto.
+    - repeat iExists _. iSplitL "HC"; eauto. 
+    - repeat iExists _. iSplitL "HD"; eauto. iSplitL; eauto. iApply ("HC" with "[HF]"); auto.
+    - repeat iExists _. iSplitL "HG"; auto. iSplitL; eauto. iSplit; iApply tr_expr_abs.
+      iApply ("HD" with "[HF]"); auto. iApply ("HB" with "[HF]"); auto.
+    - repeat iExists _. iSplitL "HF"; eauto. iSplitL "HE"; auto.
+    - iSplitL "HJ"; auto. repeat iExists _. iSplitL "HH"; auto. iSplitL; eauto.
+      iSplit; iApply tr_expr_abs.
+      iApply ("HE" with "[HG]"); auto. iApply ("HC" with "[HG]"); auto.
+    - iFrame; repeat iExists _; destruct dst; simpl; simpl_list; eauto.
+    - iFrame; repeat iExists _; destruct dst; simpl; simpl_list; eauto.
+    - repeat iExists _. iSplitL "HE"; eauto. iSplitL "HD"; auto.
+    - repeat iExists _. iSplitL "HC"; eauto.
+    - repeat iExists _. iSplitL "HF"; eauto. iSplitL "HE"; auto. iSplitL "HC"; eauto. iSplitL; eauto.
       iPureIntro. split; auto. do 2 (rewrite <- app_assoc; f_equal).
-    - iIntros "[HA [HB [HC HD]]] *". simpl. iModIntro. repeat iExists _. iFrame.
-      iSplitL "HD"; eauto. iSplitL "HC"; eauto. iApplyC. 
-    - iIntros "[HA [HB HC]] *". simpl. iModIntro. repeat iExists _. iFrame.
-      iSplitL "HC"; eauto. iSplitL "HB"; auto. iApplyB. 
-    - iIntros "[HA [HB [HC HD]]] HE *". simpl. iModIntro. repeat iExists _. iSplitL "HD"; auto.
-      iSplitL "HC"; eauto. iApplyC. iSplitL "HB"; auto. iSplitL "HA"; eauto. iSplitL; auto.
+    - repeat iExists _. iFrame. iSplitL "HG"; eauto. iSplitL "HF"; eauto. 
+    - repeat iExists _. iFrame. iSplitL "HE"; eauto. 
+    - repeat iExists _. iSplitL "HH"; auto. iSplitL "HG"; eauto. iSplitL "HE"; auto.
+      iSplitL "HC"; eauto. iSplitL; auto.
       iPureIntro. split; auto. do 3 (rewrite <- app_assoc; f_equal).
-    - iIntros "[HA HB] *". simpl. iModIntro. repeat iExists _.
-      iSplitL "HB"; eauto. iApplyB.
-    - iIntros "[HA HB] *". simpl. iModIntro. repeat iExists _. iSplitL "HB"; eauto.
-    - iIntros "[HA HB] HC *". simpl. iModIntro. repeat iExists _.
-      iSplitL "HB"; eauto. iExists v0. iFrame. iPureIntro. split; auto.
-      rewrite <- app_assoc; f_equal.
-    - iIntros "[HA HB] HC *". simpl. iModIntro. repeat iExists _.
-      iSplitL "HB"; eauto. iSplitL; auto. iApply ("HA" with "HC").
-    - iIntros "[HA [HB HC]] *". simpl. iModIntro. repeat iExists _. iFrame. iSplitR; auto.
-      iSplitL "HC"; eauto.
-    - iIntros "[HA HB] *". simpl. iModIntro. repeat iExists _. iSplitL "HB"; eauto.
-    - iIntros "[HA [HB HC]] HD *". simpl. iModIntro. repeat iExists _. iSplitL "HA"; auto. iFrame.
-      iSplitL "HC"; eauto. iSplitL "HB"; eauto. iPureIntro. split; auto.
-      do 2 (rewrite <- app_assoc; f_equal).
-    - iIntros "[HA HB] *". simpl. iModIntro. repeat iExists _. iFrame. iSplitL "HB"; auto.
-    - iIntros. simpl. iModIntro. repeat iExists _. iSplitL; auto.
-    - iIntros "[HA HB] HD *". simpl. iModIntro. repeat iExists _. iSplitL "HB"; auto.
-      iSplitL "HA"; eauto. iSplitL "HD"; eauto. iPureIntro. split; auto.
-      rewrite <- app_assoc; f_equal.
-    - iIntros "[HA HB] *". simpl. repeat iExists _. iSplitL "HB"; auto.
+    - repeat iExists _. iSplitL "HC"; eauto. 
+    - repeat iExists _. iSplitL "HC"; eauto.
+    - repeat iExists _. iSplitL "HD"; eauto. iExists v0. iSplitL "HC"; auto. iSplitL; auto.
+      iPureIntro. split; auto. rewrite <- app_assoc; f_equal.
+    - repeat iExists _. iSplitL "HD"; eauto. iSplitL; auto. iApply ("HC" with "HF").
+    - repeat iExists _. iSplitL "HB"; auto. iSplitR; auto. iSplitL "HE"; eauto.
+    - repeat iExists _. iSplitL "HC"; eauto.
+    - repeat iExists _. iSplitL "HC"; auto. iSplitL "HH"; auto. iSplitL "HF"; eauto.
+      iSplitL "HE"; eauto. iPureIntro. split; auto. do 2 (rewrite <- app_assoc; f_equal).
+    - repeat iExists _. iSplitL "HC"; auto. 
+    - repeat iExists _. iSplitL "HD"; auto. iSplitL "HC"; auto. iSplitL; eauto.
+      iPureIntro. split; auto. rewrite <- app_assoc; f_equal.
+    - repeat iExists _. iSplitL "HC"; auto.
   Qed.
 
 
@@ -508,15 +457,10 @@ Section SPEC.
     forall r dst,
       ⊢ {{ emp }} transl_expr dst r {{ res, RET res;  dest_below dst -∗ ⌜ exists tmp, ∀ ge e le m, tr_top ge e le m dst r res.1 res.2 tmp ⌝ }}.
   Proof.
-    intros. exploit (proj1 transl_meets_spec); eauto. intro.
-    iIntros (?) "_ HA".
-    iApply H; eauto. iIntros (res) "HB". iApply "HA". iIntros "HA".
-    iDestruct ("HB" with "HA") as "HB".
-    iStopProof. apply instance_heap. intros. exists tmps. intros. constructor.
-    apply (start_proof _ _ _ H0). auto.
-  Qed.
-
-  
+    intros. iApply (post_weaker _ _ _ _ (proj1 transl_meets_spec _ _)).
+    iIntros "* HA HB". iDestruct ("HA" with "HB") as "HA". iStopProof. apply instance_heap.
+    intros. exists tmps. intros. constructor. apply (start_proof _ _ _ H). auto.
+  Qed.  
   
   Inductive tr_expression: Csyntax.expr -> statement -> expr -> Prop :=
   | tr_expression_intro: forall r sl a tmps,
@@ -540,7 +484,7 @@ Section SPEC.
   Lemma transl_expr_stmt_meets_spec: forall r,
       ⊢ {{ emp }} transl_expr_stmt r {{ res, RET res; ⌜ tr_expr_stmt r res ⌝}}.
   Proof.
-    intro. unfold transl_expr_stmt. epose transl_expr_meets_spec. tac2.
+    intro. unfold transl_expr_stmt. epose transl_expr_meets_spec. tac2. 
     iIntros "%". iPureIntro. destruct a; auto. econstructor. eapply H.
   Qed.
 
@@ -688,8 +632,9 @@ with tr_lblstmts: Csyntax.labeled_statements -> labeled_statements -> Prop :=
            ⊢ {{ emp }} transl_lblstmt s {{ res, RET res; ⌜ tr_lblstmts s res ⌝ }}. 
   Proof.
     pose transl_expression_meets_spec. pose transl_if_meets_spec. pose transl_expr_stmt_meets_spec.
-    clear transl_stmt_meets_spec.
-    intro. induction s; rewrite /transl_stmt; fold transl_stmt; fold transl_lblstmt; tac3.
+    clear transl_stmt_meets_spec. intro.
+    induction s; rewrite /transl_stmt; fold transl_stmt; fold transl_lblstmt; tac3.
+    
     - iPureIntro. constructor.
     - apply (post_weaker _ _ _ _ (b1 e)). iIntros. iPureIntro. apply (tr_do _ _ a).
     - iIntros "[% %]". iPureIntro. constructor; auto.

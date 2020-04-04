@@ -14,7 +14,7 @@
      Voir la création de tactiques manipulant l'environnement spatial, je ne sais pas encore le faire.
 
 - Désavantages :
-  -- Comprendre comment éviter que la notation du triplet ne se retire avec un "simpl" (passer par une définition puis une notation ?)
+  -- Comprendre comment éviter que la notation du triplet se retire avec un "simpl" (passer par une définition puis une notation ?)
   -- Pas de structures "Inductive" : Pourrait-être compenser si la manipulation du contexte spatial avec des tactiques est facile ?
      En effet, "inversion" sur un inductive évite une grosse quantité de destruct.
   -- Locally : la preuve de tr_expr_invariant est beaucoup plus lourde que l'ancienne. Même si une manipulation du contexte spatial pourrait simplifier, elle ne sera pas si courte.
@@ -23,3 +23,8 @@
   -- Pas très élégant d'instancier une heap dans certains cas pour sortir de proofmode, progresser et retourner dans proofmode. (Lemma instance_heap)
      Possibilité ?: créer une tactique qui permet d'avancer d'une étape ?
   -- Clarifier comment sortir de iProp. Pour le moment tr_top s'en occupe et c'est pas dégueu mais est-ce la méthode classique ? ([exists tmp, ... tmp]).
+
+
+
+BUG : Si je retourne en arrière dans la preuve, la preuve bug completement et affiche le message "The reference Backtrack is not found in the current environment".
+      Apparait depuis le passage à coq.8.11.dev. Disparait lorsqu'on retourne en coq.10.2 avec (coq-iris.dev.2020-03-27.1 et coq-stdpp.dev.2020-03-18.1)

@@ -1,6 +1,8 @@
-From iris.proofmode Require Export coq_tactics ltac_tactics.
+From iris.proofmode Require Export base intro_patterns spec_patterns
+                                   sel_patterns coq_tactics reduction
+                                   coq_tactics ltac_tactics.
 Require Import FunctionalExtensionality.
-From iris Require Export bi.bi proofmode.tactics proofmode.monpred.
+From iris Require Export bi.bi proofmode.tactics proofmode.monpred proofmode.reduction.
 From stdpp Require Export pmap.
 Require Import Ctypes.
 Axiom prop_extensionality : forall A B:Prop, (A <-> B) -> A = B.
@@ -573,7 +575,8 @@ Module weakestpre_gensym.
   Export ProofMode.
   Export proofmode.monpred.
   Import biInd.
-
+  Import reduction.
+  
   Open Scope bi_scope.
   
   Definition iProp := monPred biInd hpropI.
@@ -912,13 +915,94 @@ Module weakestpre_gensym.
   Proof.
     simpl. auto.
   Qed.
+
+  Lemma pure_empty_destruct : forall P Q, ⊢ \⌜ P /\ Q ⌝ -∗ \⌜ P ⌝ ∗ \⌜ Q ⌝ .
+  Proof. iIntros. destruct a. iSplit; iPureIntro; auto. Qed.
+
+  Local Ltac Fresh :=
+    let x := iFresh in
+    match x with
+    | IAnon ?x =>
+      let x := eval compute in (ascii_of_pos (x + 64)) in
+      let x := eval compute in (append "H" (string_of_list_ascii [x])) in
+      let env := iGetCtx in
+      let P := reduction.pm_eval (@envs_lookup (monPredI biInd hpropI) x env) in
+      match P with
+      | None => x
+      | Some _ => Fresh
+      end
+    | _ => fail "iFresh returns " x " sometimes."
+    end.
+
+  (*h should be in the environment *)
+  Local Ltac norm h :=
+    let env := iGetCtx in
+    let P := reduction.pm_eval (@envs_lookup (monPredI biInd hpropI) h env) in
+    match P with
+    | None => fail "assert false"
+    | Some (false, ?P) =>
+      match P with
+      | bi_exist ?Q => let x := fresh "x" in (iDestruct h as (x) h; norm h)
+      | bi_sep ?Q ?W =>
+        let x := Fresh in
+        let y := Fresh in
+        eapply tac_and_destruct with h _ x y _ _ _;
+        [ pm_reflexivity | pm_reduce; iSolveTC | pm_reduce; norm x; norm y]
+      | pure_empty (and ?P ?Q) =>
+        let x := Fresh in
+        iPoseProof (pure_empty_destruct with h) as x; norm x
+      | pure_empty _ => iPure h as ?
+      | bi_pure (and ?P ?Q) =>
+        let x := Fresh in
+        eapply tac_and_destruct with h _ h x _ _ _;
+        [pm_reflexivity
+        |pm_reduce; iSolveTC
+        |pm_reduce; norm h; norm x]
+      | bi_pure _ => iPure h as ?
+      | bi_wand _ _ => iDestruct (h with "[]") as h; [progress auto | norm h]
+      | _ =>
+        match h with
+        | IAnon _ => 
+          let x := Fresh in
+          iPoseProof h as x
+        | _ => idtac 
+        end
+      end
+    | Some (true,?P) => idtac
+    end.
+
+  (* (List.fold norm) in Ltac *)
+  Local Ltac norm_list l :=
+    match l with
+    | [] => idtac
+    | ?h :: ?t => norm h ; norm_list t
+    end.
+
+  (* List.fold norm list_ident idtac *)
+  Ltac norm_all :=
+    iStartProof;
+    let env := iGetCtx in
+    let list_ident := eval compute in (rev (envs_dom env)) in
+    norm_list list_ident; auto.
+
+  Tactic Notation "iNorm" := norm_all.
+
+  Lemma test : forall P Q (R T: iProp), ⊢ T -∗ (∃ (x: nat), (True -∗ T)) -∗ ⌜ P /\ Q ⌝ -∗ ((⌜ P ⌝ -∗ R) ∗ True) -∗ <absorb> R.
+  Proof. iIntros. destruct a. iNorm. Qed.
   
 End weakestpre_gensym.
 
 Module adequacy.
   Export gensym.
   Export weakestpre_gensym.
-  
+
+  Lemma instance_heap : forall (P : iProp) (Q : Prop), (forall tmps, P () tmps -> Q) -> (P ⊢ ⌜Q⌝).
+  Proof.
+    MonPred.unseal. intros. split. repeat red. intros.
+    exists heap_empty, x. repeat split; auto with heap_scope. destruct i. eapply H. eauto.
+    apply map_disjoint_empty_l.
+  Qed.
+
   Lemma soundness1 h (Φ : Prop) : (heap_ctx h ⊢ (⌜ Φ ⌝) : iProp) -> Φ.
   Proof.
     MonPred.unseal=> -[H]. repeat red in H.

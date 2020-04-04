@@ -149,6 +149,42 @@ Section PRESERVATION.
   
   Local Set Warnings "-deprecated".
   
+  Ltac apply_ind l h :=
+    match goal with
+    | H : Datatypes.negb _ = true |- _ => apply negb_true_iff in H; apply_ind l h
+    | H :  _ && _ = true |- _ =>
+      let P0 := fresh "P" in
+      let P1 := fresh "P" in
+      apply andb_true_iff in H as (P0&P1); apply_ind l h
+    | H : forall _ _ _ _, bi_emp_valid (tr_expr _ _ l _ _ -∗ _)
+                     |- _ => iDestruct (H with h) as h; iDestruct (h with "[] []") as "%"; auto
+    | H : forall _ _ _ , bi_emp_valid (tr_exprlist _ l _ _ -∗ _)
+                    |- _ => iDestruct (H with h) as h; iDestruct (h with "[]") as "%"; auto
+    | _ => idtac l h
+    end.
+
+  Ltac apply_ind_space :=
+    iStartProof;
+    let env := iGetCtx in
+    let list_ident := eval compute in (rev (envs_dom env)) in
+    match list_ident with
+    | [] => idtac
+    | ?h :: ?t =>
+      let P := reduction.pm_eval (envs_lookup h env) in
+      match P with
+      | Some (false, ?P) =>
+        match P with
+        | tr_expr _ _ ?l _ _ => apply_ind l h; apply_ind_space
+        | tr_exprlist _ ?l _ _ => apply_ind l h; apply_ind_space
+        | tr_rvalof _ _ _ _ => unfold tr_rvalof; idtac
+        | dest_below _ => iClear h; apply_ind_space
+        | _ => idtac
+        end
+      | _ => idtac "bug2" P
+      end
+    | _ => idtac "bug1" list_ident
+    end.
+
   Lemma tr_simple_nil:
     (forall r dst sl le a,
         ⊢ tr_expr le dst r sl a -∗
@@ -157,51 +193,20 @@ Section PRESERVATION.
                                                                 ⌜sl = nil ⌝)
     /\(forall rl le sl al, ⊢ tr_exprlist le rl sl al -∗ ⌜ simplelist rl = true ⌝ -∗ ⌜ sl = nil ⌝).
   Proof.
-    assert (A: forall dst a, dst = For_val \/ dst = For_effects -> final dst a = nil).
-    intros. destruct H; subst dst; auto.
-    apply tr_expr_exprlist; intros; simpl in *; try discriminate; auto.
-    - iIntros ">HA % %". destruct a0; subst; auto.
-      iDestruct "HA" as "[_ [_ $]]". 
-    - iIntros ">[HA [% %]] % %". destruct a0; subst; eauto.
-    - iIntros ">[HB HA] % %". iDestruct "HA" as (sl2 a2) "[HA [% %]]".
-      iDestruct (H with "HA [] []") as "%"; auto. subst. destruct a0; eauto.
-    - iIntros ">[HC HA] % %". apply andb_true_iff in a1 as (P0&P1).
-      iDestruct "HA" as (sl2 a2 sl3) "[HA [HB %]]".
-      iDestruct (H with "HA [] []") as "%"; auto.
-      unfold tr_rvalof. apply negb_true_iff in P1. rewrite P1.
-      iDestruct "HB" as "[% %]". subst. destruct a0; eauto.
-    - iIntros ">[HB HA] % %". iDestruct "HA" as (sl2 a2) "[HA [% %]]".
-      iDestruct (H with "HA [] []") as "%"; eauto. subst.
-      destruct a0; eauto.
-    - iIntros ">[HB HA] % %".  iDestruct "HA" as (sl2 a2) "[HA [% %]]".
-      iDestruct (H with "HA [] []") as "%"; eauto. subst.
-      destruct a0; eauto.
-    - iIntros ">[HB HA] % %".  iDestruct "HA" as (sl2 a2) "[HA [% %]]".
-      iDestruct (H with "HA [] []") as "%"; eauto. subst.
-      destruct a0; eauto.
-    - iIntros ">[HC HA] % %".  iDestruct "HA" as (sl2 a2 sl3 a3) "[HA [HB [% %]]]".
-      apply andb_true_iff in a1 as (P0&P1).
-      iDestruct (H with "HA [] []") as "%"; eauto.
-      iDestruct (H0 with "HB [] []") as "%"; eauto.
-      subst. destruct a0; eauto.
-    - iIntros ">[HB HA] % %". iDestruct "HA" as (sl2 a2) "[HA [% %]]".
-      iDestruct (H with "HA [] []") as "%"; eauto. subst.
-      destruct a0; eauto.
-    - iIntros ">[HB [% %]] % %". destruct a0; subst; eauto. 
-    - iIntros ">[HB [% %]] % %". subst. destruct a0; auto.
-    - iIntros "[HB %] %". auto. 
-    - iIntros "HA %". apply andb_true_iff in a as (P0&P1). 
-      iDestruct "HA" as (sl2 a2 sl3 al3) "[HA [HB [% %]]]".
-      iDestruct (H with "HA [] []") as "%"; auto. 
-      iDestruct (H0 with "HB []") as "%"; auto. subst. auto.
+    apply tr_expr_exprlist; intros; simpl in *; try discriminate; auto; try iIntros ">HA";
+      iIntros; norm_all; apply_ind_space; try(destruct a0; subst; norm_all).
+    - rewrite P0; norm_all; subst; auto.
+    - rewrite P0; norm_all; subst; auto.
+    - destruct a; auto.
+    - subst; auto.
   Qed.
 
   Lemma tr_simple_expr_nil:
     (forall r dst sl le a,
         ⊢ tr_expr le dst r sl a -∗
-          ⌜ dst = For_val \/ dst = For_effects ⌝ -∗
-                                              ⌜ simple r = true ⌝ -∗
-                                                                ⌜sl = nil ⌝).
+        ⌜ dst = For_val \/ dst = For_effects ⌝ -∗
+        ⌜ simple r = true ⌝ -∗
+        ⌜sl = nil ⌝).
   Proof. apply (proj1 tr_simple_nil). Qed.
 
   Lemma tr_simple_exprlist_nil:
@@ -270,82 +275,60 @@ Section PRESERVATION.
   Proof.
     Opaque makeif.
     intros e m.
-    apply (eval_simple_rvalue_lvalue_ind ge e m); intros; simpl.
+    apply (eval_simple_rvalue_lvalue_ind ge e m); intros; simpl; iIntros ">HA".
     (* value *)
-    - destruct dst; simpl in *; auto.
-      + iIntros ">[HA [% %]]". 
-        repeat (iSplit; auto). iDestruct (locally_delete with "HA") as "HA". iFrame.
-      + iIntros ">[_ HA]". iDestruct "HA" as (a0) "[HA [% %]]". subst. 
-        repeat iExists _. repeat iSplit; auto. iDestruct (locally_delete with "HA") as "HA". iFrame.
+    - destruct dst; simpl in *; norm_all.
+      + repeat (iSplit; auto). iDestruct (locally_delete with "HB") as "HA". iFrame.
+      + iDestruct "HA" as "[_ HA]". norm_all. repeat iExists _. repeat iSplit; auto.
+        iDestruct (locally_delete with "HB") as "HA". iFrame.
         
     (* rvalof *)
-    - iIntros ">[HB HA]". 
-      iDestruct "HA" as (sl2 a2 sl3) "[HA [HC %]]". iDestruct (H0 with "HA") as "[% [% %]]".
-      unfold tr_rvalof. subst. rewrite H2. iDestruct "HC" as "[% %]". subst.
-      destruct dst; simpl; eauto.
-      + repeat iSplit; auto. iPureIntro. econstructor; eauto.
-        exploit deref_loc_translated; eauto. unfold chunk_for_volatile_type; rewrite H2.
-        intros [P0 P1]. rewrite <- H6. auto.
-      + repeat iExists _. repeat iSplit; auto. iPureIntro. econstructor; eauto.
-        exploit deref_loc_translated; eauto. unfold chunk_for_volatile_type; rewrite H2.
-        intros (P0&P1). rewrite <- H6. eauto.
-        
-    - iIntros ">[HB HA]". 
-      iDestruct "HA" as (sl2 a2) "[HA [% %]]". iDestruct (H0 with "HA") as "[% [% %]]". 
-      destruct dst; simpl in *; subst; auto.
-      + iPureIntro. repeat split; eauto. 
-        * rewrite (typeof_Eaddrof' a2 ty). reflexivity.
-        * apply eval_Eaddrof'; auto.
-      + iExists (Eaddrof' a2 ty). iPureIntro. repeat split; auto.
-        * rewrite (typeof_Eaddrof' a2 ty). reflexivity.
-        * apply eval_Eaddrof'; auto.
-          
-    - iIntros ">[HB HA]". 
-      iDestruct "HA" as (sl2 a2) "[HA [% %]]". subst.
-      iDestruct (H0 with "HA") as "[% [% %]]"; auto. iPureIntro. simpl in *. subst.
-      destruct dst; simpl in *; subst; auto.
-      + repeat split; auto. rewrite H3 in H1. econstructor; eauto.
-      + exists (Eunop op0 a2 ty). repeat split. rewrite H3 in H1. econstructor; eauto.
-        
-    - iIntros ">[HB HA]". 
-      iDestruct "HA" as (sl2 a2 sl3 a3) "[HA [HC [% %]]]".
-      iDestruct (H0 with "HA") as "[% [% %]]"; auto.
-      iDestruct (H2 with "HC") as "[% [% %]]"; auto. rewrite <- comp_env_preserved in H3.
+    - unfold tr_rvalof. subst. rewrite H2. norm_all. iDestruct (H0 with "HD") as "[% [% %]]". subst.
+      destruct dst; simpl; eauto; repeat iExists _; repeat iSplit; auto; iPureIntro; econstructor;
+        eauto; exploit deref_loc_translated; eauto; unfold chunk_for_volatile_type; rewrite H2;
+          intros [P0 P1]; rewrite <- H7; auto.
+      
+    - norm_all. iDestruct (H0 with "HD") as "[% [% %]]".
+      destruct dst; simpl in *; subst; auto; repeat iExists _; repeat iSplit; iPureIntro; simpl;
+        auto. rewrite (typeof_Eaddrof' _ ty); auto. eapply eval_Eaddrof'; auto.
+      rewrite (typeof_Eaddrof' _ ty); auto. eapply eval_Eaddrof'; auto.
+      
+    - norm_all. iDestruct (H0 with "HD") as "[% [% %]]".
+      destruct dst; simpl in *; subst; auto; repeat iExists _; repeat iSplit; iPureIntro; simpl;
+        auto; econstructor; eauto; rewrite <- H5; auto.
+      
+    - norm_all. iDestruct (H0 with "HD") as "[% [% %]]"; auto.
+      iDestruct (H2 with "HF") as "[% [% %]]"; auto. rewrite <- comp_env_preserved in H3.
       subst. iPureIntro.
       rewrite H7 in H3. rewrite H10 in H3.
       destruct dst; simpl; simpl_list; auto.
       + repeat split; auto. econstructor; eauto. 
       + eexists. repeat split; auto. econstructor; eauto.
         
-    - iIntros ">[HB HA]". 
-      iDestruct "HA" as (sl2 a2) "[HA [% %]]". 
-      iDestruct (H0 with "HA") as "[% [% %]]"; auto. subst. iPureIntro. rewrite H5 in H1.
+    - norm_all. iDestruct (H0 with "HD") as "[% [% %]]"; auto. subst. iPureIntro. rewrite H5 in H1.
       destruct dst; simpl in *; auto.
       + repeat split; auto. econstructor; eauto.
       + eexists. repeat split; eauto. econstructor; eauto.
         
-    - iIntros ">[HB [% %]]". iPureIntro. subst.
+    - norm_all. iPureIntro. subst.
       destruct dst; simpl in *; simpl_list; auto; repeat eexists; pose (P := comp_env_preserved);
         simpl in P; rewrite <- P; apply eval_Esizeof.
       
-    - iIntros ">[HA [% %]]". iPureIntro. subst.
+    - norm_all. iPureIntro. subst.
       destruct dst; simpl in *; auto; repeat eexists; repeat split; auto;
         pose (P := comp_env_preserved); simpl in P; rewrite <- P; constructor.
-    - iIntros ">%". contradiction.
-    - iIntros ">[_ [% %]]". subst. iPureIntro. repeat split; auto. constructor. apply H.
-    - iIntros ">[_ [% %]]". subst. iPureIntro. repeat split; auto.
-      apply eval_Evar_global; auto. rewrite symbols_preserved; auto.
       
-    - iIntros ">[_ HA]". iDestruct "HA" as (sl2 a2)  "[HA [% %]]". 
-      iDestruct (H0 with "HA") as "[% [% %]]"; auto. subst.
+    - iExFalso; auto. 
+    - norm_all. subst. iPureIntro. repeat split; auto. constructor. apply H.
+    - norm_all. subst. iPureIntro. repeat split; auto. apply eval_Evar_global; auto.
+      rewrite symbols_preserved; auto.
+      
+    - norm_all. iDestruct (H0 with "HD") as "[% [% %]]"; auto. subst.
       iPureIntro. repeat split. rewrite typeof_Ederef'. auto. apply eval_Ederef'; auto. 
-    - iIntros ">[_ HA]". iDestruct "HA" as (sl2 a2) "[HA [% %]]". 
-      iDestruct (H0 with "HA") as "[% [% %]]"; auto. subst. iPureIntro. repeat split.
-      rewrite <- comp_env_preserved in *. eapply eval_Efield_struct; eauto. rewrite <- H7. eauto.
-    - iIntros ">[_ HA]". iDestruct "HA" as (sl2 a2)  "[HA [% %]]". 
-      iDestruct (H0 with "HA") as "[% [% %]]"; auto. 
-      subst. iPureIntro. repeat split; auto.
-      rewrite <- comp_env_preserved in *. rewrite H6 in H1. eapply eval_Efield_union; eauto.
+    - norm_all. iDestruct (H0 with "HD") as "[% [% %]]"; auto. subst. iPureIntro. repeat split.
+      rewrite <- comp_env_preserved in *. eapply eval_Efield_struct; eauto. rewrite <- H8. eauto.
+    - norm_all. iDestruct (H0 with "HD") as "[% [% %]]"; auto. subst. iPureIntro. repeat split; auto.
+      rewrite <- comp_env_preserved in *. rewrite H7 in H1. eapply eval_Efield_union; eauto.
   Qed.
   
   Lemma tr_simple_rvalue:
@@ -382,10 +365,8 @@ Section PRESERVATION.
     induction rl.
     - iIntros. inversion a. 
       iPureIntro. repeat split; eauto. inversion a0. subst. constructor.
-    - simpl. iIntros "*HA * %". iDestruct "HA" as (sl2 a2 sl3 al3) "[HA [HB [% %]]]".
-      inversion a. subst.
-      iDestruct (IHrl with "HB []") as "[% %]"; eauto.
-      iDestruct (tr_simple_rvalue with "HA") as "[% [% %]]"; eauto.
+    - simpl. iIntros. norm_all. inversion a. subst. iDestruct (IHrl with "HD []") as "[% %]"; eauto.
+      iDestruct (tr_simple_rvalue with "HB") as "[% [% %]]"; eauto.
       iPureIntro. subst. split; auto. econstructor; eauto. rewrite <- H2. eauto.
   Qed.
 
@@ -410,178 +391,149 @@ Section PRESERVATION.
     Ltac iApplyD := iDestruct ("HD" with "[]") as "HD"; eauto.
     apply tr_expr_exprlist; intros; iIntros "* HA"; simpl.
     - destruct dst.
-      + iApply locally_modout. iDestruct "HA" as ">[HB [% %]]". iModIntro.
+      + iApply locally_modout. iDestruct "HA" as ">HA". norm_all. iModIntro.
         iApply locally_sep_indep_r. iSplitL; auto. 
         do 3 (iApply locally_forall; iIntros). iApply locally_doublon. iApply "HB".
       + iApply locally_simpl. iIntros "*". auto.
       + simpl. iApply locally_modout. iDestruct "HA" as ">HA". iModIntro.
         iApply locally_and. iSplit. iDestruct "HA" as "[HA _]". iApply locally_simpl; auto.
-        iDestruct "HA" as "[_ HA]". iDestruct "HA" as (a0) "[HA HB]".
-        iApply locally_exists. iApply locally_sep_indep_r. iFrame. iSplitL; auto. 
-        do 3 (iApply locally_forall; iIntros). iApply locally_doublon. iApply "HA".
+        iDestruct "HA" as "[_ HA]". norm_all. iApply locally_exists. iApply locally_sep_indep_r. 
+        iSplitL "HC"; eauto. do 3 (iApply locally_forall; iIntros). iApply locally_doublon.
+        iApply "HC". iSplit; auto.
+        
     - iApply locally_simpl. iIntros "*". auto.
-    - iApply locally_modout. iDestruct "HA" as ">[HA HB]". iDestruct "HB" as (sl2 a2) "[HB [% %]]".
+    - iApply locally_modout. iDestruct "HA" as ">HA". norm_all. 
       iModIntro. iApply locally_sep_indep_l. iFrame. 
       repeat iApply locally_exists. iApply locally_sep_indep_r.
-      iSplitL; auto. iApply (H with "HB"). 
-    - iApply locally_modout. iDestruct "HA" as ">[HA HB]".
-      iDestruct "HB" as (sl2 a2 sl3) "[HC [HB %]]". iModIntro. iApply locally_sep_indep_l. iFrame.
-      repeat iApply locally_exists. iApply locally_sep_indep_r.
-      iSplitR "HB"; auto. iApply (H with "HC").
-    - iApply locally_modout. iDestruct "HA" as ">[HA HB]". iDestruct "HB" as (sl2 a2) "[HB [% %]]".
-      iModIntro. iApply locally_sep_indep_l. iSplitR "HA"; auto.
-      repeat iApply locally_exists. iApply locally_sep_indep_r.
-      iSplitL; auto. iApply (H with "HB").
-    - iApply locally_modout. iDestruct "HA" as ">[HA HB]". iDestruct "HB" as (sl2 a2) "[HB [% %]]".
-      iModIntro. iApply locally_sep_indep_l. iSplitR "HA"; auto.
-      repeat iApply locally_exists. iApply locally_sep_indep_r.
-      iSplitL; auto. iApply (H with "HB").
-    - iApply locally_modout. iDestruct "HA" as ">[HA HB]". iDestruct "HB" as (sl2 a2) "[HB [% %]]". 
-      iModIntro. iApply locally_sep_indep_l. iSplitR "HA"; auto.
-      repeat iApply locally_exists. iApply locally_sep_indep_r.
-      iSplitL; auto. iApply (H with "HB"). 
-    - iApply locally_modout. iDestruct "HA" as ">[HA HB]".
-      iDestruct "HB" as (sl2 a2 sl3 a3) "[HC [HB [% %]]]". 
-      iModIntro. iApply locally_sep_indep_l. iSplitR "HA"; auto.
-      repeat iApply locally_exists. iDestruct (H with "HC") as "HA".
-      iDestruct (H0 with "HB") as "HB". iApply (locally_delete_2 with "HA HB"). iIntros.
+      iSplitL; auto. iApply (H with "HD"). 
+    - iApply locally_modout. iDestruct "HA" as ">HA". norm_all. iModIntro.
+      iApply locally_sep_indep_l. iFrame. repeat iApply locally_exists. iApply locally_sep_indep_r.
+      iSplitR "HF"; auto. iApply (H with "HD").
+    - iApply locally_modout. iDestruct "HA" as ">HA". norm_all. 
+      iModIntro. iApply locally_sep_indep_l. iFrame. repeat iApply locally_exists.
+      iApply locally_sep_indep_r. iSplitL; auto. iApply (H with "HD").
+    - iApply locally_modout. iDestruct "HA" as ">HA". norm_all. iModIntro.
+      iApply locally_sep_indep_l. iFrame. repeat iApply locally_exists. iApply locally_sep_indep_r.
+      iSplitL; auto. iApply (H with "HD").
+    - iApply locally_modout. iDestruct "HA" as ">HA". norm_all. iModIntro.
+      iApply locally_sep_indep_l. iFrame. repeat iApply locally_exists. iApply locally_sep_indep_r.
+      iSplitL; auto. iApply (H with "HD"). 
+    - iApply locally_modout. iDestruct "HA" as ">HA". norm_all.
+      iModIntro. iApply locally_sep_indep_l. iFrame. 
+      repeat iApply locally_exists. iDestruct (H with "HD") as "HA".
+      iDestruct (H0 with "HF") as "HB". iApply (locally_delete_2 with "HA HB"). iIntros.
       iFrame. auto.
       
-    - iApply locally_modout. iDestruct "HA" as ">[HA HB]". iDestruct "HB" as (sl2 a2) "[HB [% %]]".
-      iModIntro. iApply locally_sep_indep_l. iSplitR "HA"; auto.
-      repeat iApply locally_exists. iApply locally_sep_indep_r.
-      iSplitL; auto. iApply (H with "HB").
-    - iApply locally_modout. iDestruct "HA" as ">HA". iModIntro. destruct dst.
-      + iDestruct "HA" as (sl2 a2 sl3 a3 t0) "[HA [HB %]]". destruct H1.
-        repeat iApply locally_exists. iDestruct (H with "HA") as "HA".
-        iDestruct (H0 with "HB") as "HB". iApply (locally_delete_2 with "HA HB"). iIntros.
+    - iApply locally_modout. iDestruct "HA" as ">HA". norm_all. 
+      iModIntro. iApply locally_sep_indep_l. iFrame. repeat iApply locally_exists.
+      iApply locally_sep_indep_r. iSplitL; auto. iApply (H with "HD").
+    - iApply locally_modout. iDestruct "HA" as ">HA". iModIntro. destruct dst; norm_all.
+      + repeat iApply locally_exists. iDestruct (H with "HB") as "HA".
+        iDestruct (H0 with "HD") as "HB". iApply (locally_delete_2 with "HA HB"). iIntros.
+        iFrame. subst. auto.
+      + repeat iApply locally_exists. iDestruct (H with "HB") as "HA".
+        iDestruct (H0 with "HD") as "HB". iApply (locally_delete_2 with "HA HB"). iIntros.
         iFrame. auto.
-      + iDestruct "HA" as (sl2 a2 sl3 a3) "[HA [HB %]]".
-        repeat iApply locally_exists. iDestruct (H with "HA") as "HA".
-        iDestruct (H0 with "HB") as "HB". iApply (locally_delete_2 with "HA HB"). iIntros.
-        iFrame. auto.
-      + iDestruct "HA" as (sl2 a2 sl3 a3) "[HA [HB %]]". 
-        repeat iApply locally_exists. iDestruct (H with "HA") as "HA".
-        iDestruct (H0 with "HB") as "HB". iApply (locally_delete_2 with "HA HB").
-        iIntros "* $ $". auto.
+      + repeat iApply locally_exists. iDestruct (H with "HB") as "HA".
+        iDestruct (H0 with "HD") as "HB". iApply (locally_delete_2 with "HA HB").
+        iIntros. iFrame. auto.
         
-    - iApply locally_modout. iDestruct "HA" as ">HA". iModIntro. destruct dst.
-      + iDestruct "HA" as (sl2 a2 sl3 a3 t0) "[HA [HB %]]". destruct H1.
-        repeat iApply locally_exists. iDestruct (H with "HA") as "HA".
-        iDestruct (H0 with "HB") as "HB". iApply (locally_delete_2 with "HA HB"). iIntros.
+    - iApply locally_modout. iDestruct "HA" as ">HA". iModIntro. destruct dst; norm_all.
+      + repeat iApply locally_exists. iDestruct (H with "HB") as "HA".
+        iDestruct (H0 with "HD") as "HB". iApply (locally_delete_2 with "HA HB"). iIntros.
         iFrame. auto.
-      + iDestruct "HA" as (sl2 a2 sl3 a3) "[HA [HB %]]".
-        repeat iApply locally_exists. iDestruct (H with "HA") as "HA".
-        iDestruct (H0 with "HB") as "HB". iApply (locally_delete_2 with "HA HB"). iIntros.
+      + repeat iApply locally_exists. iDestruct (H with "HB") as "HA".
+        iDestruct (H0 with "HD") as "HB". iApply (locally_delete_2 with "HA HB"). iIntros.
         iFrame. auto.
-      + iDestruct "HA" as (sl2 a2 sl3 a3) "[HA [HB %]]". 
-        repeat iApply locally_exists. iDestruct (H with "HA") as "HA".
-        iDestruct (H0 with "HB") as "HB". iApply (locally_delete_2 with "HA HB").
-        iIntros "* $ $". auto.
+      + repeat iApply locally_exists. iDestruct (H with "HB") as "HA".
+        iDestruct (H0 with "HD") as "HB". iApply (locally_delete_2 with "HA HB").
+        iIntros. iFrame. auto.
 
-    - iApply locally_modout. iDestruct "HA" as ">HA". iModIntro. destruct dst.
-      + iDestruct "HA" as (sl2 a2 sl3 a3 sl4 a4 t0) "[HA [HB %]]". destruct H2.
-        repeat iApply locally_exists. iDestruct (H with "HA") as "HA". iApply (locally_sep with "HA").
+    - iApply locally_modout. iDestruct "HA" as ">HA". iModIntro. destruct dst; norm_all.
+      + repeat iApply locally_exists. iDestruct (H with "HB") as "HA".
+        iApply (locally_sep with "HA"). iApply locally_sep_indep_r. iSplitL; auto.
+        iApply locally_and. iSplit. iDestruct "HD" as "[HB _]". iApply (H0 with "HB").
+        iDestruct "HD" as "[_ HB]". iApply (H1 with "HB").
+      + iDestruct (H with "HB") as "HA". iDestruct (H0 with "HD") as "HB".
+        iDestruct (H1 with "HF") as "HC". repeat iApply locally_exists.
+        iApply (locally_delete_3 with "HA HB HC"). iIntros. iFrame. auto.
+      + iApply locally_sep_indep_l. iFrame. repeat iApply locally_exists.
+        iDestruct (H with "HD") as "HA". iApply (locally_sep with "HA").
         iApply locally_sep_indep_r. iSplitL; auto. iApply locally_and.
-        iSplit. iDestruct "HB" as "[HB _]". iApply (H0 with "HB").
-        iDestruct "HB" as "[_ HB]". iApply (H1 with "HB").
-      + iDestruct "HA" as (sl2 a2 sl3 a3 sl4 a4) "[HA [HB [HC %]]]".
-        iDestruct (H with "HA") as "HA". iDestruct (H0 with "HB") as "HB".
-        iDestruct (H1 with "HC") as "HC". repeat iApply locally_exists.
-        iApply (locally_delete_3 with "HA HB HC"). iIntros "* $ $ $". auto.
-      + iDestruct "HA" as "[HE HA]".
-        iDestruct "HA" as (sl2 a2 sl3 a3 sl4 a4 t0) "[HA [HB %]]".
-        iApply locally_sep_indep_l. iFrame. repeat iApply locally_exists.
-        iDestruct (H with "HA") as "HA". iApply (locally_sep with "HA").
-        iApply locally_sep_indep_r. iSplitL; auto. iApply locally_and.
-        iSplit. iDestruct "HB" as "[HB _]". iApply (H0 with "HB").
-        iDestruct "HB" as "[_ HB]". iApply (H1 with "HB").
+        iSplit. iDestruct "HF" as "[HB _]". iApply (H0 with "HB").
+        iDestruct "HF" as "[_ HB]". iApply (H1 with "HB").
 
     - iApply locally_simpl. auto.
     - iApply locally_simpl. auto.
-    - iApply locally_modout. iDestruct "HA" as ">HA". iModIntro. destruct dst.
-      + iDestruct "HA" as (sl2 a2 sl3 a3 t0) "[HA [HB [HC [_ %]]]]". destruct H1.
-        repeat iApply locally_exists. iDestruct (H with "HA") as "HA". iApply (locally_sep with "HA").
-        iDestruct (H0 with "HB") as "HB". iApply (locally_sep with "HB"). iApply locally_simpl.
-        iFrame. auto.
-      + iDestruct "HA" as (sl2 a2 sl3 a3) "[HA [HB %]]". repeat iApply locally_exists.
-        iDestruct (H with "HA") as "HA". iDestruct (H0 with "HB") as "HB".
-        iApply (locally_delete_2 with "HA HB"). iIntros "* $ $ //".
-      + iDestruct "HA" as (sl2 a2 sl3 a3 t0) "[HA [HB [HC [HD %]]]]". destruct H1.
-        repeat iApply locally_exists. iDestruct (H with "HA") as "HA". iApply (locally_sep with "HA").
-        iDestruct (H0 with "HB") as "HB". iApply (locally_sep with "HB"). iApply locally_simpl.
-        iIntros. iSplitL "HC"; auto.
+    - iApply locally_modout. iDestruct "HA" as ">HA". iModIntro. destruct dst; norm_all.
+      + repeat iApply locally_exists. iDestruct (H with "HB") as "HA".
+        iApply (locally_sep with "HA"). iDestruct (H0 with "HD") as "HB".
+        iApply (locally_sep with "HB"). iApply locally_simpl. iFrame. auto.
+      + repeat iApply locally_exists. iDestruct (H with "HB") as "HA".
+        iDestruct (H0 with "HD") as "HB". iApply (locally_delete_2 with "HA HB").
+        iIntros. iFrame. auto.
+      + repeat iApply locally_exists. iDestruct (H with "HB") as "HA".
+        iApply (locally_sep with "HA"). iDestruct (H0 with "HD") as "HB".
+        iApply (locally_sep with "HB"). iApply locally_simpl.
+        iIntros. iSplitL "HF"; auto.
         
-    - iApply locally_modout. iDestruct "HA" as ">HA". iModIntro. destruct dst.
-      + iDestruct "HA" as (sl2 a2 sl3 a3 sl4 a4 t0) "[HA [HB [HC [HD [_ %]]]]]". destruct H1.
-        repeat iApply locally_exists. iDestruct (H with "HA") as "HA".
-        iDestruct (H0 with "HB") as "HB". iApply (locally_delete_2 with "HA HB").
-        iIntros "* $ $". iFrame. auto.
-      + iDestruct "HA" as (sl2 a2 sl3 a3 sl4 a4) "[HA [HB [HC %]]]". repeat iApply locally_exists.
-        iDestruct (H with "HA") as "HA". iDestruct (H0 with "HB") as "HB".
-        iApply (locally_delete_2 with "HA HB"). iIntros "* $ $". iFrame. auto.
-      + iDestruct "HA" as (sl2 a2 sl3 a3 sl4 a4 t0) "[HA [HB [HC [HD [HE %]]]]]". destruct H1.
-        repeat iApply locally_exists. iDestruct (H with "HA") as "HA".
-        iDestruct (H0 with "HB") as "HB". iApply (locally_delete_2 with "HA HB").
-        iIntros "* $ $". iSplitL "HC"; auto. iSplitL "HD"; auto.
+    - iApply locally_modout. iDestruct "HA" as ">HA". iModIntro. destruct dst; norm_all.
+      + repeat iApply locally_exists. iDestruct (H with "HB") as "HA".
+        iDestruct (H0 with "HD") as "HB". iApply (locally_delete_2 with "HA HB").
+        iIntros. iFrame. auto.
+      + repeat iApply locally_exists. iDestruct (H with "HB") as "HA".
+        iDestruct (H0 with "HD") as "HB". iApply (locally_delete_2 with "HA HB").
+        iIntros. iFrame. auto.
+      + repeat iApply locally_exists. iDestruct (H with "HB") as "HA".
+        iDestruct (H0 with "HD") as "HB". iApply (locally_delete_2 with "HA HB").
+        iIntros "* $ $". iSplitL "HF"; auto. iSplitL "HH"; auto. 
         
-    - iApply locally_modout. iDestruct "HA" as ">HA". iModIntro. destruct dst.
-      + iDestruct "HA" as (sl2 a2) "[HA HB]". iDestruct "HB" as (t0) "[HB [_ %]]".
-        repeat iApply locally_exists. iDestruct (H with "HA") as "HA".
+    - iApply locally_modout. iDestruct "HA" as ">HA". iModIntro. destruct dst; norm_all.
+      + repeat iApply locally_exists. iDestruct (H with "HB") as "HA".
         iApply (locally_sep with "HA"). repeat iApply locally_exists. iApply locally_simpl.
         iFrame. auto.
-      + iDestruct "HA" as (sl2 a2) "[HA HB]". iDestruct "HB" as (sl3 a3) "[HB %]".
-        iDestruct (H with "HA") as "HA". repeat iApply locally_exists. iApply (locally_sep with "HA").
-        repeat iApply locally_exists. iApply locally_simpl. auto.
-      + iDestruct "HA" as (sl2 a2) "[HA HB]". iDestruct "HB" as (t0) "[HB [HC %]]". destruct H0.
-        repeat iApply locally_exists. iDestruct (H with "HA") as "HA".
+      + iDestruct (H with "HB") as "HA". repeat iApply locally_exists.
+        iApply (locally_sep with "HA"). repeat iApply locally_exists. iApply locally_simpl. auto.
+      + repeat iApply locally_exists. iDestruct (H with "HB") as "HA".
         iApply (locally_sep with "HA"). iApply locally_exists. iApply locally_simpl.
-        iIntros. iSplitL "HB"; auto.
+        iIntros "** //". iSplitL "HD"; auto.
 
-    - iApply locally_modout. iDestruct "HA" as (sl2 a2 sl3) ">[HA [HB %]]". iModIntro.
-      repeat iApply locally_exists. iDestruct (H with "HA") as "HA". iDestruct (H0 with "HB") as "HB".
+    - iApply locally_modout. iDestruct "HA" as ">HA". norm_all. iModIntro.
+      repeat iApply locally_exists. iDestruct (H with "HB") as "HA".
+      iDestruct (H0 with "HD") as "HB". iApply (locally_delete_2 with "HA HB"). iIntros "* $ $ //".
+
+    - iApply locally_modout. iDestruct "HA" as ">HA". iModIntro. destruct dst; norm_all.
+      + iDestruct (H with "HF") as "HC". iDestruct (H0 with "HH") as "HA".
+        repeat iApply locally_exists. iApply locally_sep_indep_l. iSplitR "HB"; auto.
+        iApply (locally_delete_2 with "HA HC"). iIntros "* $ $ //".
+      + repeat iApply locally_exists. iDestruct (H with "HB") as "HA".
+        iDestruct (H0 with "HD") as "HB". iApply (locally_delete_2 with "HA HB"). iIntros "* $ $ //".
+      + repeat iApply locally_exists. iDestruct (H with "HF") as "HC".
+        iDestruct (H0 with "HH") as "HA". iApply locally_sep_indep_l. iSplitR "HB"; auto.
+        iApply locally_sep_indep_l. iFrame. iApply (locally_delete_2 with "HC HA").
+        iIntros "* $ $ //".
+
+    - iApply locally_modout. iDestruct "HA" as ">HA". iModIntro. destruct dst; norm_all.
+      + repeat iApply locally_exists. iDestruct (H with "HB") as "HA".
+        iApply (locally_sep with "HA"). iApply locally_simpl. iFrame. auto.
+      + repeat iApply locally_exists. iDestruct (H with "HB") as "HA".
+        iApply (locally_sep with "HA"). iApply locally_simpl. auto.
+      + repeat iApply locally_exists. iDestruct (H with "HB") as "HA".
+        iApply (locally_sep with "HA"). iApply locally_simpl. iIntros. iSplitL "HD"; auto.
+        
+    - iApply locally_simpl. auto.
+    - iApply locally_modout. iDestruct "HA" as ">HA". iModIntro. destruct dst; norm_all.
+      + repeat iApply locally_exists. iDestruct (H with "HB") as "HA".
+        iApply (locally_sep with "HA"). iApply locally_simpl. auto.
+      + iApply locally_exists. iApply (H with "HA").
+      + repeat iApply locally_exists. instantiate (2 := x0).
+        destruct (Pos.eq_dec x0 (sd_temp sd)). iApply (H with "HA"). norm_all.
+        iApply locally_sep_indep_r. iFrame. iApply (H with "HD").
+    - iApply locally_simpl. auto.
+    - norm_all. repeat iApply locally_exists. 
+      iDestruct (H with "HB") as "HA". iDestruct (H0 with "HD") as "HB".
       iApply (locally_delete_2 with "HA HB"). iIntros "* $ $ //".
-
-    - iApply locally_modout. iDestruct "HA" as ">HA". iModIntro. destruct dst.
-      + iDestruct "HA" as (sl2 a2 sl3 al3 t0) "[HA [_ [HC [HD %]]]]". destruct H1.
-        repeat iApply locally_exists. iDestruct (H with "HC") as "HC".
-        iDestruct (H0 with "HD") as "HD". iApply locally_sep_indep_l. iFrame.
-      iApply (locally_delete_2 with "HC HD"). iIntros "* $ $ //".
-    + iDestruct "HA" as (sl2 a2 sl3 al3) "[HA [HB %]]". repeat iApply locally_exists.
-      iDestruct (H with "HA") as "HA". iDestruct (H0 with "HB") as "HB".
-      iApply (locally_delete_2 with "HA HB"). iIntros "* $ $ //".
-    + iDestruct "HA" as (sl2 a2 sl3 al3 t0) "[HA [HB [HC [HD %]]]]". destruct H1.
-      repeat iApply locally_exists. iDestruct (H with "HC") as "HC".
-      iDestruct (H0 with "HD") as "HD". iApply locally_sep_indep_l. iSplitR "HA"; auto.
-      iApply locally_sep_indep_l. iFrame. iApply (locally_delete_2 with "HC HD").
-      iIntros "* $ $ //".
-
-  - iApply locally_modout. iDestruct "HA" as ">HA". iModIntro. destruct dst.
-    + iDestruct "HA" as (sl2 al2 t0) "[HA [HB [_ %]]]". repeat iApply locally_exists.
-      iDestruct (H with "HA") as "HA". iApply (locally_sep with "HA").
-      iApply locally_simpl. iFrame. auto.
-    + iDestruct "HA" as (sl2 al2) "[HA %]". repeat iApply locally_exists.
-      iDestruct (H with "HA") as "HA". iApply (locally_sep with "HA"). iApply locally_simpl.
-      auto.
-    + iDestruct "HA" as (sl2 al2 t0) "[HA [HB [HC %]]]". repeat iApply locally_exists.
-      iDestruct (H with "HA") as "HA". iApply (locally_sep with "HA").
-      iApply locally_simpl. iIntros. iSplitL "HB"; auto.
-
-  - iApply locally_simpl. auto.
-  - iApply locally_modout. iDestruct "HA" as ">HA". iModIntro. destruct dst.
-    + iDestruct "HA" as (a2 t0) "[HA %]". repeat iApply locally_exists.
-      iDestruct (H with "HA") as "HA". iApply (locally_sep with "HA").
-      iApply locally_simpl. auto.
-    + iDestruct "HA" as (a2) "HA". iApply locally_exists. iApply (H with "HA").
-    + iDestruct "HA" as (a2 t0) "HA". repeat iApply locally_exists. instantiate (2 := t0).
-      destruct (Pos.eq_dec t0 (sd_temp sd)). iApply (H with "HA").
-      iDestruct "HA" as "[HA HB]". iApply locally_sep_indep_r. iFrame.
-      iApply (H with "HA").
-  - iApply locally_simpl. auto.
-  - iDestruct "HA" as (sl2 a2 sl3 al3) "[HA [HB %]]". repeat iApply locally_exists.
-    iDestruct (H with "HA") as "HA". iDestruct (H0 with "HB") as "HB".
-    iApply (locally_delete_2 with "HA HB"). iIntros "* $ $ //".
-Qed.
+  Qed.
     
       
 Scheme leftcontext_ind2 := Minimality for leftcontext Sort Prop
@@ -615,254 +567,131 @@ Lemma tr_expr_leftcontext_rec:
     ).
 Proof.
   
-    Ltac init H0 e' :=
-      iDestruct (H0 with "HA") as (dst' sl1 sl0 a') "[HA [% HHHHH]]"; subst;
-        repeat iExists _; iSplitL "HA"; eauto; iSplit;
-        [iPureIntro; simpl; try rewrite <- app_assoc; auto |
-         iIntros "* % *"; iDestruct ("HHHHH" $! e' with "[]") as "HHHHH"; auto;
-        iApply (locally_conseq with "HHHHH")].
+  Ltac init H0 e' H :=
+    iDestruct (H0 with H) as (dst' sl1 sl0 a') "[HA [% HHHHH]]"; subst;
+    repeat iExists _; iSplitL "HA"; eauto; iSplit;
+    [iPureIntro; simpl; try rewrite <- app_assoc; auto |
+     iIntros "* % *"; iDestruct ("HHHHH" $! e' with "[]") as "HHHHH"; auto;
+     iApply (locally_conseq with "HHHHH")].
     
-    Ltac finish_him := iIntros; iModIntro; repeat iExists _; iFrame;
-                       try rewrite <- app_assoc; eauto.
+  Ltac finish_him := iIntros "**"; try iModIntro; iFrame; repeat iExists _; iFrame;
+                     try rewrite <- app_assoc; auto.
     
-    apply leftcontext_leftcontextlist_ind; intros; iIntros "HA".
+    apply leftcontext_leftcontextlist_ind; intros; simpl; try iIntros ">HA"; iIntros; norm_all.
+
     (*base*)
     - repeat iExists _. iSplitL; eauto. iSplit. iPureIntro; apply app_nil_end.
       iIntros "* % *". iApply locally_simpl. rewrite <- app_nil_end. eauto.
       
     (* deref *)
-    - simpl. iDestruct "HA" as ">[HB HA]". iDestruct "HA" as (sl2 a2) "[HA [% %]]".
-      init H0 e'. iApply locally_simpl. iIntros "* HA !>". iFrame. repeat iExists _.
-      iFrame. rewrite <- app_assoc; auto.
+    - init H0 e' "HD". iApply locally_simpl. finish_him.
       
     (* field *)
-    - simpl. iDestruct "HA" as ">[HB HA]". iDestruct "HA" as (sl2 a2) "[HA [% %]]".
-      init H0 e'. iApply locally_simpl. iIntros "* HA !>". iFrame. repeat iExists _.
-      iFrame. rewrite <- app_assoc; auto.
+    - init H0 e' "HD". iApply locally_simpl. finish_him.
 
     (* rvalof *)
-    - simpl. iDestruct "HA" as ">[HB HA]". iDestruct "HA" as (sl2 a2 sl3) "[HA [HC %]]". init H0 e'.
-      rewrite (typeof_context _ _ _ H _ _ a0). iApply locally_simpl. iIntros "* HA !>".
-      iSplitL "HB"; auto. repeat iExists _. iFrame. rewrite <- app_assoc. auto.
+    - init H0 e' "HD". rewrite (typeof_context _ _ _ H _ _ a0).
+      iApply locally_simpl. finish_him. 
 
-      (* addrof *)
-    - simpl. iDestruct "HA" as ">[HB HA]". iDestruct "HA" as (sl2 a2) "[HA [% %]]".
-      init H0 e'. iApply locally_simpl. iIntros "* HA !>". iFrame. repeat iExists _.
-      iFrame. rewrite <- app_assoc; auto.
+    (* addrof *)
+    - init H0 e' "HD". iApply locally_simpl. finish_him.
       
-    (* unop *)
-    - simpl. iDestruct "HA" as ">[HB HA]". iDestruct "HA" as (sl2 a2) "[HA [% %]]".
-      init H0 e'. iApply locally_simpl. iIntros "* HA !>". iFrame. repeat iExists _.
-      iFrame. rewrite <- app_assoc; auto.
-              
+    - init H0 e' "HD". iApply locally_simpl. finish_him.
+      
     (* binop left *)
-    - simpl. iDestruct "HA" as ">[HB HA]". iDestruct "HA" as (sl2 a2 sl3 a3) "[HA [HC [% %]]]". 
-      iDestruct (proj1 tr_expr_invariant with "HC") as "HC".
-      init H0 e'. iApply (locally_apply with "HC"). iIntros "* HA HC !>". iSplitL "HB"; auto.
-      repeat iExists _. iFrame. rewrite <- app_assoc; auto.
+    - iDestruct (proj1 tr_expr_invariant with "HF") as "HC".
+      init H0 e' "HD". iApply (locally_apply with "HC"). finish_him.
       
     (* binop right *)
-    - simpl. iDestruct "HA" as ">[HB HA]". iDestruct "HA" as (sl2 a2 sl3 a3) "[HC [HA [% %]]]".
-      iAssert (⌜sl2 = nil⌝) as "%". iApply (tr_simple_expr_nil with "HC"); eauto. init H1 e'.
-      iDestruct (proj1 tr_expr_invariant with "HC") as "HC".
-      iApply (locally_apply with "HC"). iIntros "* HA HC !>". iSplitL "HB"; auto.
-      repeat iExists _. iFrame. rewrite <- app_assoc; auto.
+    - iAssert (⌜x = nil⌝) as "%". iApply (tr_simple_expr_nil with "HD"); eauto. 
+      iDestruct (proj1 tr_expr_invariant with "HD") as "HC".
+      init H1 e' "HF". iApply (locally_apply with "HC"). finish_him.
       
     (* cast *)
-    - simpl. iDestruct "HA" as ">[HB HA]". iDestruct "HA" as (sl2 a2) "[HA [% %]]". init H0 e'.
-      iApply locally_simpl. iIntros "* HA !>". iSplitL "HB"; auto. repeat iExists _.
-      iFrame. rewrite <- app_assoc; auto.
+    - init H0 e' "HD". iApply locally_simpl. finish_him.
       
     (* seqand *)
-    - simpl. iDestruct "HA" as ">HA". destruct dst.
-      + iDestruct "HA" as (sl2 a2 sl3 a3 t0) "[HA [HB [% %]]]". init H0 e'.
-        iDestruct (proj1 tr_expr_invariant with "HB") as "HB".
-        iApply (locally_apply with "HB"). iIntros "* HA HB !>".
-        repeat iExists _. iFrame. rewrite <- app_assoc; auto.
-      + iDestruct "HA" as (sl2 a2 sl3 a3) "[HA [HB %]]". init H0 e'.
-        iDestruct (proj1 tr_expr_invariant with "HB") as "HB".
-        iApply (locally_apply with "HB"). iIntros "* HA HB !>".
-        repeat iExists _. iFrame. rewrite <- app_assoc; auto.
-      + iDestruct "HA" as (sl2 a2 sl3 a3) "[HA [HB %]]". init H0 e'.
-        iDestruct (proj1 tr_expr_invariant with "HB") as "HB".
-        iApply (locally_apply with "HB"). iIntros "* HA H !>".
-        repeat iExists _. iFrame. rewrite <- app_assoc; auto.
-        
+    - destruct dst; norm_all; iDestruct (proj1 tr_expr_invariant with "HD") as "HD"; init H0 e' "HB";
+        iApply (locally_apply with "HD"); finish_him.
+      
     (* seqor *)
-    - simpl. iDestruct "HA" as ">HA". destruct dst.
-      + iDestruct "HA" as (sl2 a2 sl3 a3 t0) "[HA [HB [% %]]]". init H0 e'.
-        iDestruct (proj1 tr_expr_invariant with "HB") as "HB".
-        iApply (locally_apply with "HB"). iIntros "* HA HB !>".
-        repeat iExists _. iFrame. rewrite <- app_assoc; auto.
-      + iDestruct "HA" as (sl2 a2 sl3 a3) "[HA [HB %]]". init H0 e'.
-        iDestruct (proj1 tr_expr_invariant with "HB") as "HB".
-        iApply (locally_apply with "HB"). iIntros "* HA HB !>".
-        repeat iExists _. iFrame. rewrite <- app_assoc; auto.
-      + iDestruct "HA" as (sl2 a2 sl3 a3) "[HA [HB %]]". init H0 e'.
-        iDestruct (proj1 tr_expr_invariant with "HB") as "HB".
-        iApply (locally_apply with "HB"). iIntros "* HA H !>".
-        repeat iExists _. iFrame. rewrite <- app_assoc; auto.
-        
-        
+    - destruct dst; norm_all; iDestruct (proj1 tr_expr_invariant with "HD") as "HD"; init H0 e' "HB";
+        iApply (locally_apply with "HD"); finish_him.
+      
     (* condition *)
-    - simpl. iDestruct "HA" as ">HA". destruct dst.
-      + iDestruct "HA" as (sl2 a2 sl3 a3 sl4 a4 t0) "[HA [HB [% %]]]". init H0 e'.
-        iDestruct (locally_and with "[HB]") as "HB".
-        iSplit. iDestruct "HB" as "[HB _]".
-        iApply (proj1 tr_expr_invariant with "HB").
-        iDestruct "HB" as "[_ HB]".
-        iApply (proj1 tr_expr_invariant with "HB").
-        iApply (locally_apply with "HB"). iIntros "* HA HB !>". repeat iExists _.
-        iFrame. rewrite <- app_assoc; auto.
-      + iDestruct "HA" as (sl2 a2 sl3 a3 sl4 a4) "[HA [HB [HC %]]]". init H0 e'.
-        iDestruct (proj1 tr_expr_invariant with "HC") as "HC".
-        iDestruct (proj1 tr_expr_invariant with "HB") as "HB".
-        iApply (locally_delete_2 with "HC HB"). finish_him.
-      + iDestruct "HA" as "[HE HA]".
-        iDestruct "HA" as (sl2 a2 sl3 a3 sl4 a4 t0) "[HA [HB %]]". init H0 e'.
-        iDestruct (locally_and with "[HB]") as "HB".
-        iSplit. iDestruct "HB" as "[HB _]". iApply (proj1 tr_expr_invariant with "HB").
-        iDestruct "HB" as "[_ HB]". iApply (proj1 tr_expr_invariant with "HB").
-        iApply (locally_apply with "HB"). iIntros "* HA HB !>". repeat iExists _.
-        iSplitL "HE"; auto. repeat iExists _. iFrame. rewrite <- app_assoc; auto.
+    - destruct dst; norm_all.
+      + iDestruct (locally_and with "[HD]") as "HD". iSplit.
+        iDestruct "HD" as "[HB _]". iApply (proj1 tr_expr_invariant with "HB").
+        iDestruct "HD" as "[_ HB]". iApply (proj1 tr_expr_invariant with "HB").
+        init H0 e' "HB". iApply (locally_apply with "HD"). finish_him.
+      + iDestruct (proj1 tr_expr_invariant with "HD") as "HD".
+        iDestruct (proj1 tr_expr_invariant with "HF") as "HF".
+        init H0 e' "HB".  iApply (locally_delete_2 with "HD HF"). finish_him.
+      + iDestruct (locally_and with "[HF]") as "HF". iSplit.
+        iDestruct "HF" as "[HB _]". iApply (proj1 tr_expr_invariant with "HB").
+        iDestruct "HF" as "[_ HB]". iApply (proj1 tr_expr_invariant with "HB").
+        init H0 e' "HD". iApply (locally_apply with "HF"). finish_him.
         
-    - simpl. iDestruct "HA" as ">HA". destruct dst.
-      + iDestruct "HA" as (sl2 a2 sl3 a3 t0) "[HA [HB [HC [_ [% %]]]]]". init H0 e'.
-        iDestruct (proj1 tr_expr_invariant with "HB") as "HB".
-        iApply (locally_apply with "HB"). rewrite (typeof_context _ _ _ H _ _ a). 
+    - destruct dst; norm_all.
+      + iDestruct (proj1 tr_expr_invariant with "HD") as "HD".
+        init H0 e' "HB". iApply (locally_apply with "HD"). rewrite (typeof_context _ _ _ H _ _ a). 
         finish_him.
-      + iDestruct "HA" as (sl2 a2 sl3 a3) "[HA [HB %]]". init H0 e'.
-        iDestruct (proj1 tr_expr_invariant with "HB") as "HB".
-        iApply (locally_apply with "HB"). finish_him.
-      + iDestruct "HA" as (sl2 a2 sl3 a3 t0) "[HA [HB [HC [HD [% %]]]]]". init H0 e'.
-        iDestruct (proj1 tr_expr_invariant with "HB") as "HB".
-        iApply (locally_apply with "HB"). rewrite (typeof_context _ _ _ H _ _ a).
-        iIntros "* HA HB !>". repeat iExists _. iSplitL "HB"; auto.
-        iSplitL "HA"; auto. iSplitL "HC"; auto. iSplitL "HD"; auto.
-        rewrite <- app_assoc; auto.
+      + iDestruct (proj1 tr_expr_invariant with "HD") as "HD". init H0 e' "HB".
+        iApply (locally_apply with "HD"). finish_him.
+      + iDestruct (proj1 tr_expr_invariant with "HD") as "HD". init H0 e' "HB".
+        iApply (locally_apply with "HD"). rewrite (typeof_context _ _ _ H _ _ a). finish_him.
         
-    - simpl. iDestruct "HA" as ">HA". destruct dst.
-      + iDestruct "HA" as (sl2 a2 sl3 a3 t0) "[HB [HA [HC [_ [% %]]]]]".
-        iAssert (⌜ sl2 = nil ⌝) as "%". iApply (tr_simple_expr_nil with "HB"); eauto. 
-        init H1 e'. iDestruct (proj1 tr_expr_invariant with "HB") as "HB".
-        iApply (locally_apply with "HB"). finish_him.
-      + iDestruct "HA" as (sl2 a2 sl3 a3) "[HB [HA %]]".
-        iAssert (⌜ sl2 = nil ⌝) as "%". iApply (tr_simple_expr_nil with "HB"); eauto. 
-        init H1 e'. iDestruct (proj1 tr_expr_invariant with "HB") as "HB".
-        iApply (locally_apply with "HB"). finish_him.
-      + iDestruct "HA" as (sl2 a2 sl3 a3 t0) "[HB [HA [HC [HD [% %]]]]]".
-        iAssert (⌜ sl2 = nil ⌝) as "%". iApply (tr_simple_expr_nil with "HB"); eauto. 
-        init H1 e'. iDestruct (proj1 tr_expr_invariant with "HB") as "HB".
-        iApply (locally_apply with "HB"). iIntros "* HA HB !>".
-        repeat iExists _. iSplitL "HA"; auto. iSplitL "HB"; auto. iSplitL "HC"; auto.
-        iSplitL "HD"; auto. rewrite <- app_assoc; auto.
-        
-    - simpl. iDestruct "HA" as ">HA". destruct dst.
-      + iDestruct "HA" as (sl2 a2 sl3 a3 sl4 a4 t0) "[HA [HB [HC [HD [_ [% %]]]]]]". init H0 e'.
-        rewrite (typeof_context _ _ _ H _ _ a).
-        iDestruct (proj1 tr_expr_invariant with "HB") as "HB".
-        iApply (locally_apply with "HB"). finish_him.
-      + iDestruct "HA" as (sl2 a2 sl3 a3 sl4 a4) "[HA [HB [HC %]]]". init H0 e'.
-        rewrite (typeof_context _ _ _ H _ _ a0).
-        iDestruct (proj1 tr_expr_invariant with "HB") as "HB".
-        iApply (locally_apply with "HB"). finish_him.
-      + iDestruct "HA" as (sl2 a2 sl3 a3 sl4 a4 t0) "[HA [HB [HC [HD [HE [% %]]]]]]". init H0 e'.
-        rewrite (typeof_context _ _ _ H _ _ a).
-        iDestruct (proj1 tr_expr_invariant with "HB") as "HB".
-        iApply (locally_apply with "HB"). iIntros "* HA HB !>". repeat iExists _.
-        iSplitL "HB"; auto. iSplitL "HA"; auto. iSplitL "HC"; auto. iSplitL "HD"; auto.
-        iSplitL "HE"; auto. rewrite <- app_assoc; auto.
-        
-    - simpl. iDestruct "HA" as ">HA". destruct dst.
-      + iDestruct "HA" as (sl2 a2 sl3 a3 sl4 a4 t0) "[HB [HA [HC [HD [_ [% %]]]]]]". 
-        iAssert (⌜ sl2 = nil ⌝) as "%". iApply (tr_simple_expr_nil with "HB"); eauto.
-        init H1 e'. iDestruct (proj1 tr_expr_invariant with "HB") as "HB".
-        iApply (locally_apply with "HB"). finish_him.
-      + iDestruct "HA" as (sl2 a2 sl3 a3 sl4 a4) "[HB [HA [HC %]]]".
-        iAssert (⌜ sl2 = nil ⌝) as "%". iApply (tr_simple_expr_nil with "HB"); eauto.
-        init H1 e'. iDestruct (proj1 tr_expr_invariant with "HB") as "HB".
-        iApply (locally_consequence with "[HC] HB"). finish_him.
-      + iDestruct "HA" as (sl2 a2 sl3 a3 sl4 a4 t0) "[HB [HA [HC [HD [HE [% %]]]]]]".
-        iAssert (⌜ sl2 = nil ⌝) as "%". iApply (tr_simple_expr_nil with "HB"); eauto.
-        init H1 e'. iDestruct (proj1 tr_expr_invariant with "HB") as "HB".
-        iApply (locally_apply with "HB"). iIntros "* HA HB !>". repeat iExists _.
-        iSplitL "HA"; auto. iSplitL "HB"; auto. iSplitL "HC"; auto. iSplitL "HD"; auto.
-        iSplitL "HE"; auto. rewrite <- app_assoc; auto.
-        
-    - simpl. iDestruct "HA" as (sl2 a2) ">[HA HB]". destruct dst.
-      + iDestruct "HB" as (t0) "[HB [_ [% %]]]". init H0 e'.
-        iApply locally_simpl. iIntros "* HA !>".
-        repeat iExists _. iFrame. iExists t0. iFrame. rewrite app_ass.
-        rewrite (typeof_context _ _ _ H _ _ a). eauto.
-      + iDestruct "HB" as (sl3 a3) "[HB %]". init H0 e'.
-        rewrite (typeof_context _ _ _ H _ _ a0). iApply locally_simpl.
-        iIntros "* HA !>". repeat iExists _. iFrame. repeat iExists _. iFrame.
-        rewrite app_ass. auto.
-      + iDestruct "HB" as (t0) "[HB [HC [% %]]]". init H0 e'.
-        iApply locally_simpl. iIntros "* HA !>".
-        repeat iExists _. iFrame. iExists t0. iFrame. rewrite app_ass.
-        rewrite (typeof_context _ _ _ H _ _ a). eauto.
-        
-    - simpl. iDestruct "HA" as ">HA". destruct dst.
-      + iDestruct "HA" as (sl2 a2 sl3 al3 t0) "[HB [_ [HA [HC [% %]]]]]". init H0 e'.
-        iDestruct (proj2 tr_expr_invariant with "HC") as "HC".
-        iApply (locally_apply with "HC"). finish_him.
-      + iDestruct "HA" as (sl2 a2 sl3 al3) "[HA [HB %]]". init H0 e'.
-        iDestruct (proj2 tr_expr_invariant with "HB") as "HB".
-        iApply (locally_apply with "HB"). finish_him.
-      + iDestruct "HA" as (sl2 a2 sl3 al3 t0) "[HB [HD [HA [HC [% %]]]]]". init H0 e'.
-        iDestruct (proj2 tr_expr_invariant with "HC") as "HC".
-        iApply (locally_apply with "HC"). iIntros "* HA HC !>". repeat iExists _.
-        iSplitL "HB"; auto. iFrame. rewrite <- app_assoc; auto.
-
-    - simpl. iDestruct "HA" as ">HA". destruct dst.
-      + iDestruct "HA" as (sl2 a2 sl3 al3 t0) "[HC [_ [HB [HA [% %]]]]]".
-        iAssert (⌜ sl2 = nil ⌝) as "%". iApply (tr_simple_expr_nil with "HB"); eauto.
-        init H1 e'. iDestruct (proj1 tr_expr_invariant with "HB") as "HB".
-        iApply (locally_apply with "HB"). finish_him.
-      + iDestruct "HA" as (sl2 a2 sl3 al3) "[HB [HA %]]".
-        iAssert (⌜ sl2 = nil ⌝) as "%". iApply (tr_simple_expr_nil with "HB"); eauto. init H1 e'.
-        iDestruct (proj1 tr_expr_invariant with "HB") as "HB".
-        iApply (locally_apply with "HB"). finish_him.
-      + iDestruct "HA" as (sl2 a2 sl3 al3 t0) "[HC [HD [HB [HA [% %]]]]]".
-        iAssert (⌜ sl2 = nil ⌝) as "%". iApply (tr_simple_expr_nil with "HB"); eauto.
-        init H1 e'. iDestruct (proj1 tr_expr_invariant with "HB") as "HB".
-        iApply (locally_apply with "HB"). iIntros "* HA HB !>". repeat iExists _.
-        iSplitL "HC"; auto. iFrame. rewrite <- app_assoc; auto.
-        
-    - simpl. iDestruct "HA" as ">HA". destruct dst.
-      + iDestruct "HA" as (sl2 al2 t0) "[HA [HB [_ [% %]]]]". init H0 e'.
-        iApply locally_simpl. finish_him.
-      + iDestruct "HA" as (sl2 al2) "[HA %]". init H0 e'.
-        iApply locally_simpl. finish_him.
-      + iDestruct "HA" as (sl2 al2 t0) "[HA [HB [HC [% %]]]]". init H0 e'.
-        iApply locally_simpl. iIntros "* HA !>". repeat iExists _. iSplitL "HA"; auto.
-        iSplitL "HB"; auto. iSplitL "HC"; auto. rewrite <- app_assoc; auto.
-        
-    - simpl. iDestruct "HA" as (sl2 a2 sl3) ">[HA [HB %]]". init H0 e'.
-      iDestruct (proj1 tr_expr_invariant with "HB") as "HB".
-      iApply (locally_apply with "HB"). finish_him.
+    - destruct dst; norm_all; iDestruct (tr_simple_expr_nil with "HB [] []") as "%"; auto;
+        iDestruct (proj1 tr_expr_invariant with "HB") as "HB"; init H1 e' "HD";
+         iApply (locally_apply with "HB"); finish_him.
               
-    - simpl. iDestruct "HA" as ">HA". destruct dst.
-      + iDestruct "HA" as (a2 t0) "[HA %]". init H0 e'.
-        iApply locally_simpl. finish_him.
-      + iDestruct "HA" as (a2) "HA". init H0 e'.
-        iApply locally_simpl. finish_him.
-      + iDestruct "HA" as (a2 t0) "HA".
-        destruct (Pos.eq_dec t0 (sd_temp sd)) eqn:?.
-        * init H0 e'. iApply locally_simpl. finish_him.
+    - destruct dst; norm_all; iDestruct (proj1 tr_expr_invariant with "HD") as "HD"; init H0 e' "HB";
+      rewrite (typeof_context _ _ _ H e' e _); auto; iApply (locally_apply with "HD"); finish_him.        
+    - destruct dst; norm_all;  iDestruct (tr_simple_expr_nil with "HB [] []") as "%"; auto;
+        iDestruct (proj1 tr_expr_invariant with "HB") as "HB"; init H1 e' "HD";
+          iApply (locally_apply with "HB"); finish_him.
+      
+    - destruct dst; norm_all; init H0 e' "HB"; iApply locally_simpl;
+        rewrite (typeof_context _ _ _ H e e' _); auto; iIntros "* HA !>"; repeat iExists _; iFrame;
+          repeat iExists _; iSplitL; auto; rewrite app_ass; auto.
+      
+    - destruct dst; norm_all.
+      + iDestruct (proj2 tr_expr_invariant with "HH") as "HH". init H0 e' "HF".
+        iApply (locally_apply with "HH"). finish_him.
+      + iDestruct (proj2 tr_expr_invariant with "HD") as "HD". init H0 e' "HB".
+        iApply (locally_apply with "HD"). finish_him.
+      + iDestruct (proj2 tr_expr_invariant with "HH") as "HH". init H0 e' "HF".
+        iApply (locally_apply with "HH"). finish_him. 
+
+    - destruct dst; norm_all.
+      + iDestruct (tr_simple_expr_nil with "HF [] []") as "%"; auto.
+        iDestruct (proj1 tr_expr_invariant with "HF") as "HF". init H1 e' "HH". 
+        iApply (locally_apply with "HF"). finish_him.
+      + iDestruct (tr_simple_expr_nil with "HB [] []") as "%"; auto.
+        iDestruct (proj1 tr_expr_invariant with "HB") as "HB". init H1 e' "HD".
+        iApply (locally_apply with "HB"). finish_him.
+      + iDestruct (tr_simple_expr_nil with "HF [] []") as "%"; auto.
+        iDestruct (proj1 tr_expr_invariant with "HF") as "HF". init H1 e' "HH". 
+        iApply (locally_apply with "HF"). finish_him.
+        
+    - destruct dst; norm_all; init H0 e' "HB"; iApply locally_simpl; finish_him.
+              
+    - iDestruct (proj1 tr_expr_invariant with "HD") as "HD". init H0 e' "HB".
+      iApply (locally_apply with "HD"). finish_him.
+              
+    - destruct dst; norm_all.
+      + init H0 e' "HB". iApply locally_simpl. finish_him. 
+      + init H0 e' "HA". iApply locally_simpl. finish_him. 
+      + destruct (Pos.eq_dec x0 (sd_temp sd)) eqn:?; norm_all.
+        * init H0 e' "HA". iApply locally_simpl. finish_him.
           instantiate (2 := (sd_temp sd)). rewrite Heqs. iFrame.
-        * iDestruct "HA" as "[HA HB]". init H0 e'. iApply locally_simpl. finish_him.
-          instantiate (2 := t0). rewrite Heqs. iFrame.
-    - simpl. iDestruct "HA" as (sl2 a2 sl3 al3) "[HA [HB %]]". destruct H1. init H0 e'.
-      iDestruct (proj2 tr_expr_invariant with "HB") as "HB".
-      iApply (locally_consequence with "[] HB").
-      iIntros "* HA HB". repeat iExists _. iFrame. rewrite <- app_assoc; auto.
-    - simpl. iDestruct "HA" as (sl2 a2 sl3 al3) "[HB [HA [% %]]]".
-      iAssert (⌜sl2 = nil⌝) as "%". iApply (tr_simple_expr_nil with "HB"); auto. 
-      init H1 e'. iDestruct (proj1 tr_expr_invariant with "HB") as "HB".
-      iApply (locally_apply with "HB"). iIntros "* HA HB". repeat iExists _.
-      iFrame. rewrite app_nil_l. eauto.
+        * init H0 e' "HB". iApply locally_simpl. finish_him.
+          instantiate (2 := x0). rewrite Heqs. iFrame.
+    - iDestruct (proj2 tr_expr_invariant with "HD") as "HD". init H0 e' "HB".
+      iApply (locally_apply with "HD"). finish_him.
+    - iDestruct (tr_simple_expr_nil with "HB [] []") as "%"; auto.
+      iDestruct (proj1 tr_expr_invariant with "HB") as "HB". init H1 e' "HD".
+      iApply (locally_apply with "HB"). finish_him.
   Qed.
 
 Theorem tr_expr_leftcontext:
@@ -1268,10 +1097,9 @@ Qed.
 Lemma tr_rvalof_nolabel:
   forall ty a sl a', ⊢ tr_rvalof ty a sl a' -∗ ⌜ nolabel_list sl ⌝.
 Proof.
-  iIntros (ty a sl a') "HA". unfold tr_rvalof. destruct (type_is_volatile ty) eqn:?.
-  - iDestruct "HA" as (t0) "[% HA]". inversion H; subst. clear H.
-    iPureIntro. simpl. split; auto. apply make_set_nolabel.
-  - iDestruct "HA" as "%". inversion H; subst. iPureIntro. constructor.
+  iIntros. unfold tr_rvalof.
+  destruct (type_is_volatile ty) eqn:?; norm_all; subst; iPureIntro; repeat constructor.
+  apply make_set_nolabel. 
 Qed.
 
 Lemma nolabel_do_set:
@@ -1307,142 +1135,72 @@ Lemma tr_find_label_expr:
   (forall r le dst sl a, ⊢ tr_expr le dst r sl a -∗ ⌜ nolabel_list sl ⌝)
 /\(forall rl le sl al, ⊢ tr_exprlist le rl sl al -∗ ⌜ nolabel_list sl ⌝).
 Proof.
-  apply tr_expr_exprlist; intros; iIntros "HA"; try iIntros "HB".
-  - destruct dst; simpl.
-    + iDestruct "HA"as ">[HA [% %]]". subst; NoLabelTac.
-    + iDestruct "HA" as ">%"; subst; NoLabelTac.
-    + iDestruct "HA" as ">[_ HA]". iDestruct "HA" as (a0) "[HA [% %]]".
-      subst; NoLabelTac. iPureIntro. apply nolabel_do_set.
-  - simpl. iDestruct "HA" as ">[HA [% %]]". subst. iPureIntro. NoLabelTac.
-  - simpl. iDestruct "HA" as ">[HA HB]". iDestruct "HB" as (sl2 a2) "[HB [% %]]". subst.
-    iDestruct (H with "HB") as "%"; auto. iPureIntro. NoLabelTac.
-  - simpl. iDestruct "HA" as ">[HA HB]". iDestruct "HB" as (sl2 a2 sl3) "[HC [HB %]]".
-    iDestruct (H with "HC") as "%"; auto. iDestruct (tr_rvalof_nolabel with "HB") as "%".
+  apply tr_expr_exprlist; intros; simpl; try iIntros ">HA"; try iIntros "HB"; norm_all.
+  - destruct dst; norm_all.
+    + subst; NoLabelTac.
+    + subst; NoLabelTac.
+    + iDestruct "HA" as "[_ HA]". norm_all. subst; NoLabelTac. iPureIntro. apply nolabel_do_set.
+  - subst. iPureIntro. NoLabelTac.
+  - iDestruct (H with "HD") as "%"; auto. subst. iPureIntro. NoLabelTac.
+  - iDestruct (H with "HD") as "%"; auto. iDestruct (tr_rvalof_nolabel with "HF") as "%".
     subst. iPureIntro. NoLabelTac.
-  - simpl. iDestruct "HA" as ">[HC HB]". iDestruct "HB" as (sl2 a2) "[HA [% %]]".
-    iDestruct (H with "HA") as "%"; auto. iPureIntro. subst. NoLabelTac.
-  - simpl. iDestruct "HA" as ">[HC HA]". iDestruct "HA" as (sl2 a2) "[HA [% %]]".
-    iDestruct (H with "HA") as "%"; auto. subst. iPureIntro. NoLabelTac.
-  - simpl. iDestruct "HA" as ">[HC HA]". iDestruct "HA" as (sl2 a2) "[HA [% _]]".
-    iDestruct (H with "HA") as "%"; auto. subst. iPureIntro. NoLabelTac.
-  - simpl. iDestruct "HA" as ">[HC HA]".
-    iDestruct "HA" as (sl2 a2 sl3 a3) "[HA [HB [% _]]]". 
-    iDestruct (H with "HA") as "%"; auto. iDestruct (H0 with "HB") as "%"; auto.
-    subst. iPureIntro. NoLabelTac.
-  - simpl. iDestruct "HA" as ">[HC HA]". iDestruct "HA" as (sl2 a2) "[HA [% %]]".
-    iDestruct (H with "HA") as "%"; auto. subst. iPureIntro. NoLabelTac.
-  - simpl. iDestruct "HA" as ">HA". destruct dst; simpl.
-    + iDestruct "HA" as (sl2 a2 sl3 a3 t0) "[HD [HC [% %]]]".
-      iDestruct (H with "HD") as "%"; auto.
-      iDestruct (H0 with "HC") as "%". subst. iPureIntro. NoLabelTac. 
-    + simpl. iDestruct "HA" as (sl2 a2 sl3 a3) "[HA [HD %]]". 
-      iDestruct (H with "HA") as "%"; auto. iDestruct (H0 with "HD") as "%"; auto.
-      subst. iPureIntro. NoLabelTac. 
-    + iDestruct "HA" as (sl2 a2 sl3 a3) "[HA [HC %]]". 
-      iDestruct (H with "HA") as "%"; auto. 
-      iDestruct (H0 with "HC") as "%". iPureIntro. subst. NoLabelTac.
-  - simpl. iDestruct "HA" as ">HA". destruct dst; simpl.
-    + iDestruct "HA" as (sl2 a2 sl3 a3 t0) "[HD [HC [% _]]]".
-      iDestruct (H with "HD") as "%"; auto. iDestruct (H0 with "HC") as "%".
+  - iDestruct (H with "HD") as "%"; auto. iPureIntro. subst. NoLabelTac.
+  - iDestruct (H with "HD") as "%"; auto. iPureIntro. subst. NoLabelTac.
+  - iDestruct (H with "HD") as "%"; auto. iPureIntro. subst. NoLabelTac.
+  - iDestruct (H with "HD") as "%"; auto. iDestruct (H0 with "HF") as "%"; auto.
+    iPureIntro. subst. NoLabelTac. 
+  - iDestruct (H with "HD") as "%"; auto. iPureIntro. subst. NoLabelTac.
+  - destruct dst; norm_all; iDestruct (H with "HB") as "%";
+      iDestruct (H0 with "HD") as "%"; subst; iPureIntro; NoLabelTac. 
+  - destruct dst; norm_all; iDestruct (H with "HB") as "%"; iDestruct (H0 with "HD") as "%";
+      subst; iPureIntro; NoLabelTac.
+          
+  - destruct dst; norm_all.
+    + iDestruct (H with "HB") as "%"; auto.
+      iDestruct (H0 with "[HD]") as "%". iDestruct "HD" as "[HD _]"; auto.
+      iDestruct (H1 with "[HD]") as "%". iDestruct "HD" as "[_ HD]"; auto.
       subst. iPureIntro. NoLabelTac.
-    + simpl. iDestruct "HA" as (sl2 a2 sl3 a3) "[HA [HD %]]". 
-      iDestruct (H with "HA") as "%"; auto.
-      iDestruct (H0 with "HD") as "%"; auto. subst. 
-      iPureIntro. NoLabelTac. 
-    + iDestruct "HA" as (sl2 a2 sl3 a3) "[HA [HC %]]". 
-      iDestruct (H with "HA") as "%"; auto.
-      iDestruct (H0 with "HC") as "%"; auto. subst.
-      iPureIntro. NoLabelTac.
-      
-  - simpl. iDestruct "HA" as ">HA". destruct dst; simpl.
-    + iDestruct "HA" as (sl2 a2 sl3 a3 sl4 a4 t0) "[HE [HC [% _]]]".
-      iDestruct (H with "HE") as "%"; auto.
-      iDestruct (H0 with "[HC]") as "%". iDestruct "HC" as "[HC _]"; auto.
-      iDestruct (H1 with "[HC]") as "%". iDestruct "HC" as "[_ HC]"; auto.
-      subst. iPureIntro. NoLabelTac.
-    + iDestruct "HA" as (sl2 a2 sl3 a3 sl4 a4) "[HA [HE [HC %]]]".
-      iDestruct (H with "HA") as "%"; auto. iDestruct (H0 with "HE") as "%"; auto.
-      iDestruct (H1 with "HC") as "%"; auto. subst. iPureIntro. NoLabelTac.
-    + iDestruct "HA" as "[HB HA]".
-      iDestruct "HA" as (sl2 a2 sl3 a3 sl4 a4 t0) "[HA [HC %]]".
-      iDestruct (H with "HA") as "%"; auto.
-      iDestruct (H0 with "[HC]") as "%". iDestruct "HC" as "[HC _]"; auto.
-      iDestruct (H1 with "[HC]") as "%". iDestruct "HC" as "[_ HC]"; auto.
+    + iDestruct (H with "HB") as "%"; auto. iDestruct (H0 with "HD") as "%"; auto.
+      iDestruct (H1 with "HF") as "%"; auto. subst. iPureIntro. NoLabelTac.
+    + iDestruct (H with "HD") as "%"; auto.
+      iDestruct (H0 with "[HF]") as "%". iDestruct "HF" as "[HC _]"; auto.
+      iDestruct (H1 with "[HF]") as "%". iDestruct "HF" as "[_ HC]"; auto.
       subst. iPureIntro. NoLabelTac.
       
-  - simpl. iDestruct "HA" as ">[HB [% _]]". subst. iPureIntro. apply nolabel_final.
-  - simpl. iDestruct "HA" as ">[HB [% _]]". subst. iPureIntro. apply nolabel_final.
+  - subst. iPureIntro. apply nolabel_final.
+  - subst. iPureIntro. apply nolabel_final.
 
-  - simpl. iDestruct "HA" as ">HA". destruct dst; simpl.
-    + iDestruct "HA" as (sl2 a2 sl3 a3 t0) "[HA [HD [HC [_ [% %]]]]]".
-      iDestruct (H with "HA") as "%"; auto.
-      iDestruct (H0 with "HD") as "%"; auto. subst.
-      iPureIntro. NoLabelTac.
-    + iDestruct "HA" as (sl2 a2 sl3 a3) "[HA [HD %]]".
-      iDestruct (H with "HA") as "%"; auto.
-      iDestruct (H0 with "HD") as "%"; auto. subst.
-      iPureIntro. NoLabelTac.
-    + iDestruct "HA" as (sl2 a2 sl3 a3 t0) "[HA [HD [HC [HB [% %]]]]]".
-      iDestruct (H with "HA") as "%"; auto. iDestruct (H0 with "HD") as "%"; auto.
+  - destruct dst; norm_all; iDestruct (H with "HB") as "%"; iDestruct (H0 with "HD") as "%"; subst;
+      iPureIntro; NoLabelTac.
+          
+  - destruct dst; norm_all; iDestruct (H with "HB") as "%"; iDestruct (H0 with "HD") as "%";
+      iDestruct (tr_rvalof_nolabel with "HF") as "%"; subst; iPureIntro; NoLabelTac.
+    
+  - destruct dst; norm_all.
+    + iDestruct (H with "HB") as "%". subst. iPureIntro. NoLabelTac.
+    + iDestruct (tr_rvalof_nolabel with "HD") as "%". iDestruct (H with "HB") as "%".
       subst. iPureIntro. NoLabelTac.
-      
-  - simpl. iDestruct "HA" as ">HA". destruct dst; simpl.
-    + iDestruct "HA" as (sl2 a2 sl3 a3 sl4 a4 t0) "[HA [HD [HC [HE [_ [% %]]]]]]".
-      iDestruct (H with "HA") as "%"; auto. iDestruct (H0 with "HD") as "%"; auto.
-      iDestruct (tr_rvalof_nolabel with "HC") as "%". subst.
-      iPureIntro. NoLabelTac.
-    + iDestruct "HA" as (sl2 a2 sl3 a3 sl4 a4) "[HA [HD [HC %]]]".
-      iDestruct (H with "HA") as "%"; auto. iDestruct (H0 with "HD") as "%"; auto.
-      iDestruct (tr_rvalof_nolabel with "HC") as "%". subst.
-      iPureIntro. NoLabelTac.
-    + iDestruct "HA" as (sl2 a2 sl3 a3 sl4 a4 t0) "[HA [HD [HC [HE [HB [% _]]]]]]".
-      iDestruct (H with "HA") as "%"; auto. iDestruct (H0 with "HD") as "%"; auto.
-      iDestruct (tr_rvalof_nolabel with "HC") as "%". subst. 
-      iPureIntro. NoLabelTac.
-      
-  - simpl. iDestruct "HA" as ">HA".
-    iDestruct "HA" as (sl2 a2) "[HC HA]". destruct dst.
-    + iDestruct "HA" as (t0) "[HD [_ [% _]]]". iDestruct (H with "HC") as "%"; auto. subst.
-      iPureIntro. NoLabelTac.
-    + iDestruct "HA" as (sl3 a3) "[HD %]". iDestruct (tr_rvalof_nolabel with "HD") as "%".       
-      iDestruct (H with "HC") as "%"; auto. subst. iPureIntro. NoLabelTac.
-    + iDestruct "HA" as (t0) "[HD [HA [% _]]]". iDestruct (H with "HC") as "%"; auto. subst.
-      iPureIntro. NoLabelTac.
-  - simpl. iDestruct "HA" as (sl2 a2 sl3) ">[HA [HC %]]".
-    iDestruct (H with "HA") as "%"; auto. iDestruct (H0 with "HC") as "%"; auto.
-    subst. iPureIntro. NoLabelTac.
-  - simpl. iDestruct "HA" as ">HA". destruct dst.
-    + iDestruct "HA" as (sl2 a2 sl3 al3 t0) "[HA [HD [HC [HB [% _]]]]]".
-      iDestruct (H with "HC") as "%"; auto. iDestruct (H0 with "HB") as "%". subst.
-      iPureIntro. NoLabelTac.
-    + iDestruct "HA" as (sl2 a2 sl3 al3) "[HA [HC %]]".
-      iDestruct (H with "HA") as "%"; auto. iDestruct (H0 with "HC") as "%".
+    + iDestruct (H with "HB") as "%". subst. iPureIntro. NoLabelTac.
+  - iDestruct (H with "HB") as "%". iDestruct (H0 with "HD") as "%". subst. iPureIntro. NoLabelTac.
+  - destruct dst; norm_all.
+    + iDestruct (H with "HF") as "%"; auto. iDestruct (H0 with "HH") as "%".
       subst. iPureIntro. NoLabelTac.
-    + iDestruct "HA" as (sl2 a2 sl3 al3 t0) "[HA [HB [HD [HC [% _]]]]]".
-      iDestruct (H with "HD") as "%"; auto. iDestruct (H0 with "HC") as "%". subst.
-      iPureIntro. NoLabelTac.
-      
-  - simpl. iDestruct "HA" as ">HA". destruct dst.
-    + iDestruct "HA" as (sl2 al2 t0) "[HA [HC [_ [% _]]]]".
-      iDestruct (H with "HA") as "%". subst.
-      iPureIntro. NoLabelTac.
-    + iDestruct "HA" as (sl2 al2) "[HA %]". 
-      iDestruct (H with "HA") as "%". subst.
-      iPureIntro. NoLabelTac.
-    + iDestruct "HA" as (sl2 al2 t0) "[HA [HC [HB [% _]]]]".
-      iDestruct (H with "HA") as "%". subst. iPureIntro. NoLabelTac.
-  - iExFalso. simpl. iDestruct "HA" as ">HA". auto.
-  - simpl. iDestruct "HA" as ">HA". destruct dst; simpl.
-    + iDestruct "HA" as (a2 t0) "[HA %]". iDestruct (H with "HA") as "%".
+    + iDestruct (H with "HB") as "%". iDestruct (H0 with "HD") as "%".
       subst. iPureIntro. NoLabelTac.
-    + iDestruct "HA" as (a2) "HA". iDestruct (H with "HA") as "%"; auto.
-    + iDestruct "HA" as (a2 t0) "HA". destruct (Pos.eq_dec t0 (sd_temp sd)).
+    + iDestruct (H with "HF") as "%". iDestruct (H0 with "HH") as "%". subst. iPureIntro. NoLabelTac.
+      
+  - destruct dst; norm_all.
+    + iDestruct (H with "HB") as "%". subst. iPureIntro. NoLabelTac.
+    + iDestruct (H with "HB") as "%". subst. iPureIntro. NoLabelTac.
+    + iDestruct (H with "HB") as "%". subst. iPureIntro. NoLabelTac.
+  - destruct dst; norm_all.
+    + iApply (H with "HB"). 
+    + iApply (H with "HA").
+    + destruct (Pos.eq_dec x0 (sd_temp sd)); norm_all.
       * iApply (H with "HA").
-      * iDestruct "HA" as "[HA _]". iApply (H with "HA").
-  - simpl. iDestruct "HA" as "[% _]". subst. NoLabelTac.
-  - simpl. iDestruct "HA" as (sl2 a2 sl3 al3) "[HA [HB [% _]]]".
-    iDestruct (H with "HA") as "%". iDestruct (H0 with "HB") as "%". subst.
-    iPureIntro. NoLabelTac.
+      * iApply (H with "HB"). 
+  - subst. NoLabelTac.
+  - iDestruct (H with "HA") as "%". iDestruct (H0 with "HD") as "%". subst. iPureIntro. NoLabelTac.
 Qed.
                                         
 Lemma tr_find_label_top:
@@ -1674,22 +1432,22 @@ Proof.
   repeat split; auto with heap_scope. erewrite <- H0. apply gss. apply lookup_singleton.
 Qed.
 
-Lemma tr_expr_dest : forall r le dst sl a, ⊢ tr_expr le dst r sl a -∗ dest_below dst ∗ True.
+Lemma tr_expr_dest : forall r le dst sl a, ⊢ tr_expr le dst r sl a -∗ <absorb> dest_below dst.
 Proof.
-  induction r; iIntros "* HA"; simpl; try iDestruct "HA" as ">[$ _] //"; iDestruct "HA" as ">HA".
-  - destruct dst; auto. iDestruct "HA" as "[>$ _] //".
-  - destruct dst; auto. iDestruct "HA" as (sl2 a2 sl3 a3) "[HA [HB _]]". iApply (IHr2 with "HB").
-  - destruct dst; auto. iDestruct "HA" as (sl2 a2 sl3 a3) "[HA [HB _]]". iApply (IHr2 with "HB").
-  - destruct dst; auto. iDestruct "HA" as "[$ _]".
-  - destruct dst; auto. iDestruct "HA" as (sl2 a2 sl3 a3 t0) "[_ [_ [_ [$ _]]]]".
-  - destruct dst; auto. iDestruct "HA" as (sl2 a2 sl3 a3 sl4 a4 t0) "[_ [_ [_ [_ [$ _]]]]]".
-  - iDestruct "HA" as (sl2 a2) "[HA HB]". destruct dst; auto. iDestruct "HB" as (t0) "[_ [$ _]]".
-  - iDestruct "HA" as (sl2 a2 sl3) "[_ [HA _]]". iApply (IHr2 with "HA").
-  - destruct dst; auto. iDestruct "HA" as (sl2 a2 sl3 a3 t0) "[_ [$ _]]".
-  - destruct dst; auto. iDestruct "HA" as (sl2 a2 t0) "[_ [_ [$ _]]]".
-  - iExFalso. iApply "HA".
-  - destruct dst; auto. iDestruct "HA" as (a2 t0) "HA". destruct (Pos.eq_dec t0 (sd_temp sd)); subst.
-    iApply (IHr with "HA"). iDestruct "HA" as "[_ $]".
+  induction r; iIntros "* HA"; simpl; iDestruct "HA" as ">HA"; norm_all.
+  - destruct dst; norm_all. iDestruct "HA" as "[$ _]".
+  - destruct dst; norm_all. iApply (IHr2 with "HD").
+  - destruct dst; norm_all. iApply (IHr2 with "HD").
+  - destruct dst; norm_all. 
+  - destruct dst; norm_all.
+  - destruct dst; norm_all.
+  - destruct dst; norm_all. 
+  - iApply (IHr2 with "HD").
+  - destruct dst; norm_all.
+  - destruct dst; norm_all.
+  - contradiction.
+  - destruct dst; norm_all. destruct (Pos.eq_dec x0 (sd_temp sd)); norm_all; subst.
+    iApply (IHr with "HA"). 
 Qed.
 
 Lemma pure_next_step P (R : Prop) (Q : iProp) :
@@ -1746,15 +1504,15 @@ Proof.
    + exploit tr_expr_leftcontext; eauto. intro. apply soundness3 in H2.
      apply (soundness1 tmps). iIntros "HA". iDestruct (H2 with "HA") as "HA".
      iDestruct (H4 with "HA") as (dst'' sl1 sl2 a') "[P [% R]]".
-     simpl. iDestruct "P" as ">[Hdest P]". iDestruct "P" as (sl0 a0 sl3) "[HA [HB %]]".
-     iDestruct (tr_simple_lvalue with "HA") as "[% [% %]]"; eauto. subst. 
-     unfold tr_rvalof. rewrite H3. iDestruct "HB" as (t1) "[[% %] HB]". subst.
+     simpl. iDestruct "P" as ">P". norm_all.
+     iDestruct (tr_simple_lvalue with "HG") as "[% [% %]]"; eauto. subst. 
+     unfold tr_rvalof. rewrite H3. norm_all. subst.
      iExists _. iSplit. 
      * iPureIntro. left. eapply plus_two. constructor. eapply step_make_set; eauto. traceEq.
-     * fold Kseqlist. iClear "HA". iConstructor.
+     * fold Kseqlist. iClear "HG". iConstructor.
        iIntros "[HA [HB HC]]".
        iDestruct ("HC" $! (Eval v (Csyntax.typeof l)) with "[]") as "HC"; eauto.
-       iDestruct (locally_set with "HB HC") as "[HC HB]"; eauto.
+       iDestruct (locally_set with "[HB] HC") as "[HC HB]"; eauto.
        iApply (locally_out with "HC"). simpl. destruct dst''.
        -- iModIntro. iSplit; auto. iIntros. iApply locally_conseq_pure. intros. constructor.
           eapply H5. simpl. iApply locally_finish. iFrame.
@@ -1770,10 +1528,9 @@ Proof.
      intro. apply soundness3 in H2.
      apply (soundness1 tmps). iIntros "HA". iDestruct (H2 with "HA") as "HA". 
      iDestruct (H3 with "HA") as (dst' sl1 sl2 a') "[P [% R]]". clear H2. clear H3.
-     simpl. iDestruct "P" as ">P". destruct dst'.
-     * iDestruct "P" as (sl0 a0 sl3 a3 t0) "[HA [HB [% %]]]".
-       iDestruct (tr_simple_rvalue with "HA") as "[% [% %]]"; eauto. subst.
-       iClear "HA". iExists _. iSplit.
+     simpl. iDestruct "P" as ">P". destruct dst'; norm_all.
+     * iDestruct (tr_simple_rvalue with "HE") as "[% [% %]]"; eauto. subst.
+       iClear "HE". iExists _. iSplit.
        -- iPureIntro. left. simpl Kseqlist. eapply plus_left. constructor. eapply star_trans.
           apply step_makeif with (b := true) (v1 := v); auto. congruence.
           apply push_seq. reflexivity. reflexivity.
@@ -1781,9 +1538,8 @@ Proof.
           iDestruct ("HB" $! (Eparen r2 type_bool ty) with "[]") as "HC"; eauto.
           iApply (locally_out with "HC"). simpl.
           iModIntro. repeat iExists _. iFrame. eauto.
-     * iDestruct "P" as (sl0 a2 sl3 a3) "[HA [HB %]]".
-       iDestruct (tr_simple_rvalue with "HA") as "[% [% %]]"; eauto. subst.
-       iClear "HA". iExists _. iSplit.
+     * iDestruct (tr_simple_rvalue with "HE") as "[% [% %]]"; eauto. subst.
+       iClear "HE". iExists _. iSplit.
        -- iPureIntro. left. simpl Kseqlist. eapply plus_left. constructor. eapply star_trans.
           apply step_makeif with (b := true) (v1 := v); auto. congruence.
           apply push_seq. reflexivity. reflexivity.
@@ -1791,9 +1547,8 @@ Proof.
           iDestruct ("HB" $! (Eparen r2 type_bool ty) with "[]") as "HC"; eauto.
           iApply (locally_out with "HC"). simpl.
           iModIntro. repeat iExists _. iFrame.
-     * iDestruct "P" as (sl0 a2 sl3 a3) "[HA [HB %]]".
-       iDestruct (tr_simple_rvalue with "HA") as "[% [% %]]"; eauto. subst.
-       iClear "HA". iExists _. iSplit.
+     * iDestruct (tr_simple_rvalue with "HE") as "[% [% %]]"; eauto. subst.
+       iClear "HE". iExists _. iSplit.
        -- iPureIntro. left. simpl Kseqlist. eapply plus_left. constructor. eapply star_trans.
           apply step_makeif with (b := true) (v1 := v); auto. congruence.
           apply push_seq. reflexivity. reflexivity.
@@ -1810,38 +1565,35 @@ Proof.
      intro. apply soundness3 in H2.
      apply (soundness1 tmps). iIntros "HA". iDestruct (H2 with "HA") as "HA". 
      iDestruct (H3 with "HA") as (dst' sl1 sl2 a') "[P [% R]]". clear H2. clear H3.
-     simpl. iDestruct "P" as ">P". destruct dst'.
-     * iDestruct "P" as (sl0 a0 sl3 a3 t0) "[HA [HB [% %]]]".
-       iDestruct (tr_simple_rvalue with "HA") as "[% [% %]]"; eauto. subst.
-       iClear "HA". iExists _. iSplit.
+     simpl. iDestruct "P" as ">P". destruct dst'; norm_all.
+     * iDestruct (tr_simple_rvalue with "HE") as "[% [% %]]"; eauto. subst.
+       iClear "HE". iExists _. iSplit.
        -- iPureIntro. left. eapply plus_left. simpl Kseqlist. constructor.
           eapply star_trans. apply step_makeif with (b := false) (v1 := v); auto. congruence.
           apply star_one. constructor. constructor. reflexivity. reflexivity.
-       -- iDestruct (tr_expr_dest with "HB") as "[HB _]".
+       -- iDestruct (tr_expr_dest with "HG") as ">HG".
           iDestruct ("R" $! (Eval (Vint Int.zero) ty) with "[]") as "HC"; eauto.
-          iDestruct (locally_set with "HB HC") as "[HC HB]".
+          iDestruct (locally_set with "HG HC") as "[HC HB]".
           iConstructor. change sl2 with (nil ++ sl2). iIntros "[HB HA]".
           iApply (locally_out with "HB"). simpl.
           iModIntro. iSplitL; auto. iIntros.
           iApply locally_conseq_pure. intros. constructor. eapply H2.
           iApply locally_finish. iFrame. 
-     * iDestruct "P" as (sl0 a2 sl3 a3) "[HA [HB %]]".
-       iDestruct (tr_simple_rvalue with "HA") as "[% [% %]]"; eauto. subst.
-       iClear "HA". iExists _. iSplit.
+     * iDestruct (tr_simple_rvalue with "HE") as "[% [% %]]"; eauto. subst.
+       iClear "HE". iExists _. iSplit.
        -- iPureIntro. left. eapply plus_left. simpl Kseqlist. constructor.
           apply step_makeif with (b := false) (v1 := v); auto. congruence. reflexivity.
        -- iConstructor. change sl2 with (nil ++ sl2). iIntros "[HA HB]".
           iDestruct ("HB" $! (Eval (Vint Int.zero) ty) with "[]") as "HB"; eauto.
           iApply (locally_out with "HB"). simpl. eauto.
-     * iDestruct "P" as (sl0 a2 sl3 a3) "[HA [HB %]]".
-       iDestruct (tr_simple_rvalue with "HA") as "[% [% %]]"; eauto. subst.
-       iClear "HA". iExists _. iSplit.
+     * iDestruct (tr_simple_rvalue with "HE") as "[% [% %]]"; eauto. subst.
+       iClear "HE". iExists _. iSplit.
        -- iPureIntro. left. eapply plus_left. simpl Kseqlist. constructor.
           eapply star_trans. apply step_makeif with (b := false) (v1 := v); auto. congruence.
           apply push_seq. reflexivity. reflexivity.
        -- rewrite <- Kseqlist_app. iConstructor. iIntros "[HA HB]".
           iDestruct ("HB" $! (Eval (Vint Int.zero) ty) with "[]") as "HB"; eauto.
-          iApply (locally_out with "HB"). simpl. iDestruct (tr_expr_dest with "HA") as "[HA _]".
+          iApply (locally_out with "HB"). simpl. iDestruct (tr_expr_dest with "HA") as ">HA".
           iFrame. iModIntro. iExists (Econst_int Int.zero ty). iSplitL; eauto.
           iIntros. iApply locally_simpl. iIntros. iPureIntro. constructor.
           
@@ -1851,38 +1603,35 @@ Proof.
    + exploit tr_expr_leftcontext; eauto.
      intro. apply soundness3 in H2.
      apply (soundness1 tmps). iIntros "HA". iDestruct (H2 with "HA") as "HA". 
-     iDestruct (H3 with "HA") as (dst' sl1 sl2 a') "[P [% R]]". clear H2. clear H3.
-     simpl. destruct dst'.
-     * iDestruct "P" as (sl0 a0 sl3 a3 t0) ">[HA [HB [% %]]]".
-       iDestruct (tr_simple_rvalue with "HA") as "[% [% %]]"; eauto. subst.
-       iClear "HA". iExists _. iSplit.
+     iDestruct (H3 with "HA") as (dst' sl1 sl2 a') "[P [% R]]". simpl. clear H2. clear H3.
+     simpl. iDestruct "P" as ">P". destruct dst'; norm_all.
+     * iDestruct (tr_simple_rvalue with "HE") as "[% [% %]]"; eauto. subst.
+       iClear "HE". iExists _. iSplit.
        -- iPureIntro. left. eapply plus_left. simpl Kseqlist. constructor.
           eapply star_trans. apply step_makeif with (b := true) (v1 := v); auto. congruence.
           apply star_one. constructor. constructor. reflexivity. reflexivity.
        -- iDestruct ("R" $! (Eval (Vint Int.one) ty) with "[]") as "HC"; eauto.
-          iDestruct (tr_expr_dest with "HB") as "[HB _]". iConstructor.
+          iDestruct (tr_expr_dest with "HG") as ">HG". iConstructor.
           change sl2 with (nil ++ sl2). iIntros "[HB HC]".
           iDestruct (locally_set with "HC HB") as "[HB HC]".
           change sl2 with (nil ++ sl2). iApply (locally_out with "HB").
           simpl. iModIntro. iSplitL "HC"; auto. iIntros.
           iApply locally_conseq_pure. intros. econstructor. eapply H2.
           iApply locally_finish. iFrame.
-     * iDestruct "P" as (sl0 a2 sl3 a3) ">[HA [HB %]]".
-       iDestruct (tr_simple_rvalue with "HA") as "[% [% %]]"; eauto. subst.
-       iClear "HA". iExists _. iSplit.
+     * iDestruct (tr_simple_rvalue with "HE") as "[% [% %]]"; eauto. subst.
+       iClear "HE". iExists _. iSplit.
        -- iPureIntro. left. eapply plus_left. simpl Kseqlist. constructor.
           apply step_makeif with (b := true) (v1 := v); auto. congruence. reflexivity.
        -- iConstructor. change sl2 with (nil ++ sl2). iIntros "[HA HB]".
           iDestruct ("HB" $! (Eval (Vint Int.one) ty) with "[]") as "HB"; eauto.
           iApply (locally_out with "HB"). simpl. auto.
-     * iDestruct "P" as (sl0 a2 sl3 a3) ">[HA [HB %]]".
-       iDestruct (tr_simple_rvalue with "HA") as "[% [% %]]"; eauto. subst.
-       iClear "HA". iExists _. iSplit.
+     * iDestruct (tr_simple_rvalue with "HE") as "[% [% %]]"; eauto. subst.
+       iClear "HE". iExists _. iSplit.
        -- iPureIntro. left. eapply plus_left. simpl Kseqlist. constructor.
           eapply star_trans. apply step_makeif with (b := true) (v1 := v); auto. congruence.
           apply push_seq. reflexivity. reflexivity.
        -- rewrite <- Kseqlist_app.
-          iDestruct (tr_expr_dest with "HB") as "[HB _]".
+          iDestruct (tr_expr_dest with "HG") as ">HG".
           iConstructor. iIntros "[HA HB]".
           iDestruct ("HA" $! (Eval (Vint Int.one) ty) with "[]") as "HA"; eauto.
           iApply (locally_out with "HA"). simpl. iModIntro. iFrame.
@@ -1896,10 +1645,9 @@ Proof.
      intro. apply soundness3 in H2.
      apply (soundness1 tmps). iIntros "HA". iDestruct (H2 with "HA") as "HA". 
      iDestruct (H3 with "HA") as (dst' sl1 sl2 a') "[P [% R]]". clear H2. clear H3.
-     simpl. destruct dst'.
-     * iDestruct "P" as (sl0 a0 sl3 a3 t0) ">[HA [HB [% %]]]".
-       iDestruct (tr_simple_rvalue with "HA") as "[% [% %]]"; eauto. subst.
-       iClear "HA". iExists _. iSplit.
+     simpl. iDestruct "P" as ">P". destruct dst'; norm_all.
+     * iDestruct (tr_simple_rvalue with "HE") as "[% [% %]]"; eauto. subst.
+       iClear "HE". iExists _. iSplit.
        -- iPureIntro. left. eapply plus_left. simpl Kseqlist. constructor.
           eapply star_trans. apply step_makeif with (b := false) (v1 := v); auto. congruence.
           apply push_seq. constructor. constructor.
@@ -1907,9 +1655,8 @@ Proof.
           iDestruct ("HB" $! (Eparen r2 type_bool ty) with "[]") as "HB"; eauto.
           iApply (locally_out with "HB").
           simpl. iModIntro. repeat iExists _. iFrame. eauto.
-     * iDestruct "P" as (sl0 a2 sl3 a3) ">[HA [HB %]]".
-       iDestruct (tr_simple_rvalue with "HA") as "[% [% %]]"; eauto. subst.
-       iClear "HA". iExists _. iSplit.
+     * iDestruct (tr_simple_rvalue with "HE") as "[% [% %]]"; eauto. subst.
+       iClear "HE". iExists _. iSplit.
        -- iPureIntro. left. eapply plus_left. simpl Kseqlist. constructor.
           eapply star_trans.
           apply step_makeif with (b := false) (v1 := v); auto. congruence. apply push_seq.
@@ -1918,9 +1665,8 @@ Proof.
           iDestruct ("HB" $! (Eparen r2 type_bool ty) with "[]") as "HB"; eauto.
           iApply (locally_out with "HB").
           simpl. iModIntro. iExists _. eauto.
-     * iDestruct "P" as (sl0 a2 sl3 a3) ">[HA [HB %]]".
-       iDestruct (tr_simple_rvalue with "HA") as "[% [% %]]"; eauto. subst.
-       iClear "HA". iExists _. iSplit.
+     * iDestruct (tr_simple_rvalue with "HE") as "[% [% %]]"; eauto. subst.
+       iClear "HE". iExists _. iSplit.
        -- iPureIntro. left. eapply plus_left. simpl Kseqlist. constructor.
           eapply star_trans. apply step_makeif with (b := false) (v1 := v); auto. congruence.
           apply push_seq. reflexivity. reflexivity.
@@ -1938,10 +1684,9 @@ Proof.
      intro. apply soundness3 in H2.
      apply (soundness1 tmps). iIntros "HA". iDestruct (H2 with "HA") as "HA". 
      iDestruct (H3 with "HA") as (dst' sl1 sl2 a') "[P [% R]]". clear H2. clear H3.
-     simpl. destruct dst'.
-     * iDestruct "P" as (sl0 a0 sl3 a3 sl4 a4 t0) ">[HA [HB [% %]]]".
-       iDestruct (tr_simple_rvalue with "HA") as "[% [% %]]"; eauto. subst.
-       iClear "HA". destruct b.
+     simpl. iDestruct "P" as ">P". destruct dst'; norm_all.
+     * iDestruct (tr_simple_rvalue with "HE") as "[% [% %]]"; eauto. subst.
+       iClear "HE". destruct b.
        -- iExists _. iSplit.
           ++ iPureIntro. left. eapply plus_left. constructor.
              eapply star_trans. apply step_makeif with (b := true) (v1 := v); auto. congruence.
@@ -1958,9 +1703,8 @@ Proof.
              iDestruct ("HB" $! (Eparen r3 ty ty) with "[]") as "HD"; eauto.
              iApply (locally_out with "HD"). simpl. iModIntro.
              repeat iExists _. iDestruct "HA" as "[_ HA]". eauto.
-     * iDestruct "P" as (sl0 a0 sl3 a3 sl4 a4) ">[HA [HB [HC %]]]".
-       iDestruct (tr_simple_rvalue with "HA") as "[% [% %]]"; eauto. subst.
-       iClear "HA". destruct b.
+     * iDestruct (tr_simple_rvalue with "HE") as "[% [% %]]"; eauto. subst.
+       iClear "HE". destruct b.
        -- iExists _. iSplit.
           ++ iPureIntro. left. eapply plus_left. constructor.
              eapply star_trans. apply step_makeif with (b := true) (v1 := v); auto. congruence.
@@ -1977,10 +1721,8 @@ Proof.
              iDestruct ("HC" $! (Eparen r3 ty ty) with "[]") as "HD"; eauto.
              iApply (locally_out with "HD"). simpl. iClear "HA". iModIntro.
              repeat iExists _. iFrame.
-     * iDestruct "P" as ">[Hdest P]".
-       iDestruct "P" as (sl0 a0 sl3 a3 sl4 a4 t0) "[HA [HB %]]".
-       iDestruct (tr_simple_rvalue with "HA") as "[% [% %]]"; eauto. subst.
-       iClear "HA". destruct b.
+     * iDestruct (tr_simple_rvalue with "HG") as "[% [% %]]"; eauto. subst.
+       iClear "HG". destruct b.
        -- iExists _. iSplit.
           ++ iPureIntro.  left. eapply plus_left. constructor. simpl.
              eapply star_trans. apply step_makeif with (b := true) (v1 := v); auto. congruence.
@@ -1988,8 +1730,9 @@ Proof.
           ++ rewrite <- Kseqlist_app. iConstructor. iIntros "[HA [HB HC]]". 
              iDestruct ("HC" $! (Eparen r2 ty ty) with "[]") as "HD"; eauto.
              iApply (locally_out with "HD"). simpl. iModIntro.
-             iExists _. iExists t0. destruct (Pos.eq_dec t0 (sd_temp sd)).
-             subst. iDestruct "HB" as "[HB _]". iDestruct (tr_expr_dest with "HB") as "[HB HC]".
+             iExists _. iExists x5. destruct (Pos.eq_dec x5 (sd_temp sd)).
+             subst. iDestruct "HB" as "[HB _]". iApply tr_expr_abs.
+             iDestruct (tr_expr_dest with "HB") as ">HB". iModIntro.
              simpl. iDestruct (singleton_false with "HA HB") as "HA". iExFalso. iApply "HA".
              iDestruct "HB" as "[HB _]". iFrame.
        -- iExists _. iSplit.
@@ -1998,9 +1741,10 @@ Proof.
              apply push_seq. reflexivity. traceEq.
           ++ rewrite <- Kseqlist_app. iConstructor. iIntros "[HA [HB HC]]". 
              iDestruct ("HC" $! (Eparen r3 ty ty) with "[]") as "HD"; eauto.
-             iApply (locally_out with "HD"). simpl. iModIntro. iExists _. iExists t0. 
-             destruct (Pos.eq_dec t0 (sd_temp sd)).
-             subst. iDestruct "HB" as "[HB _]". iDestruct (tr_expr_dest with "HB") as "[HB HC]".
+             iApply (locally_out with "HD"). simpl. iModIntro. iExists _. iExists x5.
+             destruct (Pos.eq_dec x5 (sd_temp sd)).
+             subst. iDestruct "HB" as "[HB _]". iApply tr_expr_abs.
+             iDestruct (tr_expr_dest with "HB") as ">HB".
              simpl. iDestruct (singleton_false with "HA HB") as "HA". iExFalso. iApply "HA".
              iDestruct "HB" as "[_ HB]". iFrame.
              
@@ -2011,11 +1755,10 @@ Proof.
      intro. apply soundness3 in H4.
      apply (soundness1 tmps). iIntros "HA". iDestruct (H4 with "HA") as "HA". 
      iDestruct (H5 with "HA") as (dst' sl1 sl2 a') "[P [% R]]". clear H4. clear H5.
-     simpl. destruct dst'.
-     * iDestruct "P" as (sl0 a0 sl3 a3 t1) ">[HA [HB [HC [_ [% %]]]]]".
-       iDestruct (tr_simple_rvalue with "HB") as "[% [% %]]"; eauto.
-       iDestruct (proj1 tr_expr_invariant with "HA") as "HA".
-       iDestruct (locally_set with "HC HA") as "[HA HC]".
+     simpl. iDestruct "P" as ">P". destruct dst'; norm_all.
+     * iDestruct (tr_simple_rvalue with "HG") as "[% [% %]]"; eauto.
+       iDestruct (proj1 tr_expr_invariant with "HE") as "HE".
+       iDestruct (locally_set with "[HI] HE") as "[HA HE]"; auto.
        iDestruct (locally_delete with "HA") as "HA".
        iDestruct (tr_simple_lvalue with "HA") as "[% [% %]]"; eauto. subst. simpl.
        iExists _. iSplit.
@@ -2025,16 +1768,15 @@ Proof.
           apply star_one. eapply step_make_assign; eauto. 
           constructor. eapply Maps.PTree.gss. simpl. eapply cast_idempotent; eauto. 
           reflexivity. reflexivity. traceEq.
-       -- iConstructor. iIntros "[HA [HB [HC HD]]]". 
-          iDestruct ("HB" $! (Eval v' (Csyntax.typeof l)) with "[]") as "HB"; eauto.
-          iDestruct (locally_set with "HC HB") as "[HB HC]".
-          change sl2 with (nil ++ sl2).
-          iApply (locally_out with "HB"). simpl. iClear "HA". iClear "HD". iModIntro.
+       -- iConstructor. iIntros "[HA [_ [HC [HD HE]]]]". 
+          iDestruct ("HC" $! (Eval v' (Csyntax.typeof l)) with "[]") as "HB"; eauto.
+          iDestruct (locally_set with "HD HB") as "[HB HC]".
+          change sl2 with (nil ++ sl2). iApply (locally_out with "HB"). simpl.
+          iClear "HA". iClear "HE". iModIntro.
           iSplitL; eauto. iIntros. iApply locally_conseq_pure. intros. econstructor. eapply H4.
           iApply locally_finish. iFrame.
-     * iDestruct "P" as (sl0 a0 sl3 a3) ">[HA [HB %]]".
-       iDestruct (tr_simple_rvalue with "HB") as "[% [% %]]"; eauto.
-       iDestruct (tr_simple_lvalue with "HA") as "[% [% %]]"; eauto. subst. simpl.
+     * iDestruct (tr_simple_rvalue with "HG") as "[% [% %]]"; eauto.
+       iDestruct (tr_simple_lvalue with "HE") as "[% [% %]]"; eauto. subst. simpl.
        iExists _. iSplit.
        -- iPureIntro. left. eapply plus_left. constructor.
           apply star_one. eapply step_make_assign; eauto.
@@ -2042,10 +1784,9 @@ Proof.
        -- iConstructor. change sl2 with (nil ++ sl2). iIntros "[HA [HB HC]]". 
           iDestruct ("HC" $! (Eval v' (Csyntax.typeof l)) with "[]") as "HC"; eauto.
           iApply (locally_out with "HC"). simpl. eauto.
-     * iDestruct "P" as (sl0 a0 sl3 a3 t1) ">[HA [HB [HC [HD [% %]]]]]".
-       iDestruct (tr_simple_rvalue with "HB") as "[% [% %]]"; eauto.
-       iDestruct (proj1 tr_expr_invariant with "HA") as "HA".
-       iDestruct (locally_set with "HC HA") as "[HA HC]".
+     * iDestruct (tr_simple_rvalue with "HG") as "[% [% %]]"; eauto.
+       iDestruct (proj1 tr_expr_invariant with "HE") as "HA".
+       iDestruct (locally_set with "[HI] HA") as "[HA HC]"; auto.
        iDestruct (locally_delete with "HA") as "HA".
        iDestruct (tr_simple_lvalue with "HA") as "[% [% %]]"; eauto. subst. simpl.
        iExists _. iSplit.
@@ -2058,9 +1799,8 @@ Proof.
        -- iConstructor. iIntros "[HA [HB [HC [HD HE]]]]". 
           iDestruct ("HC" $! (Eval v' (Csyntax.typeof l)) with "[]") as "HC"; eauto.
           iDestruct (locally_set with "HD HC") as "[HC HD]".
-          change sl2 with (nil ++ sl2).
-          iApply (locally_out with "HC"). simpl. iClear "HA". iClear "HE". iModIntro.
-          iFrame. repeat iExists _.
+          change sl2 with (nil ++ sl2). iApply (locally_out with "HC"). simpl.
+          iClear "HA". iClear "HE". iModIntro. iFrame. repeat iExists _.
           iSplitL; eauto. iIntros. iApply locally_conseq_pure. intros. econstructor. eapply H4.
           iApply locally_finish. iFrame.
           iPureIntro. split; eauto.
@@ -2072,18 +1812,17 @@ Proof.
      intro. apply soundness3 in H6.
      apply (soundness1 tmps). iIntros "HA". iDestruct (H6 with "HA") as "HA". 
      iDestruct (H7 with "HA") as (dst' sl1 sl2 a') "[P [% R]]". clear H6. clear H7.
-     simpl. destruct dst'.
-     * iDestruct "P" as (sl0 a0 sl3 a3 sl4 a4 t0) ">[HA [HB [HC [HD [HE [% %]]]]]]".
-       unfold tr_rvalof. destruct (type_is_volatile (Csyntax.typeof l)) eqn:?.
-       -- iDestruct "HC" as (t3) "[[% %] HC]".
-          iDestruct (tr_simple_lvalue with "HA") as "[% [% %]]"; eauto.
-          iDestruct (proj1 tr_expr_invariant with "HB") as "HB".
-          iDestruct (locally_set with "[HC] HB") as "[HB HC]"; eauto.
+     simpl. iDestruct "P" as ">P". destruct dst'; norm_all.
+     * unfold tr_rvalof. destruct (type_is_volatile (Csyntax.typeof l)) eqn:?; norm_all.
+       -- iDestruct (tr_simple_lvalue with "HE") as "[% [% %]]"; eauto.
+          iDestruct (proj1 tr_expr_invariant with "HG") as "HB".
+          (* iDestruct (locally_set with "[HK] HB") as "[HB HC]"; eauto. *)
+          iDestruct (locally_set with "[HT] HB") as "[HB HD]"; eauto.
           iDestruct (locally_delete with "HB") as "HB".
           iDestruct (tr_simple_rvalue with "HB") as "[% [% %]]"; eauto. subst.
-          iDestruct (proj1 tr_expr_invariant with "HA") as "HA".
-          iDestruct (locally_set with "[HC] HA") as "[HA HC]"; eauto.
+          iDestruct (proj1 tr_expr_invariant with "HE") as "HA".
           iDestruct (locally_set with "[HD] HA") as "[HA HD]"; eauto.
+          iDestruct (locally_set with "[HK] HA") as "[HA HC]"; eauto.
           iDestruct (locally_delete with "HA") as "HA".
           iDestruct (tr_simple_lvalue with "HA") as "[% [% %]]"; eauto.
           iExists _. iSplit.
@@ -2098,21 +1837,20 @@ Proof.
              econstructor. apply Maps.PTree.gss. simpl. eapply cast_idempotent; eauto.
              reflexivity. traceEq.
           ++ iClear "HB". iDestruct ("R" $! (Eval v4 (Csyntax.typeof l)) with "[]") as "HB"; eauto.
-             iDestruct (locally_set with "HC HB") as "[HB HC]".
              iDestruct (locally_set with "HD HB") as "[HB HD]".
-             iClear "HA". iClear "HC". iConstructor. iIntros "[_ [HA HB]]". 
+             iDestruct (locally_set with "HC HB") as "[HB HC]".
+             iClear "HA". iClear "HD". iConstructor. iIntros "[_ [HA HB]]". 
              change sl2 with (nil ++ sl2).
              iApply (locally_out with "HA"). simpl. iModIntro. iSplitL "HB"; eauto.
              iIntros "*". iApply locally_conseq_pure. intros. econstructor. apply H9.
              iApply locally_finish. iFrame.
-       -- iDestruct "HC" as "[% %]".
-          iDestruct (tr_simple_lvalue with "HA") as "[% [% %]]"; eauto.
-          iDestruct (proj1 tr_expr_invariant with "HA") as "HA".
-          iDestruct (locally_set with "HD HA") as "[HA HC]".
+       -- iDestruct (tr_simple_lvalue with "HE") as "[% [% %]]"; eauto.
+          iDestruct (proj1 tr_expr_invariant with "HE") as "HA".
+          iDestruct (locally_set with "[HK] HA") as "[HA HC]"; auto.
           iDestruct (locally_delete with "HA") as "HA".
           iDestruct (tr_simple_lvalue with "HA") as "[% [% %]]"; eauto.
-          iDestruct (tr_simple_rvalue with "HB") as "[% [% %]]"; eauto.
-          iDestruct (proj1 tr_expr_invariant with "HB") as "HB".
+          iDestruct (tr_simple_rvalue with "HG") as "[% [% %]]"; eauto.
+          iDestruct (proj1 tr_expr_invariant with "HG") as "HB".
           iDestruct (locally_set with "HC HB") as "[HB HC]".
           iDestruct (locally_delete with "HB") as "HB".
           iDestruct (tr_simple_rvalue with "HB") as "[% [% %]]"; eauto. subst. simpl.
@@ -2127,7 +1865,7 @@ Proof.
              eassumption. econstructor. eapply step_make_assign; eauto.
              constructor. apply Maps.PTree.gss. simpl. eapply cast_idempotent; eauto.
              reflexivity. traceEq.
-          ++ iClear "HE". instantiate (1 := v4). iClear "HA". iClear "HB".
+          ++ iClear "HM". instantiate (1 := v4). iClear "HA". iClear "HB".
              iConstructor. iIntros "[HA HB]". 
              iDestruct ("HA" $! (Eval v4 (Csyntax.typeof l)) with "[]") as "HA"; eauto.
              iDestruct (locally_set with "[HB] HA") as "[HA HB]"; eauto.
@@ -2136,16 +1874,14 @@ Proof.
              simpl. iModIntro. iSplitL "HB"; eauto.
              iIntros "*". iApply locally_conseq_pure. intros. econstructor. apply H8.
              iApply locally_finish. iFrame.
-     * iDestruct "P" as (sl0 a2 sl3 a3 sl4 a4) ">[HA [HB [HC %]]]".
-       unfold tr_rvalof. destruct (type_is_volatile (Csyntax.typeof l)) eqn:?.
-       -- iDestruct "HC" as (t0) "[[% %] HC]".
-          iDestruct (tr_simple_lvalue with "HA") as "[% [% %]]"; eauto.
-          iDestruct (proj1 tr_expr_invariant with "HA") as "HA".
-          iDestruct (locally_set with "[HC] HA") as "[HA HC]"; eauto.
+     * unfold tr_rvalof. destruct (type_is_volatile (Csyntax.typeof l)) eqn:?; norm_all.
+       -- iDestruct (tr_simple_lvalue with "HE") as "[% [% %]]"; eauto.
+          iDestruct (proj1 tr_expr_invariant with "HE") as "HA".
+          iDestruct (locally_set with "[HL] HA") as "[HA HC]"; eauto.
           iDestruct (locally_delete with "HA") as "HA".
           iDestruct (tr_simple_lvalue with "HA") as "[% [% %]]"; eauto.
-          iDestruct (tr_simple_rvalue with "HB") as "[% [% %]]"; eauto.
-          iDestruct (proj1 tr_expr_invariant with "HB") as "HB".
+          iDestruct (tr_simple_rvalue with "HG") as "[% [% %]]"; eauto.
+          iDestruct (proj1 tr_expr_invariant with "HG") as "HB".
           iDestruct (locally_set with "[HC] HB") as "[HB HC]"; eauto.
           iDestruct (locally_delete with "HB") as "HB".
           iDestruct (tr_simple_rvalue with "HB") as "[% [% %]]"; eauto. subst. simpl.
@@ -2161,9 +1897,8 @@ Proof.
              iDestruct (locally_set with "HC HA") as "[HA HC]". iClear "HC".
              iConstructor. iIntros "HA". change sl2 with (nil ++ sl2).
              iApply (locally_out with "HA"). simpl. iModIntro. auto.
-       -- iDestruct "HC" as "[% %]".
-          iDestruct (tr_simple_lvalue with "HA") as "[% [% %]]"; eauto.
-          iDestruct (tr_simple_rvalue with "HB") as "[% [% %]]"; eauto.
+       -- iDestruct (tr_simple_lvalue with "HE") as "[% [% %]]"; eauto.
+          iDestruct (tr_simple_rvalue with "HG") as "[% [% %]]"; eauto.
           exploit deref_loc_translated; eauto. intros. unfold chunk_for_volatile_type in H18.
           rewrite Heqb0 in H18. destruct H18. subst. simpl.
           iExists _. iSplit.
@@ -2173,21 +1908,19 @@ Proof.
              econstructor. eapply eval_Elvalue; eauto. rewrite <- H11. eauto. eauto.
              rewrite <- H11. rewrite <- H15. rewrite comp_env_preserved. auto.
              reflexivity. traceEq.
-          ++ iClear "HA". iClear "HB". iConstructor. iIntros "HC". 
+          ++ iClear "HE". iClear "HG". iConstructor. iIntros "HC". 
              iDestruct ("HC" $! (Eval v4 (Csyntax.typeof l)) with "[]") as "HC"; eauto.
              change sl2 with (nil ++ sl2).
              iApply (locally_out with "HC"). simpl. iModIntro. auto.
-     * iDestruct "P" as (sl0 a0 sl3 a3 sl4 a4 t0) ">[HA [HB [HC [HD [HE [% %]]]]]]".
-       unfold tr_rvalof. destruct (type_is_volatile (Csyntax.typeof l)) eqn:?.
-       -- iDestruct "HC" as (t3) "[[% %] HC]".
-          iDestruct (tr_simple_lvalue with "HA") as "[% [% %]]"; eauto.
-          iDestruct (proj1 tr_expr_invariant with "HB") as "HB".
-          iDestruct (locally_set with "[HC] HB") as "[HB HC]"; eauto.
+     * unfold tr_rvalof. destruct (type_is_volatile (Csyntax.typeof l)) eqn:?; norm_all.
+       -- iDestruct (tr_simple_lvalue with "HE") as "[% [% %]]"; eauto.
+          iDestruct (proj1 tr_expr_invariant with "HG") as "HB".
+          iDestruct (locally_set with "[HT] HB") as "[HB HC]"; eauto.
           iDestruct (locally_delete with "HB") as "HB".
           iDestruct (tr_simple_rvalue with "HB") as "[% [% %]]"; eauto. subst.
-          iDestruct (proj1 tr_expr_invariant with "HA") as "HA".
+          iDestruct (proj1 tr_expr_invariant with "HE") as "HA".
           iDestruct (locally_set with "[HC] HA") as "[HA HC]"; eauto.
-          iDestruct (locally_set with "[HD] HA") as "[HA HD]"; eauto.
+          iDestruct (locally_set with "[HK] HA") as "[HA HD]"; eauto.
           iDestruct (locally_delete with "HA") as "HA".
           iDestruct (tr_simple_lvalue with "HA") as "[% [% %]]"; eauto.
           iExists _. iSplit.
@@ -2209,14 +1942,13 @@ Proof.
              iApply (locally_out with "HA"). simpl. iModIntro. iFrame. iExists _.
              iSplitL "HB"; eauto. iIntros "*". iApply locally_conseq_pure. intros. econstructor.
              apply H9. iApply locally_finish. iFrame. eauto.
-       -- iDestruct "HC" as "[% %]".
-          iDestruct (tr_simple_lvalue with "HA") as "[% [% %]]"; eauto.
-          iDestruct (proj1 tr_expr_invariant with "HA") as "HA".
-          iDestruct (locally_set with "HD HA") as "[HA HC]".
+       -- iDestruct (tr_simple_lvalue with "HE") as "[% [% %]]"; eauto.
+          iDestruct (proj1 tr_expr_invariant with "HE") as "HA".
+          iDestruct (locally_set with "[HK] HA") as "[HA HC]"; auto.
           iDestruct (locally_delete with "HA") as "HA".
           iDestruct (tr_simple_lvalue with "HA") as "[% [% %]]"; eauto.
-          iDestruct (tr_simple_rvalue with "HB") as "[% [% %]]"; eauto.
-          iDestruct (proj1 tr_expr_invariant with "HB") as "HB".
+          iDestruct (tr_simple_rvalue with "HG") as "[% [% %]]"; eauto.
+          iDestruct (proj1 tr_expr_invariant with "HG") as "HB".
           iDestruct (locally_set with "HC HB") as "[HB HC]".
           iDestruct (locally_delete with "HB") as "HB".
           iDestruct (tr_simple_rvalue with "HB") as "[% [% %]]"; eauto. subst. simpl.
@@ -2248,107 +1980,79 @@ Proof.
      intro. apply soundness3 in H4.
      apply (soundness1 tmps). iIntros "HA". iDestruct (H4 with "HA") as "HA". 
      iDestruct (H5 with "HA") as (dst' sl1 sl2 a') "[P [% R]]". clear H4. clear H5.
-     simpl. destruct dst'.
-     * iDestruct "P" as (sl0 a2 sl3 a3 sl4 a4 t1) ">[HA [HB [HC [HD [_ [% %]]]]]]".
-       iDestruct (tr_simple_lvalue with "HA") as "[% [% %]]"; eauto.
-       iDestruct (tr_simple_rvalue with "HB") as "[% [% %]]"; eauto.
-       iDestruct (step_tr_rvalof with "HC") as (le') "[% [% %]]"; eauto.
-       iDestruct (tr_simple_lvalue with "HA") as "[% [% %]]"; eauto.
-       iDestruct (tr_simple_rvalue with "HB") as "[% [% %]]"; eauto.
+     simpl. iDestruct "P" as ">P". destruct dst'; norm_all.
+     * iDestruct (tr_simple_lvalue with "HE") as "[% [% %]]"; eauto.
+       iDestruct (tr_simple_rvalue with "HG") as "[% [% %]]"; eauto.
+       iDestruct (step_tr_rvalof with "HI") as (le') "[% [% %]]"; eauto.
        subst. simpl.
        iExists _. iSplit.
        ++ iPureIntro.
           right; split. rewrite app_ass. rewrite Kseqlist_app. eexact H15. lia.
        ++ iPureIntro. econstructor.
-     * iDestruct "P" as (sl0 a2 sl3 a3 sl4 a4) ">[HA [HB [HC %]]]".
-       iDestruct (tr_simple_lvalue with "HA") as "[% [% %]]"; eauto.
-       iDestruct (tr_simple_rvalue with "HB") as "[% [% %]]"; eauto.
-       iDestruct (step_tr_rvalof with "HC") as (le') "[% [% %]]"; eauto.
-       subst. simpl.
-       iExists _. iSplit.
-       ++ iPureIntro.
-          right; split. rewrite app_ass. rewrite Kseqlist_app. eexact H14. lia.
+     * iDestruct (tr_simple_lvalue with "HE") as "[% [% %]]"; eauto.
+       iDestruct (tr_simple_rvalue with "HG") as "[% [% %]]"; eauto.
+       iDestruct (step_tr_rvalof with "HI") as (le') "[% [% %]]"; eauto.
+       subst. simpl. iExists _. iSplit.
+       ++ iPureIntro. right; split. rewrite app_ass. rewrite Kseqlist_app. eexact H14. lia.
        ++ iPureIntro. econstructor.
-     * iDestruct "P" as (sl0 a2 sl3 a3 sl4 a4 t1) ">[HA [HB [HC [HD [HE [% %]]]]]]".
-       iDestruct (tr_simple_lvalue with "HA") as "[% [% %]]"; eauto.
-       iDestruct (tr_simple_rvalue with "HB") as "[% [% %]]"; eauto.
-       iDestruct (step_tr_rvalof with "HC") as (le') "[% [% %]]"; eauto.
-       iDestruct (tr_simple_lvalue with "HA") as "[% [% %]]"; eauto.
-       iDestruct (tr_simple_rvalue with "HB") as "[% [% %]]"; eauto.
-       subst. simpl.
-       iExists _. iSplit.
-       ++ iPureIntro.
-          right; split. rewrite app_ass. rewrite Kseqlist_app. eexact H15. lia.
+     * iDestruct (tr_simple_lvalue with "HE") as "[% [% %]]"; eauto.
+       iDestruct (tr_simple_rvalue with "HG") as "[% [% %]]"; eauto.
+       iDestruct (step_tr_rvalof with "HI") as (le') "[% [% %]]"; eauto.
+       subst. simpl. iExists _. iSplit.
+       ++ iPureIntro. right; split. rewrite app_ass. rewrite Kseqlist_app. eexact H15. lia.
        ++ iPureIntro. econstructor.
      
   (* postincr *)
  - inv H14; simpl in *; auto.
    + inv H; discriminate.
-   + exploit tr_expr_leftcontext; eauto.
-     intro. apply soundness3 in H5.
+   + exploit tr_expr_leftcontext; eauto. intro. apply soundness3 in H5.
      apply (soundness1 tmps). iIntros "HA". iDestruct (H5 with "HA") as "HA". 
      iDestruct (H6 with "HA") as (dst' sl1 sl2 a') "[P [% R]]". clear H5. clear H6.
-     simpl. iDestruct "P" as (sl0 a2) ">[HA HB]". destruct dst'.
-     * iDestruct "HB" as (t0) "[HB [_ [% %]]]".
-       iDestruct (tr_simple_lvalue with "HA") as "[% [% %]]"; eauto.
-       iDestruct (proj1 tr_expr_invariant with "HA") as "HA".
-       iDestruct (locally_set with "HB HA") as "[HA HB]".
+     simpl. iDestruct "P" as ">P". norm_all. destruct dst'; norm_all.
+     * iDestruct (tr_simple_lvalue with "HE") as "[% [% %]]"; eauto.
+       iDestruct (proj1 tr_expr_invariant with "HE") as "HA".
+       iDestruct (locally_set with "[HG] HA") as "[HA HB]"; auto.
        iDestruct (locally_delete with "HA") as "HA".
        iDestruct (tr_simple_lvalue with "HA") as "[% [% %]]"; eauto.
        subst. simpl. iExists _. iSplit.
-       -- iPureIntro.
-          left. eapply plus_four. constructor.
-          eapply step_make_set; eauto.
-          constructor.
-          eapply step_make_assign; eauto.
+       -- iPureIntro. left. eapply plus_four. constructor.
+          eapply step_make_set; eauto. constructor. eapply step_make_assign; eauto.
           unfold transl_incrdecr. destruct id; simpl in H2.
           econstructor. constructor. apply Maps.PTree.gss. constructor.
           rewrite comp_env_preserved; simpl; eauto.
           econstructor. constructor. apply Maps.PTree.gss. constructor.
           rewrite comp_env_preserved; simpl; eauto.
-          destruct id; auto.
-          traceEq.
-       -- iClear "HA".  iConstructor. iIntros "[HA HB]". 
+          destruct id; auto. traceEq.
+       -- iClear "HA". iClear "HI". iConstructor. iIntros "[HA HB]". 
           iDestruct ("HA" $! (Eval v1 (Csyntax.typeof l)) with "[]") as "HA"; eauto.
-          iDestruct (locally_set with "HB HA") as "[HA HB]".
-          change sl2 with (nil ++ sl2).
+          iDestruct (locally_set with "HB HA") as "[HA HB]". change sl2 with (nil ++ sl2).
           iApply (locally_out with "HA"). simpl. iModIntro. iSplitL "HB"; eauto.
           iIntros "*". iApply locally_conseq_pure. intros. econstructor. apply H5.
           iApply locally_finish. iFrame.
-     * iDestruct "HB" as (sl3 a3) "[HB %]".
-       iDestruct (tr_simple_lvalue with "HA") as "[% [% %]]"; eauto.
-       unfold tr_rvalof. destruct (type_is_volatile (Csyntax.typeof l)) eqn:?.
-       -- iDestruct "HB" as (t0) "[[% %] HB]".
-          iDestruct (proj1 tr_expr_invariant with "HA") as "HA".
-          iDestruct (locally_set with "[HB] HA") as "[HA HB]"; eauto.
+     * iDestruct (tr_simple_lvalue with "HE") as "[% [% %]]"; eauto.
+       unfold tr_rvalof. destruct (type_is_volatile (Csyntax.typeof l)) eqn:?; norm_all.
+       -- iDestruct (proj1 tr_expr_invariant with "HE") as "HA".
+          iDestruct (locally_set with "[HM] HA") as "[HA HB]"; eauto.
           iDestruct (locally_delete with "HA") as "HA".
           iDestruct (tr_simple_lvalue with "HA") as "[% [% %]]"; eauto.
-          iDestruct (tr_simple_lvalue with "HA") as "[% [% %]]"; eauto.
           subst. iExists _. iSplit.
-          ++ iPureIntro.
-             left. rewrite app_ass; rewrite Kseqlist_app.
-             eapply star_plus_trans.
+          ++ iPureIntro. left. rewrite app_ass; rewrite Kseqlist_app. eapply star_plus_trans.
              eapply star_two. econstructor. eapply step_make_set; eauto. traceEq.
-             eapply plus_two. simpl. constructor.
-             eapply step_make_assign; eauto.
+             eapply plus_two. simpl. constructor. eapply step_make_assign; eauto.
              unfold transl_incrdecr. destruct id; simpl in H2.
              econstructor. constructor. apply Maps.PTree.gss. econstructor.
              rewrite comp_env_preserved. simpl. eauto.
              econstructor. econstructor. apply Maps.PTree.gss. econstructor.
              rewrite comp_env_preserved. simpl; eauto.
-             destruct id; auto.
-             reflexivity. traceEq.
+             destruct id; auto. reflexivity. traceEq.
           ++ iClear "HA". iDestruct ("R" $! (Eval v1 (Csyntax.typeof l)) with "[]") as "HA"; eauto.
              iDestruct (locally_set with "HB HA") as "[HA HB]". iClear "HB".
              iConstructor. iIntros "HA". change sl2 with (nil ++ sl2).
              iApply (locally_out with "HA"). simpl. iModIntro. eauto.
-       -- iDestruct "HB" as "[% %]".
-          iDestruct (tr_simple_lvalue with "HA") as "[% [% %]]"; eauto.
+       -- iDestruct (tr_simple_lvalue with "HE") as "[% [% %]]"; eauto.
           exploit deref_loc_translated; eauto. intros. unfold chunk_for_volatile_type in H17.
-          rewrite Heqb0 in H17. destruct H17.
-          subst. iExists _. iSplit.
-          ++ iPureIntro.
-             left. rewrite app_ass; rewrite Kseqlist_app.
+          rewrite Heqb0 in H17. destruct H17. subst. iExists _. iSplit.
+          ++ iPureIntro. left. rewrite app_ass; rewrite Kseqlist_app.
              eapply star_plus_trans. eapply star_refl.
              eapply plus_two. simpl. constructor.
              eapply step_make_assign; eauto.
@@ -2361,27 +2065,23 @@ Proof.
              traceEq.
           ++ iConstructor. iIntros "[HA HB]". 
              iDestruct ("HB" $! (Eval v1 (Csyntax.typeof l)) with "[]") as "HB"; eauto.
-             change sl2 with (nil ++ sl2).
-             iApply (locally_out with "HB"). simpl. eauto.
-     * iDestruct "HB" as (t0) "[HB [HC [% %]]]".
-       iDestruct (tr_simple_lvalue with "HA") as "[% [% %]]"; eauto.
-       iDestruct (proj1 tr_expr_invariant with "HA") as "HA".
-       iDestruct (locally_set with "HB HA") as "[HA HB]".
+             change sl2 with (nil ++ sl2). iApply (locally_out with "HB"). simpl. eauto.
+     * iDestruct (tr_simple_lvalue with "HE") as "[% [% %]]"; eauto.
+       iDestruct (proj1 tr_expr_invariant with "HE") as "HA".
+       iDestruct (locally_set with "[HG] HA") as "[HA HB]"; auto.
        iDestruct (locally_delete with "HA") as "HA".
        iDestruct (tr_simple_lvalue with "HA") as "[% [% %]]"; eauto.
        subst. simpl. iExists _. iSplit.
        -- iPureIntro.
           left. eapply plus_four. constructor.
-          eapply step_make_set; eauto.
-          constructor.
+          eapply step_make_set; eauto. constructor.
           eapply step_make_assign; eauto.
           unfold transl_incrdecr. destruct id; simpl in H2.
           econstructor. constructor. apply Maps.PTree.gss. constructor.
           rewrite comp_env_preserved; simpl; eauto.
           econstructor. constructor. apply Maps.PTree.gss. constructor.
           rewrite comp_env_preserved; simpl; eauto.
-          destruct id; auto.
-          traceEq.
+          destruct id; auto. traceEq.
        -- iClear "HA". iConstructor. iIntros "[HB [HA HC]]". 
           iDestruct ("HA" $! (Eval v1 (Csyntax.typeof l)) with "[]") as "HA"; eauto.
           iDestruct (locally_set with "HC HA") as "[HA HC]".
@@ -2397,20 +2097,17 @@ Proof.
      intro. apply soundness3 in H3.
      apply (soundness1 tmps). iIntros "HA". iDestruct (H3 with "HA") as "HA". 
      iDestruct (H4 with "HA") as (dst' sl1 sl2 a') "[P [% R]]". clear H3. clear H4.
-     simpl. iDestruct "P" as (sl0 a2) ">[HA HB]". destruct dst'.
-     * iDestruct "HB" as (t1) "[HB [_ [% %]]]".
-       iDestruct (tr_simple_lvalue with "HA") as "[% [% %]]"; eauto.
+     simpl. iDestruct "P" as ">P"; norm_all. destruct dst'; norm_all.
+     * iDestruct (tr_simple_lvalue with "HE") as "[% [% %]]"; eauto.
        subst. simpl. iExists _. iSplit.
        -- iPureIntro. left. eapply plus_two. constructor. eapply step_make_set; eauto. traceEq.
        -- iPureIntro. econstructor.
-     * iDestruct "HB" as (sl3 a3) "[HB %]".
-       iDestruct (tr_simple_lvalue with "HA") as "[% [% %]]"; eauto.
-       iDestruct (step_tr_rvalof with "HB") as (le') "[% [% %]]"; eauto. subst.
+     * iDestruct (tr_simple_lvalue with "HE") as "[% [% %]]"; eauto.
+       iDestruct (step_tr_rvalof with "HG") as (le') "[% [% %]]"; eauto. subst.
        iExists _. iSplit.
        -- iPureIntro. right; split. simpl. rewrite app_ass; rewrite Kseqlist_app. eexact H8. lia.
        -- iPureIntro. econstructor.
-     * iDestruct "HB" as (t1) "[HB [HC [% %]]]".
-       iDestruct (tr_simple_lvalue with "HA") as "[% [% %]]"; eauto.
+     * iDestruct (tr_simple_lvalue with "HE") as "[% [% %]]"; eauto.
        subst. simpl. iExists _. iSplit.
        -- iPureIntro. left. eapply plus_two. constructor. eapply step_make_set; eauto. traceEq.
        -- iPureIntro. econstructor.
@@ -2422,13 +2119,12 @@ Proof.
      intro. apply soundness3 in H1.
      apply (soundness1 tmps). iIntros "HA". iDestruct (H1 with "HA") as "HA". 
      iDestruct (H2 with "HA") as (dst' sl1 sl2 a') "[P [% R]]". clear H1. clear H2.
-     simpl. iDestruct "P" as (sl0 a2 sl3) ">[HA [HB %]]".
-     iDestruct (tr_simple_rvalue with "HA") as "%"; eauto. iClear "HA".
+     simpl. iDestruct "P" as (sl0 a2 sl3) ">P"; norm_all.
+     iDestruct (tr_simple_rvalue with "HE") as "%"; eauto. iClear "HE".
      iExists _. iSplit.
      * iPureIntro. right; split. apply star_refl. apply plus_lt_compat_r.
         apply (leftcontext_size _ _ _ H). simpl. omega.
-     * iConstructor. iIntros "[HB HD]".
-       iDestruct ("HD" $! r2 with "[]") as "HD"; eauto.
+     * iConstructor. iIntros "[HB HD]". iDestruct ("HD" $! r2 with "[]") as "HD"; eauto.
        subst. iApply (locally_out with "HD"). simpl. iFrame.
 
  (* paren *)
@@ -2438,49 +2134,45 @@ Proof.
      intro. apply soundness3 in H2.
      apply (soundness1 tmps). iIntros "HA". iDestruct (H2 with "HA") as "HA". 
      iDestruct (H3 with "HA") as (dst' sl1 sl2 a') "[P [% R]]". clear H2. clear H3.
-     simpl. destruct dst'.
-     * iDestruct "P" as (a2 t0) ">[HA %]".
-       iDestruct (tr_simple_rvalue with "HA") as (b) "[% [% %]]"; eauto. subst; simpl.
+     simpl. iDestruct "P" as ">P". destruct dst'; norm_all.
+     * iDestruct (tr_simple_rvalue with "HE") as (b) "[% [% %]]"; eauto. subst; simpl.
        iExists _. iSplit.
        -- iPureIntro. left. eapply plus_left. constructor. apply star_one. econstructor.
           econstructor; eauto. rewrite <- H5; eauto. traceEq.
        -- iDestruct ("R" $! (Eval v ty) with "[]") as "R"; eauto.
-          iDestruct (tr_expr_dest with "HA") as "[HA _]".
+          iDestruct (tr_expr_dest with "HE") as ">HA".
           iDestruct (locally_set with "HA R") as "[R HA]".
           iConstructor. iIntros "[HA HB]". change sl2 with (nil ++ sl2).
           iApply (locally_out with "HA"). simpl. iModIntro. iSplitL "HB"; eauto.
           iIntros "*". iApply locally_conseq_pure. intros. econstructor. apply H2.
           iApply locally_finish. iFrame.
-     * iDestruct "P" as (a2) ">HA".
-       iDestruct (tr_simple_rvalue with "HA") as "%"; eauto. subst; simpl.
+     * iDestruct (tr_simple_rvalue with "P") as "%"; eauto. subst; simpl.
        iExists _. iSplit.
        -- iPureIntro. right; split. apply star_refl. simpl. apply plus_lt_compat_r.
           apply (leftcontext_size _ _ _ H). simpl. lia.
-       --  iConstructor. iIntros "[HA HB]".
+       -- iConstructor. iIntros "[HA HB]".
           iDestruct ("HB" $! (Eval v ty) with "[]") as "HC"; eauto.
           change sl2 with (nil ++ sl2).
           iApply (locally_out with "HC"). simpl. eauto.
-     * iDestruct "P" as (a2 t0) ">HA".
-       destruct (Pos.eq_dec t0 (sd_temp sd)).
+     * destruct (Pos.eq_dec x0 (sd_temp sd)); norm_all.
        -- subst. 
-          iDestruct (tr_simple_rvalue with "HA") as (b) "[% [% %]]"; eauto. subst; simpl.
+          iDestruct (tr_simple_rvalue with "P") as (b) "[% [% %]]"; eauto. subst; simpl.
           iExists _. iSplit.
           ++ iPureIntro. left. eapply plus_left. constructor. apply star_one. econstructor.
              econstructor; eauto. rewrite <- H3; eauto. traceEq.
           ++ iDestruct ("R" $! (Eval v ty) with "[]") as "R"; eauto.
-             iDestruct (tr_expr_dest with "HA") as "[HA _]".
+             iDestruct (tr_expr_dest with "P") as ">HA".
              iDestruct (locally_set with "HA R") as "[R HA]".
              iConstructor. iIntros "[HA HB]". change sl2 with (nil ++ sl2). 
              iApply (locally_out with "HA"). simpl. iModIntro. iSplit; iFrame. iExists _.
              iSplitL; auto. iIntros "*". iApply locally_conseq_pure. intros. econstructor. apply H2.
              iApply locally_finish. iFrame. eauto.
-       -- iDestruct "HA" as "[HA HB]".
-          iDestruct (tr_simple_rvalue with "HA") as (b) "[% [% %]]"; eauto. subst; simpl.
+       -- iDestruct (tr_simple_rvalue with "HE") as (b) "[% [% %]]"; eauto. subst; simpl.
           iExists _. iSplit.
           ++ iPureIntro. left. eapply plus_left. constructor. apply star_one. econstructor.
              econstructor; eauto. rewrite <- H3; eauto. traceEq.
           ++ iDestruct ("R" $! (Eval v ty) with "[]") as "R"; eauto.
-             iDestruct (tr_expr_dest with "HA") as "[HA _]".
+             iDestruct (tr_expr_dest with "HE") as ">HA".
              iDestruct (locally_set with "HA R") as "[R HA]".
              iConstructor. iIntros "[HA [HB HC]]". change sl2 with (nil ++ sl2). 
              iApply (locally_out with "HB"). simpl. iModIntro. iSplit; iFrame. iExists _.
@@ -2494,35 +2186,31 @@ Proof.
      intro. apply soundness3 in H5.
      apply (soundness1 tmps). iIntros "HA". iDestruct (H5 with "HA") as "HA". 
      iDestruct (H6 with "HA") as (dst' sl1 sl2 a') "[P [% R]]". clear H5. clear H6.
-     simpl. destruct dst'.
-     * iDestruct "P" as (sl0 a2 sl3 al3 t0) ">[HA [_ [HB [HC [% %]]]]]".
-       iDestruct (tr_simple_rvalue with "HB") as "[% [% %]]"; eauto.
-       iDestruct (tr_simple_exprlist with "HC []") as "[% %]"; eauto.
+     simpl. iDestruct "P" as ">P". destruct dst'; norm_all.
+     * iDestruct (tr_simple_rvalue with "HI") as "[% [% %]]"; eauto.
+       iDestruct (tr_simple_exprlist with "HK []") as "[% %]"; eauto.
        subst. simpl. exploit functions_translated; eauto. intros [tfd [J K]].
        iExists _. iSplit.
        -- iPureIntro. left. eapply plus_left. constructor. apply star_one.
           econstructor; eauto. rewrite <- H9; eauto.
-          exploit type_of_fundef_preserved; eauto. congruence.
-          traceEq.
-       -- iClear "HB HC". iStopProof. apply instance_heap. intros.
+          exploit type_of_fundef_preserved; eauto. congruence. traceEq.
+       -- iClear "HI HK HG". iStopProof. apply instance_heap. intros.
           econstructor; eauto. econstructor; eauto. intros. econstructor.
           apply soundness2. apply soundness3 in H5. iIntros "HA".
           iDestruct (H5 with "HA") as "[HA HD]".
           iDestruct ("HD" $! (Eval v ty) with "[]") as "HD"; eauto.
           change sl2 with (nil ++ sl2). unfold set_opttemp.
-          iDestruct (locally_set with "HA HD") as "[HD HA]".
+          iDestruct (locally_set with "[HA] HD") as "[HD HA]"; auto.
           iApply (locally_out with "HD"). iModIntro. iSplitL "HA".
           iIntros. iApply locally_conseq_pure. intros. econstructor. eapply H6.
           iApply locally_finish. iFrame. eauto.
-     * iDestruct "P" as (sl0 a2 sl3 al3) ">[HA [HB %]]".
-       iDestruct (tr_simple_rvalue with "HA") as "[% [% %]]"; eauto.
-       iDestruct (tr_simple_exprlist with "HB []") as "[% %]"; eauto.
+     * iDestruct (tr_simple_rvalue with "HE") as "[% [% %]]"; eauto.
+       iDestruct (tr_simple_exprlist with "HG []") as "[% %]"; eauto.
        subst. simpl. exploit functions_translated; eauto. intros [tfd [J K]].
        iExists _. iSplit.
        -- iPureIntro. left. eapply plus_left. constructor. apply star_one.
           econstructor; eauto. rewrite <- H8; eauto.
-          exploit type_of_fundef_preserved; eauto. congruence.
-          traceEq.
+          exploit type_of_fundef_preserved; eauto. congruence. traceEq.
        -- iStopProof. apply instance_heap. intros.
           econstructor; eauto. econstructor; eauto. intros. econstructor.
           apply soundness2. apply soundness3 in H5. iIntros "HA".
@@ -2530,22 +2218,20 @@ Proof.
           iDestruct ("HC" $! (Eval v ty) with "[]") as "HD"; eauto.
           change sl2 with (nil ++ sl2). unfold set_opttemp.
           iApply (locally_out with "HD"). eauto.
-     * iDestruct "P" as (sl0 a2 sl3 al3 t0) ">[HA [HD [HB [HC [% %]]]]]".
-       iDestruct (tr_simple_rvalue with "HB") as "[% [% %]]"; eauto.
-       iDestruct (tr_simple_exprlist with "HC []") as "[% %]"; eauto.
+     * iDestruct (tr_simple_rvalue with "HI") as "[% [% %]]"; eauto.
+       iDestruct (tr_simple_exprlist with "HK []") as "[% %]"; eauto.
        subst. simpl. exploit functions_translated; eauto. intros [tfd [J K]].
        iExists _. iSplit.
        -- iPureIntro. left. eapply plus_left. constructor. apply star_one.
           econstructor; eauto. rewrite <- H9; eauto.
-          exploit type_of_fundef_preserved; eauto. congruence.
-          traceEq.
-       -- iClear "HB HC". iStopProof. apply instance_heap. intros.
+          exploit type_of_fundef_preserved; eauto. congruence. traceEq.
+       -- iClear "HI HK". iStopProof. apply instance_heap. intros.
           econstructor; eauto. econstructor; eauto. intros. econstructor.
           apply soundness2. apply soundness3 in H5. iIntros "HA".
           iDestruct (H5 with "HA") as "[HA [HB HD]]".
           iDestruct ("HD" $! (Eval v ty) with "[]") as "HD"; eauto.
           change sl2 with (nil ++ sl2). unfold set_opttemp.
-          iDestruct (locally_set with "HA HD") as "[HD HA]".
+          iDestruct (locally_set with "[HA] HD") as "[HD HA]"; auto.
           iApply (locally_out with "HD"). iModIntro. iSplit; iFrame. iExists _. iSplitL "HA".
           iIntros. iApply locally_conseq_pure. intros. econstructor. eapply H6.
           iApply locally_finish. iFrame. eauto.
@@ -2557,43 +2243,34 @@ Proof.
      intro. apply soundness3 in H2.
      apply (soundness1 tmps). iIntros "HA". iDestruct (H2 with "HA") as "HA". 
      iDestruct (H3 with "HA") as (dst' sl1 sl2 a') "[P [% R]]". clear H2. clear H3.
-     simpl. destruct dst'.
-     * iDestruct "P" as  (sl0 al2 t1) ">[HA [HB [_ [% %]]]]".
-       iDestruct (tr_simple_exprlist with "HA []") as "[% %]"; eauto.
+     simpl. iDestruct "P" as ">P". destruct dst'; norm_all.
+     * iDestruct (tr_simple_exprlist with "HE []") as "[% %]"; eauto.
        subst; simpl. iExists _. iSplit.
-       -- iPureIntro. left. eapply plus_left. constructor.  apply star_one.
-          econstructor; eauto.
-          eapply external_call_symbols_preserved; eauto. apply senv_preserved.
-          traceEq.
-       -- iClear "HA". iConstructor. iIntros "[HB HD]".
+       -- iPureIntro. left. eapply plus_left. constructor.  apply star_one. econstructor; eauto.
+          eapply external_call_symbols_preserved; eauto. apply senv_preserved. traceEq.
+       -- iClear "HE HI". iConstructor. iIntros "[HB HD]".
           iDestruct ("HD" $! (Eval vres ty) with "[]") as "HD"; eauto.
           change sl2 with (nil ++ sl2). unfold set_opttemp.
-          iDestruct (locally_set with "HB HD") as "[HD HB]".
+          iDestruct (locally_set with "[HB] HD") as "[HD HB]"; auto.
           iApply (locally_out with "HD"). iModIntro. iSplitL "HB"; eauto.
           iIntros. iApply locally_conseq_pure. intros. econstructor. eapply H2.
           iApply locally_finish. iFrame.
-     * iDestruct "P" as  (sl0 al2) ">[HA %]".
-       iDestruct (tr_simple_exprlist with "HA []") as "[% %]"; eauto.
+     * iDestruct (tr_simple_exprlist with "HE []") as "[% %]"; eauto.
        subst. simpl. iExists _. iSplit.
-       -- iPureIntro. left. eapply plus_left. constructor. apply star_one.
-          econstructor; eauto.
-          eapply external_call_symbols_preserved; eauto. apply senv_preserved.
-          traceEq.
-       -- iClear "HA". iConstructor. iIntros "HD".
+       -- iPureIntro. left. eapply plus_left. constructor. apply star_one. econstructor; eauto.
+          eapply external_call_symbols_preserved; eauto. apply senv_preserved. traceEq.
+       -- iClear "HE". iConstructor. iIntros "HD".
           iDestruct ("HD" $! (Eval vres ty) with "[]") as "HD"; eauto.
           change sl2 with (nil ++ sl2). unfold set_opttemp.
           iApply (locally_out with "HD"). iModIntro. eauto.
-     * iDestruct "P" as  (sl0 al2 t1) ">[HA [HB [HC [% %]]]]".
-       iDestruct (tr_simple_exprlist with "HA []") as "[% %]"; eauto.
+     * iDestruct (tr_simple_exprlist with "HE []") as "[% %]"; eauto.
        subst; simpl. iExists _. iSplit.
-       -- iPureIntro. left. eapply plus_left. constructor.  apply star_one.
-          econstructor; eauto.
-          eapply external_call_symbols_preserved; eauto. apply senv_preserved.
-          traceEq.
-       -- iClear "HA". iConstructor. iIntros "[HA [HB HD]]".
+       -- iPureIntro. left. eapply plus_left. constructor.  apply star_one. econstructor; eauto.
+          eapply external_call_symbols_preserved; eauto. apply senv_preserved. traceEq.
+       -- iClear "HE". iConstructor. iIntros "[HA [HB HD]]".
           iDestruct ("HD" $! (Eval vres ty) with "[]") as "HD"; eauto.
           change sl2 with (nil ++ sl2). unfold set_opttemp.
-          iDestruct (locally_set with "HA HD") as "[HD HA]".
+          iDestruct (locally_set with "[HA] HD") as "[HD HA]"; auto.
           iApply (locally_out with "HD"). iModIntro. iSplit; iFrame. iExists _. iSplitL "HA"; eauto.
           iIntros. iApply locally_conseq_pure. intros. econstructor. eapply H2.
           iApply locally_finish. iFrame. eauto.
@@ -2640,13 +2317,14 @@ Qed.
 
 Lemma red_absorb : forall P tmp, (<absorb> \⌜P⌝ : iProp) () tmp -> P.
 Proof.
-  unfold pure_empty. MonPred.unseal. intros. red in H. inversion_star h P. clear H. do 2 red in P2.
-  destruct P2. do 2 red in H0. inversion_star h P. inv P4. apply H1.
+  intros. apply soundness3 in H. apply (soundness1 tmp).
+  iIntros "HA". iDestruct (H with "HA") as ">$".
 Qed.
 
 Lemma red_pure : forall P tmp, (⌜P⌝ : iProp) () tmp -> P.
 Proof.
-  MonPred.unseal. intros. do 2 red in H. inversion_star h P. clear H. inv P1. apply H.
+  intros. apply soundness3 in H. apply (soundness1 tmp).
+  iIntros "HA". iDestruct (H with "HA") as "$".
 Qed.
   
 Lemma sstep_simulation:
