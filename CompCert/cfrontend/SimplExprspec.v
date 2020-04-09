@@ -193,11 +193,11 @@ Section SPEC.
                tr_rvalof (Csyntax.typeof e1) a2 sl4 a4  ∗
                \⌜sl = sl2 ++ sl3 ++ sl4 ++ make_assign a2 (Ebinop ope a4 a3 tyres) :: nil ⌝
     | _ =>
-      ∃ sl2 a2 sl3 a3 sl4 a4 t,
+      dest_below dst ∗ ∃ sl2 a2 sl3 a3 sl4 a4 t,
        tr_expr le For_val e1 sl2 a2  ∗
                tr_expr le For_val e2 sl3 a3  ∗
                tr_rvalof (Csyntax.typeof e1) a2 sl4 a4  ∗
-               \s t ∗ dest_below dst ∗ 
+               \s t ∗
                \⌜ sl = sl2 ++ sl3 ++ sl4 ++ Sset t (Ecast (Ebinop ope a4 a3 tyres) (Csyntax.typeof e1)) :: make_assign a2 (Etempvar t (Csyntax.typeof e1)) :: final dst (Etempvar t (Csyntax.typeof e1))
        /\ a = Etempvar t (Csyntax.typeof e1) ⌝
      end
@@ -209,7 +209,7 @@ Section SPEC.
                  ∃ sl3 a3, tr_rvalof (Csyntax.typeof e1) a2 sl3 a3  ∗
                                      \⌜ sl = sl2 ++ sl3 ++ make_assign a2 (transl_incrdecr id a3 (Csyntax.typeof e1)) :: nil ⌝
     | _ =>
-      ∃ t, \s t  ∗ dest_below dst ∗ 
+      dest_below dst ∗ ∃ t, \s t  ∗
             \⌜ sl = sl2 ++ make_set t a2 ::make_assign a2 (transl_incrdecr id (Etempvar t (Csyntax.typeof e1)) (Csyntax.typeof e1)) :: final dst (Etempvar t (Csyntax.typeof e1)) /\ a = Etempvar t (Csyntax.typeof e1)⌝
      end
 
@@ -227,8 +227,8 @@ Section SPEC.
                tr_exprlist le el2 sl3 al3  ∗
                \⌜  sl = sl2 ++ sl3 ++ Scall None a2 al3 :: nil ⌝
     | _ =>
-      ∃ sl2 a2 sl3 al3 t,
-       \s t ∗ dest_below dst ∗ 
+      dest_below dst ∗ ∃ sl2 a2 sl3 al3 t,
+       \s t ∗ 
         tr_expr le For_val e1 sl2 a2  ∗
         tr_exprlist le el2 sl3 al3  ∗
         \⌜ sl = sl2 ++ sl3 ++ Scall (Some t) a2 al3 :: final dst (Etempvar t ty) /\
@@ -242,9 +242,9 @@ Section SPEC.
        tr_exprlist le el sl2 al2 ∗
                    \⌜ sl = sl2 ++ Sbuiltin None ef tyargs al2 :: nil ⌝
     | _ =>
-      ∃ sl2 al2 t,
+      dest_below dst ∗ ∃ sl2 al2 t,
        tr_exprlist le el sl2 al2  ∗
-                   \s t  ∗ dest_below dst ∗ 
+                   \s t  ∗ 
                    \⌜ sl = sl2 ++ Sbuiltin (Some t) ef tyargs al2 :: final dst (Etempvar t ty) /\
        a = Etempvar t ty⌝
      end
@@ -376,11 +376,7 @@ Section SPEC.
       destruct dst; auto; iSplit; auto; repeat iExists _; repeat iSplit; auto; iIntros; eauto;
       iApply locally_simpl; iIntros; iPureIntro;econstructor.
     
-    - EvalTac dst.
-    - EvalTac dst.
-    - EvalTac dst.
-    - EvalTac dst.
-    - EvalTac dst.
+    1-5 : EvalTac dst.
     - iFrame; repeat iExists _; destruct dst; simpl; simpl_list; eauto.
     - iFrame. repeat iExists _. destruct dst; simpl; iFrame; simpl_list; eauto.
       rewrite <- app_assoc. eauto.
@@ -408,23 +404,25 @@ Section SPEC.
     - repeat iExists _. iSplitL "HC"; eauto.
     - repeat iExists _. iSplitL "HF"; eauto. iSplitL "HE"; auto. iSplitL "HC"; eauto. iSplitL; eauto.
       iPureIntro. split; auto. do 2 (rewrite <- app_assoc; f_equal).
-    - repeat iExists _. iFrame. iSplitL "HG"; eauto. iSplitL "HF"; eauto. 
+    - iSplitR; auto. repeat iExists _. iFrame. iSplitL "HG"; eauto. iSplitL "HF"; eauto. 
     - repeat iExists _. iFrame. iSplitL "HE"; eauto. 
-    - repeat iExists _. iSplitL "HH"; auto. iSplitL "HG"; eauto. iSplitL "HE"; auto.
+    - iSplitL "HK"; auto. repeat iExists _. iSplitL "HH"; auto. iSplitL "HG"; eauto. 
+      iSplitL "HE"; auto.
       iSplitL "HC"; eauto. iSplitL; auto.
-      iPureIntro. split; auto. do 3 (rewrite <- app_assoc; f_equal).
+      iPureIntro. do 3 (rewrite <- app_assoc; f_equal).
     - repeat iExists _. iSplitL "HC"; eauto. 
     - repeat iExists _. iSplitL "HC"; eauto.
-    - repeat iExists _. iSplitL "HD"; eauto. iExists v0. iSplitL "HC"; auto. iSplitL; auto.
-      iPureIntro. split; auto. rewrite <- app_assoc; f_equal.
+    - repeat iExists _. iSplitL "HD"; eauto. iSplitL "HF"; auto. iExists v0.
+      iSplitL "HC"; auto. iSplitL; auto.
+      iPureIntro. rewrite <- app_assoc; f_equal.
     - repeat iExists _. iSplitL "HD"; eauto. iSplitL; auto. iApply ("HC" with "HF").
-    - repeat iExists _. iSplitL "HB"; auto. iSplitR; auto. iSplitL "HE"; eauto.
+    - iSplitR; auto. repeat iExists _. iSplitL "HB"; auto. iSplitL "HE"; auto. 
     - repeat iExists _. iSplitL "HC"; eauto.
-    - repeat iExists _. iSplitL "HC"; auto. iSplitL "HH"; auto. iSplitL "HF"; eauto.
+    - iSplitL "HH"; auto. repeat iExists _. iSplitL "HC"; auto. iSplitL "HF"; auto.
       iSplitL "HE"; eauto. iPureIntro. split; auto. do 2 (rewrite <- app_assoc; f_equal).
-    - repeat iExists _. iSplitL "HC"; auto. 
-    - repeat iExists _. iSplitL "HD"; auto. iSplitL "HC"; auto. iSplitL; eauto.
-      iPureIntro. split; auto. rewrite <- app_assoc; f_equal.
+    - iSplitR; auto. repeat iExists _. iSplitL "HC"; auto. 
+    - iSplitL "HE"; auto. repeat iExists _. iSplitL "HD"; auto. iSplitL "HC"; auto. iSplitL; eauto.
+      iPureIntro. rewrite <- app_assoc; f_equal.
     - repeat iExists _. iSplitL "HC"; auto.
   Qed.
 

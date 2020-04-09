@@ -195,6 +195,17 @@ Proof.
   iApply "HB". iApply "HA". iFrame.
 Qed.
 
+Lemma locally_frame_l {A} : forall P Q (le : t A),
+    ⊢ P -∗ locally le (fun le' => Q le') -∗ locally le (fun le' => P ∗ Q le').
+Proof.
+  iIntros. iApply locally_sep_indep_l. iFrame.
+Qed.
+
+Lemma locally_frame_r {A} : forall P Q (le : t A),
+    ⊢ P -∗ locally le (fun le' => Q le') -∗ locally le (fun le' => Q le' ∗ P).
+Proof.
+  iIntros. iApply locally_sep_indep_r. iFrame.
+Qed.
 
 Lemma locally_set {A} : forall Q (le : t A) t v,
     ⊢\s t -∗ locally le (fun le' => Q le') -∗ locally (set t v le) (fun le' => Q le') ∗ \s t.

@@ -933,7 +933,7 @@ Module weakestpre_gensym.
       end
     | _ => fail "iFresh returns " x " sometimes."
     end.
-
+  
   (*h should be in the environment *)
   Local Ltac norm h :=
     let env := iGetCtx in
@@ -960,6 +960,10 @@ Module weakestpre_gensym.
         |pm_reduce; norm h; norm x]
       | bi_pure _ => iPure h as ?
       | bi_wand _ _ => iDestruct (h with "[]") as h; [progress auto | norm h]
+      | bi_absorbingly _ =>
+        let name := Fresh in
+        let name_mod := eval compute in (append ">" name) in
+        iPoseProof h as name; iDestruct name as name_mod; norm name
       | _ =>
         match h with
         | IAnon _ => 
@@ -987,7 +991,7 @@ Module weakestpre_gensym.
 
   Tactic Notation "iNorm" := norm_all.
 
-  Lemma test : forall P Q (R T: iProp), ⊢ T -∗ (∃ (x: nat), (True -∗ T)) -∗ ⌜ P /\ Q ⌝ -∗ ((⌜ P ⌝ -∗ R) ∗ True) -∗ <absorb> R.
+  Lemma test : forall P Q (R T: iProp), ⊢  <absorb> (T ∗ R) -∗ (∃ (x: nat), (True -∗ T)) -∗ ⌜ P /\ Q ⌝ -∗ ((⌜ P ⌝ -∗ R) ∗ True) -∗ <absorb> R.
   Proof. iIntros. destruct a. iNorm. Qed.
   
 End weakestpre_gensym.
