@@ -16,9 +16,9 @@
 - Désavantages :
   -- Comprendre comment éviter que la notation du triplet se retire avec un "simpl" (passer par une définition puis une notation ?)
   -- Pas de structures "Inductive" : Pourrait-être compenser si la manipulation du contexte spatial avec des tactiques est facile ?
-     En effet, "inversion" sur un inductive évite une grosse quantité de destruct.
-  -- Locally : la preuve de tr_expr_invariant est beaucoup plus lourde que l'ancienne. Même si une manipulation du contexte spatial pourrait simplifier, elle ne sera pas si courte.
-  -- Preuve de nolabel_expr : Beaucoup plus longue. Pourrait être similaire si je savais manipuler le contexte spatial. Possibilité de créer un équivalent à NoLabelTac.
+     En effet, "inversion" sur un inductive évite une grosse quantité de destruct. (Je crois que apply_ind le compense bien)
+  -- Locally : la preuve de tr_expr_invariant est beaucoup plus lourde que l'ancienne. Même si la manipulation du contexte spatial la simplifie, elle n'est pas aussi courte.
+  -- Preuve de nolabel_expr : un peu plus longue. Possibilité de créer un équivalent à NoLabelTac pour que la preuve soit plus automatisé.
   -- Tactiques beaucoup plus lente. Ne pas charger la pile de lemme utilisé par auto, sinon catastrophe lors de l'utilisation des tactiques proofmode.
   -- Pas très élégant d'instancier une heap dans certains cas pour sortir de proofmode, progresser et retourner dans proofmode. (Lemma instance_heap)
      Possibilité ?: créer une tactique qui permet d'avancer d'une étape ?
