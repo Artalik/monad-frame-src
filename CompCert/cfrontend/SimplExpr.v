@@ -465,7 +465,7 @@ with transl_lblstmt (ls: Csyntax.labeled_statements) : mon labeled_statements :=
 (** Translation of a function *)
 
 Definition transl_function (f: Csyntax.function) : res function :=
-  match run (transl_stmt f.(Csyntax.fn_body)) heap_empty  with
+  match run (transl_stmt f.(Csyntax.fn_body)) ∅  with
   | Erro msg =>
       Error msg
   | Res tbody =>

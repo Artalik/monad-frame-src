@@ -13,11 +13,12 @@
 (** Correctness proof for expression simplification. *)
 Require Import FunInd.
 Require Import Coqlib (* Maps *) Errors Integers.
+Require Import MoSel Locally SimplExpr SimplExprspec.
 Require Import AST Linking.
 Require Import Values Memory Events Globalenvs Smallstep.
 Require Import Ctypes Cop Csyntax Csem Cstrategy Clight.
 Import Maps.PTree.
-Require Import MoSel Locally SimplExpr SimplExprspec.
+
 
 Local Open Scope gensym_monad_scope.
 Notation "a ! b" := (get b a) (at level 1).
@@ -55,7 +56,7 @@ Section PRESERVATION.
     simpl. destruct TRANSL. generalize (prog_comp_env_eq tprog) (prog_comp_env_eq prog). 
     congruence.
   Qed.
-
+  
   Lemma symbols_preserved:
     forall (s: ident), Genv.find_symbol tge s = Genv.find_symbol ge s.
   Proof (Genv.find_symbol_match (proj1 TRANSL)).
@@ -160,9 +161,9 @@ Section PRESERVATION.
                      |- _ => iDestruct (H with h) as h; iDestruct (h with "[] []") as "%"; auto
     | H : forall _ _ _ , bi_emp_valid (tr_exprlist _ l _ _ -∗ _)
                     |- _ => iDestruct (H with h) as h; iDestruct (h with "[]") as "%"; auto
-    | _ => idtac l h
+    | _ => idtac
     end.
-
+  
   Ltac apply_ind_core f list_ident :=
     match list_ident with
     | [] => idtac
@@ -174,7 +175,7 @@ Section PRESERVATION.
         match P with
         | tr_expr _ _ ?l _ _ => f l h; apply_ind_core f t
         | tr_exprlist _ ?l _ _ => f l h; apply_ind_core f t
-        | tr_rvalof _ _ _ _ => unfold tr_rvalof; apply_ind_core f t
+        | tr_rvalof _ ?l _ _ => f l h; apply_ind_core f t
         | _ => apply_ind_core f t
         end
       | _ => idtac "bug2" P
@@ -198,8 +199,8 @@ Section PRESERVATION.
   Proof.
     apply tr_expr_exprlist; intros; simpl in *; try discriminate; auto;
       iIntros; norm_all; apply_ind apply_ind_simple_nil; try(destruct a0; subst; norm_all).
-    - rewrite P0; norm_all; subst; auto.
-    - rewrite P0; norm_all; subst; auto.
+    - unfold tr_rvalof; rewrite P0; norm_all; subst; auto.
+    - unfold tr_rvalof; rewrite P0; norm_all; subst; auto.
     - destruct a; auto.
     - subst; auto.
   Qed.
@@ -1121,32 +1122,27 @@ Ltac NoLabelTac :=
   end.
 
 Ltac apply_ind_label l h :=
+  match type of l with
+  | Csyntax.expr =>
     match goal with
-    | H : forall _ _ _ _, bi_emp_valid (tr_expr _ _ l _ _ -∗ _) |- _ =>
-      iDestruct (H with h) as "%"
-    | H : forall _ _ _, bi_emp_valid (tr_exprlist _ l _ _ -∗ _) |- _ =>
-      iDestruct (H with h) as "%"
-    | _ => fail "No rec"
-    end.
+    | H : forall _ _ _ _, bi_emp_valid (tr_expr _ _ l _ _ -∗ _) |- _ => iDestruct (H with h) as "%"
+    end
+  | exprlist =>
+    match goal with
+    | H : forall _ _ _, bi_emp_valid (tr_exprlist _ l _ _ -∗ _) |- _ => iDestruct (H with h) as "%"
+    end
+  | expr => iDestruct (tr_rvalof_nolabel with h) as "%"
+  end.
 
 
 Lemma tr_find_label_expr:
   (forall r le dst sl a, ⊢ tr_expr le dst r sl a -∗ ⌜ nolabel_list sl ⌝)
 /\(forall rl le sl al, ⊢ tr_exprlist le rl sl al -∗ ⌜ nolabel_list sl ⌝).
 Proof.
-  apply tr_expr_exprlist; intros; simpl; iIntros; norm_all; apply_ind apply_ind_label; subst.
-  - destruct dst; norm_all.
-    + subst; NoLabelTac.
-    + subst; NoLabelTac.
-    + iDestruct "HB" as "[_ HA]". norm_all. subst; NoLabelTac. iPureIntro. apply nolabel_do_set.
-  - subst. iPureIntro. NoLabelTac.
-  - subst. iPureIntro. NoLabelTac.
-  - iDestruct (tr_rvalof_nolabel with "HH") as "%". subst. iPureIntro. NoLabelTac.
-  - iPureIntro. subst. NoLabelTac.
-  - iPureIntro. subst. NoLabelTac.
-  - iPureIntro. subst. NoLabelTac.
-  - iPureIntro. subst. NoLabelTac. 
-  - iPureIntro. subst. NoLabelTac.
+  apply tr_expr_exprlist; intros; simpl; iIntros; norm_all; apply_ind apply_ind_label; subst;
+    try(iPureIntro; NoLabelTac; fail).
+  - destruct dst; norm_all; subst; NoLabelTac. iDestruct "HB" as "[_ HA]". norm_all.
+    subst; iPureIntro; NoLabelTac.
   - destruct dst; norm_all; apply_ind apply_ind_label; subst; iPureIntro; NoLabelTac.
   - destruct dst; norm_all; apply_ind apply_ind_label; subst; iPureIntro; NoLabelTac.
   - destruct dst; norm_all; apply_ind apply_ind_label; subst.
@@ -1157,28 +1153,14 @@ Proof.
     + iDestruct (H0 with "[HH]") as "%". iDestruct "HH" as "[HC _]"; auto.
       iDestruct (H1 with "[HH]") as "%". iDestruct "HH" as "[_ HC]"; auto.
       subst. iPureIntro. NoLabelTac.
-      
-  - subst. iPureIntro. apply nolabel_final.
-  - subst. iPureIntro. apply nolabel_final.
-
   - destruct dst; norm_all; apply_ind apply_ind_label; subst; iPureIntro; NoLabelTac.
-    
-  - destruct dst; norm_all; apply_ind apply_ind_label.
-    + iDestruct (tr_rvalof_nolabel with "HJ") as "%"; subst; iPureIntro; NoLabelTac.
-    + iDestruct (tr_rvalof_nolabel with "HH") as "%"; subst; iPureIntro; NoLabelTac.
-    + iDestruct (tr_rvalof_nolabel with "HJ") as "%"; subst; iPureIntro; NoLabelTac.
-      
-  - destruct dst; norm_all; apply_ind apply_ind_label.
-    + subst. iPureIntro. NoLabelTac.
-    + iDestruct (tr_rvalof_nolabel with "HG") as "%". subst. iPureIntro. NoLabelTac.
-    + subst. iPureIntro. NoLabelTac.
-  - subst. iPureIntro. NoLabelTac.
+  - destruct dst; norm_all; apply_ind apply_ind_label; subst; iPureIntro; NoLabelTac.  
+  - destruct dst; norm_all; apply_ind apply_ind_label; subst; iPureIntro; NoLabelTac.
   - destruct dst; norm_all; apply_ind apply_ind_label; subst; iPureIntro; NoLabelTac.      
   - destruct dst; norm_all; apply_ind apply_ind_label; subst; iPureIntro; NoLabelTac.
   - destruct dst; norm_all; apply_ind apply_ind_label; auto.
     destruct (Pos.eq_dec x0 (sd_temp sd)); norm_all; apply_ind apply_ind_label; auto.
   - destruct a. subst. NoLabelTac.
-  - apply_ind apply_ind_label. subst. iPureIntro. NoLabelTac.
 Qed.
                                         
 Lemma tr_find_label_top:
@@ -1408,6 +1390,7 @@ Proof.
   unfold_locally.
   destruct H2. red in H. intros. exists heap_empty, h1. subst h1.
   repeat split; auto with heap_scope. erewrite <- H0. apply gss. apply lookup_singleton.
+  rewrite heap_union_empty_l; auto.
 Qed.
 
 Ltac apply_ind_dest l h :=

@@ -18,9 +18,9 @@ Ltac unfold_locally :=
   unfold locally; unfold hlocally; MonPred.unseal; split; MonPred.unseal; intros i h H;
   destruct i; inversion H as (H0&H1); clear H; inv H1;
   clear H0; intros j H; destruct j; clear H;
-  exists emp, heap_empty, heap_empty; repeat split; auto with heap_scope; intros h H0; inversion_star h H;
+  exists emp, heap_empty, heap_empty; repeat split; auto with heap_scope; [intros h H0; inversion_star h H;
   inversion H1 as (H4&H5); inv H5; clear H4; clear H1; clear H0;
-  rewrite heap_union_empty_l.
+  rewrite heap_union_empty_l | rewrite heap_union_empty_r; auto].
 
 Lemma locally_indep {A} : forall (P : iProp) (le : t A), ⊢P -∗ locally le (fun _ => P).
 Proof.
@@ -34,7 +34,7 @@ Qed.
 
 Lemma locally_delete {A} : forall P (le : t A), ⊢ locally le (fun le' => P le') -∗ P le.
 Proof.
-  unfold_locally. apply H2. eauto.
+  unfold_locally. apply H2. eauto. 
 Qed.
 
 Lemma locally_sep {A} : forall P R (le : t A),
@@ -48,6 +48,7 @@ Proof.
   intros. eapply H1.
   eapply lookup_union_Some; eauto with heap_scope.
   eapply P2. intros. eapply H1. eapply lookup_union_Some; eauto with heap_scope.
+  rewrite heap_union_empty_r; auto. 
 Qed.
 
 Lemma locally_and {A} : forall P R (le : t A),
@@ -57,9 +58,11 @@ Proof.
   unfold locally; unfold hlocally; MonPred.unseal; split; MonPred.unseal; intros i h H;
   destruct i; inversion H as (H0&H1); clear H; inv H1;
   clear H0; intros j H; destruct j; clear H.
-  exists emp, heap_empty, heap_empty; repeat split; auto with heap_scope; inversion_star h P; clear H;
-  destruct P2; inv P1; inv H3; clear H2; clear P3; rewrite heap_union_empty_l;
-  rewrite heap_union_empty_l in H0. apply (H _ H0). apply (H1 _ H0).
+  exists emp, heap_empty, heap_empty; repeat split; auto.
+  3 : rewrite heap_union_empty_l; auto.
+  all :inversion_star h P; clear H;
+    destruct P2; inv P1; inv H3; clear H2; clear P3; rewrite heap_union_empty_l;
+      rewrite heap_union_empty_l in H0. apply (H _ H0). apply (H1 _ H0).
 Qed.
 
 Lemma locally_and_out {A} : forall P R (le : t A),
@@ -69,7 +72,9 @@ Proof.
   unfold locally; unfold hlocally; MonPred.unseal; split; MonPred.unseal; intros i h H;
   destruct i; inversion H as (H0&H1); clear H; inv H1;
   clear H0; intros j H; destruct j; clear H.
-  exists emp, heap_empty, heap_empty; repeat split; auto with heap_scope; inversion_star h P; clear H;
+  exists emp, heap_empty, heap_empty; repeat split; auto.
+  3 : rewrite heap_union_empty_l; auto.
+  all : inversion_star h P; clear H;
     intros; inv P1; inv H1; clear H0; clear P3; rewrite heap_union_empty_l;
       rewrite heap_union_empty_l in H; eapply P2 in H; destruct H; auto.
 Qed.
@@ -90,6 +95,7 @@ Proof.
     apply map_disjoint_union_r in P5 as (_&P10). auto.
   - subst. apply heap_union_assoc.
   - apply map_disjoint_empty_r.
+  - rewrite heap_union_empty_r; auto.
 Qed.
 
 Lemma locally_modout {A} : forall P (le : t A),
@@ -148,10 +154,12 @@ Proof.
   red. intros. inversion_star h P. clear H. red in P1. subst.
   edestruct P2. instantiate (1 := tt). repeat red. exists heap_empty, h0.
   repeat split; auto with heap_scope.
-  apply map_disjoint_empty_l. inversion_star h P. clear H. destruct P4. inv H1. clear P5.
+  apply map_disjoint_empty_l. rewrite heap_union_empty_l; auto. inversion_star h P.
+  clear H. destruct P4. inv H1. clear P5.
   rewrite heap_union_empty_r. rewrite heap_union_empty_r in P3. rewrite heap_union_empty_r in H0.
   apply H. exists h, h1. repeat split; auto. apply H2. intros. erewrite <- H0; auto.
   eapply lookup_union_Some; eauto. apply heap_union_comm; auto. apply map_disjoint_empty_r.
+  rewrite heap_union_empty_r; auto.
 Qed.
 
 
@@ -219,6 +227,7 @@ Proof.
   eapply P2. eapply lookup_singleton_Some. split; eauto. eauto.
   rewrite gso; eauto. eauto.
   exists x. reflexivity. apply heap_union_comm; auto. apply map_disjoint_empty_r.
+  rewrite heap_union_empty_r; auto.
 Qed.
 
 Lemma locally_out {A} : forall P Q (le : t A),
@@ -242,5 +251,6 @@ Proof.
   exists (hheap_ctx h0), h0, heap_empty. repeat split; auto with heap_scope. intros h H.
   inversion_star h P. clear H. red in P0. destruct P3. red in H. exists h2, h1.
   subst. repeat split; auto. exists x0. reflexivity. apply heap_union_comm; auto.
-  apply map_disjoint_empty_r. exists x. reflexivity. apply heap_union_comm; auto.
+  apply map_disjoint_empty_r. rewrite heap_union_empty_r; auto.
+  exists x. reflexivity. apply heap_union_comm; auto.
 Qed.

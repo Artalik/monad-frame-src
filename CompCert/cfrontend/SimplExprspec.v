@@ -684,9 +684,8 @@ with tr_lblstmts: Csyntax.labeled_statements -> labeled_statements -> Prop :=
       tr_function f tf.
   Proof.
     unfold transl_function; intros.
-    destruct (run (transl_stmt (Csyntax.fn_body f)) ∅) eqn:?. rewrite Heqe in H. inversion H.
-    destruct p.
-    rewrite Heqe in H. simpl in *. inversion H.
+    destruct (run (transl_stmt (Csyntax.fn_body f)) ∅) eqn:?; inversion H.
+    destruct p. simpl in *. 
     apply tr_function_intro; auto; simpl.
     eapply (adequacy_pure (transl_stmt (Csyntax.fn_body f)) _ ∅ s0 s emp).
     2: apply Heqe.
