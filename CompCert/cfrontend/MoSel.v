@@ -392,18 +392,6 @@ Module SepBasicCore.
 
     Ltac inv H := inversion H; clear H; subst.
 
-    Lemma test : forall l, ⊢ (∃ t, single l t) -∗ (∃ t, single l t) -∗ False.
-    Proof.
-      MonPred.unseal. split. MonPred.unseal. repeat red. intros. destruct i. destruct a. clear H0.
-      inv H. inv H1. clear H0. exists hempty, heap_empty, heap_empty. repeat split; auto with heap_scope.
-      intros h H j C. clear C. clear j. inversion_star h P. clear H. inv P0. clear P2.
-      destruct P1. red in H. rewrite heap_union_empty_l. exists (hheap_ctx h1), h1, heap_empty.
-      repeat split; eauto with heap_scope. subst. intros h H. inversion_star h P. destruct P1.
-      red in H0. red in P0. subst. clear H. erewrite map_disjoint_spec in P2.
-      edestruct P2; eapply lookup_singleton_Some; eauto.
-      apply map_disjoint_empty_r.
-    Qed.
-
     Local Open Scope bi_scope.
     Local Notation "l ↦ t" :=
       (single l t) (at level 20) : bi_scope.
@@ -424,25 +412,101 @@ Module SepBasicCore.
     Qed.
 
 
+    Definition pure_empty (P : Prop) : monPred biInd hpropI := <affine> ⌜P⌝.
+
+    Local Notation "\⌜ P ⌝" := (pure_empty P)
+                                 (at level 0, P at level 99, format "\⌜ P ⌝").
+
+    Global Instance affine_pure (P : Prop) : Affine (pure_empty P).
+    Proof.
+      red. iIntros "HA". trivial.
+    Qed.
+
+    Lemma pureIntro {X} P : ∀ (a b : X), P a ⊢ pure_empty (a = b) -∗ P b.
+    Proof.
+      iIntros (a b) "HA %". rewrite a0. iApply "HA".
+    Qed.
+
+
+    Lemma pure_empty_destruct : forall P Q, ⊢ \⌜ P /\ Q ⌝ -∗ \⌜ P ⌝ ∗ \⌜ Q ⌝ .
+    Proof. iIntros. destruct a. iSplit; iPureIntro; auto. Qed.
+
+
+    Global Instance affine_heap_empty : Affine (heap_ctx ∅).
+    Proof.
+      split. intro. MonPred.unseal. repeat red. intros. split; auto.
+    Qed.
+
+    Lemma init_heap : ⊢ heap_ctx ∅.
+    Proof.
+      split. MonPred.unseal. repeat red. intros. inversion H. inversion H1. reflexivity.
+    Qed.
+
+    Lemma instance_heap : forall (P : monPred biInd hpropI) (Q : Prop), (forall tmps, P () tmps -> Q) -> (P ⊢ ⌜Q⌝).
+    Proof.
+      MonPred.unseal. intros. split. repeat red. intros.
+      exists ∅, x. repeat split; auto. destruct i. eapply H. eauto.
+      apply map_disjoint_empty_l. rewrite heap_union_empty_l. reflexivity.
+    Qed.
+
+    Lemma soundness1 h (Φ : Prop) : (heap_ctx h ⊢ (⌜ Φ ⌝) : monPred biInd hpropI) -> Φ.
+    Proof.
+      MonPred.unseal=> -[H]. repeat red in H.
+      pose (e := H () h).
+      edestruct e as (h1&h2&P0&P1&P2&P3).
+      - reflexivity.
+      - inversion P0. apply H0.
+    Qed.
+
+    Lemma soundness2 (Φ : monPred biInd hpropI) h : (⊢heap_ctx h -∗ Φ) -> Φ () h.
+    Proof.
+      MonPred.unseal=> -[H]. repeat red in H.
+      pose (e := H () ∅).
+      simpl in *. edestruct e.
+      - rewrite monPred_at_emp. split; auto; apply hempty_intro.
+      - repeat red. exists ∅. exists ∅. repeat split; auto. rewrite heap_union_empty_l. auto.
+      - inversion_star h P.
+        inversion P1.
+        apply H1.
+        exists heap_empty; exists h.
+        inversion H2; subst. rewrite heap_union_empty_r in P; subst.
+        repeat split; auto. apply map_disjoint_empty_l. rewrite heap_union_empty_l. auto.
+    Qed.
+
+    Lemma soundness3 (Φ : monPred biInd hpropI) h : Φ () h -> (⊢heap_ctx h -∗ Φ).
+    Proof.
+      MonPred.unseal. unfold monPred_wand_def. unfold monPred_upclosed. simpl. split.
+      intros. simpl. repeat red. intros. exists emp. exists x; exists heap_empty.
+      repeat split; auto with heap_scope. rewrite monPred_at_emp in H0. apply H0.
+      intros h0 P0. inversion_star h P. simpl in *. rewrite <- P2 in *. inversion P1. inversion H3.
+      subst. rewrite heap_union_empty_l. rewrite <- P2. destruct a. apply H.
+      apply map_disjoint_empty_r.
+    Qed.
+
+    Lemma heap_ctx_split (h h' : heap) : h ##ₘ h' -> (⊢heap_ctx (h \u h') -∗ heap_ctx h ∗ heap_ctx h').
+    Proof.
+      intro.
+      MonPred.unseal. repeat red.
+      unfold monPred_wand_def.
+      unfold monPred_sep_def.
+      unfold monPred_upclosed. split. simpl.
+      intro. intro P. intro. repeat red. exists hempty. rewrite monPred_at_emp in H0.
+      inversion H0; subst.
+      exists heap_empty; exists heap_empty. repeat split; auto.
+      + repeat intro. inversion_star h P. inversion P1. subst.
+        exists h; exists h'. repeat split; auto. inversion P2; subst.
+        rewrite heap_union_empty_l. reflexivity.
+      + inversion H3. rewrite heap_union_empty_l. reflexivity.
+    Qed.
+
+    Lemma heap_ctx_split_sing (h : heap) l t : h ##ₘ ({[l := t]}) ->
+                                                (⊢heap_ctx (<[l := t]>h) -∗ heap_ctx h ∗ l ↦ t).
+    Proof.
+      iIntros (?) "HA". rewrite insert_union_singleton_r; auto. iApply heap_ctx_split; auto.
+      rewrite <- map_disjoint_singleton_r. eauto.
+    Qed.
+
   End hprop.
-
-  (* Arguments hand [type]. *)
-  (* Arguments hor [type]. *)
-  (* Arguments hempty [type]. *)
-  (* Arguments hsingle [type]. *)
-  (* Arguments hheap_ctx [type]. *)
-  (* Arguments hstar [type]. *)
-  (* Arguments hexists [type]. *)
-  (* Arguments hpure [type]. *)
-  (* Arguments htop [type]. *)
-  (* Arguments hforall [type]. *)
-  (* Arguments hwand [type]. *)
-  (* Arguments qwand [type]. *)
-
-
-  (* Arguments hstar [type]. *)
-
-  (* Arguments heap_ctx [type]. *)
 
   Notation "'heap_empty'" := (∅ : heap).
 
@@ -481,14 +545,91 @@ Module SepBasicCore.
 
   Open Scope bi_scope.
 
-  (* Arguments single [type]. *)
-  (* Arguments heap_ctx [type]. *)
-
   Notation "l ↦ t" :=
     (single l t) (at level 20) : bi_scope.
 
   Notation "\s l" :=
     (∃ t, l ↦ t) (at level 10) : bi_scope.
+
+  Notation "\⌜ P ⌝" := (pure_empty P)
+                         (at level 0, P at level 99, format "\⌜ P ⌝").
+
+  Local Ltac Fresh :=
+    let x := iFresh in
+    match x with
+    | IAnon ?x =>
+      let x := eval compute in (ascii_of_pos (x + 64)) in
+          let x := eval compute in (append "H" (string_of_list_ascii [x])) in
+              let env := iGetCtx in
+              let P := reduction.pm_eval (envs_lookup x env) in
+              match P with
+              | None => x
+              | Some _ => Fresh
+              end
+    | _ => fail "iFresh returns " x " sometimes."
+    end.
+
+  (*h should be in the environment *)
+  Local Ltac norm h :=
+    let env := iGetCtx in
+    let P := reduction.pm_eval (envs_lookup h env) in
+    match P with
+    | None => fail "assert false"
+    | Some (false, ?P) =>
+      match P with
+      | bi_exist ?Q => let x := fresh "x" in (iDestruct h as (x) h; norm h)
+      | bi_sep ?Q ?W =>
+        let x := Fresh in
+        let y := Fresh in
+        eapply tac_and_destruct with h _ x y _ _ _;
+        [ pm_reflexivity | pm_reduce; iSolveTC | pm_reduce; norm x; norm y]
+      | pure_empty (and ?P ?Q) =>
+        let x := Fresh in
+        iPoseProof (pure_empty_destruct with h) as x; norm x
+      | pure_empty _ => iPure h as ?
+      | bi_pure (and ?P ?Q) =>
+        let x := Fresh in
+        eapply tac_and_destruct with h _ h x _ _ _;
+        [pm_reflexivity
+        |pm_reduce; iSolveTC
+        |pm_reduce; norm h; norm x]
+      | bi_pure _ => iPure h as ?
+      | bi_wand _ _ => iDestruct (h with "[]") as h; [progress auto | norm h]
+      | bi_absorbingly _ =>
+        let name := Fresh in
+        let name_mod := eval compute in (append ">" name) in
+            iPoseProof h as name; iDestruct name as name_mod; norm name
+      | _ =>
+        match h with
+        | IAnon _ =>
+          let x := Fresh in
+          iPoseProof h as x
+        | _ => idtac
+        end
+      end
+    | Some (true,?P) => idtac
+    end.
+
+  (* (List.fold norm) in Ltac *)
+  Local Ltac norm_list l :=
+    match l with
+    | [] => idtac
+    | ?h :: ?t => norm h ; norm_list t
+    end.
+
+  (* List.fold norm list_ident idtac *)
+  Ltac norm_all :=
+    iStartProof;
+    let env := iGetCtx in
+    let list_ident := eval compute in (rev (envs_dom env)) in
+        norm_list list_ident; auto.
+
+  Tactic Notation "iNorm" := norm_all.
+
+  (* Context {type : Type}. *)
+  (* Lemma test : forall P Q (R T: monPred biInd (@hpropI type)), *)
+  (*     ⊢  <absorb> (T ∗ R) -∗ (∃ (x: nat), (True -∗ T)) -∗ ⌜ P /\ Q ⌝ -∗ ((⌜ P ⌝ -∗ R) ∗ True) -∗ <absorb> R. *)
+  (* Proof. iIntros. destruct a. iNorm. Qed. *)
 
 
 End SepBasicCore.
@@ -585,81 +726,7 @@ Module fresh.
 
 End fresh.
 
-(* Module mwp_gen. *)
-(*   (* Context {type : Type}. *) *)
-  
-(*   Record Signature (I : Type): Type := *)
-(*     { Operations: I → Type; *)
-(*       Arities: forall i: I, Operations i → Type; *)
-(*       Sorts: forall i: I, forall op: Operations i, Arities i op → I }. *)
-  
-(*   Arguments Operations [_] _ i. *)
-(*   Arguments Arities [_] _ [_] op. *)
-(*   Arguments Sorts [_] _ [_] [_] ar. *)
-
-(*   Definition Functor {I} (S: Signature I)(X : I → Type)(i : I): Type := *)
-(*     { op : Operations S i & forall ar : Arities S op, X (Sorts S ar) }. *)
-
-(*   Inductive Kleene {I} (S: Signature I)(p : I → Type) (i : I) := *)
-(*   | ret : p i → Kleene S p i *)
-(*   | op : Functor S (Kleene S p) i → Kleene S p i. *)
-
-(*   Inductive sig {A} (X : A) : Type := *)
-(*   | Err : A -> sig X *)
-(*   | Gensym : A -> (ident -> A) -> sig X. *)
-  
-(*   Definition arities {A} (a : A) (s : sig a) := *)
-(*     match s with *)
-(*     | Err _ _ => nat *)
-(*     | Gensym _ _ _ => ident *)
-(*     end. *)
-  
-(*   Definition sort {A} (a : A) (s : sig a) (ar : arities a s) := a. *)
-  
-(*   Definition operation {A} : Signature A := {| Operation := sig; *)
-(*                                                Arities := arities; *)
-(*                                                Sorts := sort *)
-(*                                             |}.  *)
-
-(*   Arguments Err [X]. *)
-(*   Arguments Gensym [X]. *)
-
-(*   Inductive mon (X : Type) : Type := *)
-(*   | ret : X -> mon X *)
-(*   | op : sig (mon X) -> mon X. *)
-
-(*   Arguments ret {_} x. *)
-(*   Arguments op {_} s. *)
-
-(*   Fixpoint bind {X Y} (m : mon X) (f : X -> mon Y) : mon Y := *)
-(*     match m with *)
-(*     | ret x => f x *)
-(*     | op (Err e) => op (Err e) *)
-(*     | op (Gensym t g) => op (Gensym t (fun x => bind (g x) f)) *)
-(*     end. *)
-
-(*   Notation "'let!' x ':=' e1 'in' e2" := (bind e1 (fun x => e2)) *)
-(*                                            (x ident, at level 90). *)
-
-(*   Definition error {X} (e : Errors.errmsg) : mon X := op (Err e). *)
-(*   Definition gensym (t : type) : mon ident := op (Gensym t ret). *)
-
-(*   Definition mon := Kleene sig *)
-          
-(*   Fixpoint mwp {X} (e1 : mon X) (Q : X -> iProp) : iProp := *)
-(*     match e1 with *)
-(*     | ret v => Q v *)
-(*     | op (Err e) => True *)
-(*     | op (Gensym _ f) => *)
-(*       ∀ l, \s l -∗ mwp (f l) Q *)
-(*     end. *)
-
-
-  
-(* End mwp_gen. *)
-
 Require Import Ctypes.
-
 
 Module gensym.
 
@@ -747,32 +814,6 @@ Module weakestpre_gensym.
   Import reduction.
 
   Definition iProp := monPred biInd (@hpropI type).
-
-  Global Instance affine_heap_empty : Affine (heap_ctx ∅ : iProp).
-  Proof.
-    split. intro. MonPred.unseal. repeat red. intros. split; auto.
-  Qed.
-
-  Lemma init_heap : ⊢ (heap_ctx ∅ : iProp).
-  Proof.
-    split. MonPred.unseal. repeat red. intros. inversion H. inversion H1. reflexivity.
-  Qed.
-
-  Definition pure_empty (P : Prop) : iProp := <affine> ⌜P⌝.
-
-  Global Instance affine_pure (P : Prop) : Affine (pure_empty P).
-  Proof.
-    red.
-    iIntros "HA". trivial.
-  Qed.
-
-  Lemma pureIntro {X} (P : X -> iProp) : ∀ a b, P a ⊢ pure_empty (a = b) -∗ P b.
-  Proof.
-    iIntros (a b) "HA %". rewrite a0. iApply "HA".
-  Qed.
-
-  Notation "\⌜ P ⌝" := (pure_empty P)
-                         (at level 0, P at level 99, format "\⌜ P ⌝").
 
   Fixpoint mwp {X} (e1 : mon X) (Q : X -> iProp) : iProp :=
     match e1 with
@@ -1061,155 +1102,12 @@ Module weakestpre_gensym.
     simpl. auto.
   Qed.
 
-  Lemma pure_empty_destruct : forall P Q, ⊢ \⌜ P /\ Q ⌝ -∗ \⌜ P ⌝ ∗ \⌜ Q ⌝ .
-  Proof. iIntros. destruct a. iSplit; iPureIntro; auto. Qed.
-
-  Local Ltac Fresh :=
-    let x := iFresh in
-    match x with
-    | IAnon ?x =>
-      let x := eval compute in (ascii_of_pos (x + 64)) in
-          let x := eval compute in (append "H" (string_of_list_ascii [x])) in
-              let env := iGetCtx in
-              let P := reduction.pm_eval (envs_lookup x env) in
-              match P with
-              | None => x
-              | Some _ => Fresh
-              end
-    | _ => fail "iFresh returns " x " sometimes."
-    end.
-
-  (*h should be in the environment *)
-  Local Ltac norm h :=
-    let env := iGetCtx in
-    let P := reduction.pm_eval (envs_lookup h env) in
-    match P with
-    | None => fail "assert false"
-    | Some (false, ?P) =>
-      match P with
-      | bi_exist ?Q => let x := fresh "x" in (iDestruct h as (x) h; norm h)
-      | bi_sep ?Q ?W =>
-        let x := Fresh in
-        let y := Fresh in
-        eapply tac_and_destruct with h _ x y _ _ _;
-        [ pm_reflexivity | pm_reduce; iSolveTC | pm_reduce; norm x; norm y]
-      | pure_empty (and ?P ?Q) =>
-        let x := Fresh in
-        iPoseProof (pure_empty_destruct with h) as x; norm x
-      | pure_empty _ => iPure h as ?
-      | bi_pure (and ?P ?Q) =>
-        let x := Fresh in
-        eapply tac_and_destruct with h _ h x _ _ _;
-        [pm_reflexivity
-        |pm_reduce; iSolveTC
-        |pm_reduce; norm h; norm x]
-      | bi_pure _ => iPure h as ?
-      | bi_wand _ _ => iDestruct (h with "[]") as h; [progress auto | norm h]
-      | bi_absorbingly _ =>
-        let name := Fresh in
-        let name_mod := eval compute in (append ">" name) in
-            iPoseProof h as name; iDestruct name as name_mod; norm name
-      | _ =>
-        match h with
-        | IAnon _ =>
-          let x := Fresh in
-          iPoseProof h as x
-        | _ => idtac
-        end
-      end
-    | Some (true,?P) => idtac
-    end.
-
-  (* (List.fold norm) in Ltac *)
-  Local Ltac norm_list l :=
-    match l with
-    | [] => idtac
-    | ?h :: ?t => norm h ; norm_list t
-    end.
-
-  (* List.fold norm list_ident idtac *)
-  Ltac norm_all :=
-    iStartProof;
-    let env := iGetCtx in
-    let list_ident := eval compute in (rev (envs_dom env)) in
-        norm_list list_ident; auto.
-
-  Tactic Notation "iNorm" := norm_all.
-
-  Lemma test : forall P Q (R T: iProp),
-      ⊢  <absorb> (T ∗ R) -∗ (∃ (x: nat), (True -∗ T)) -∗ ⌜ P /\ Q ⌝ -∗ ((⌜ P ⌝ -∗ R) ∗ True) -∗ <absorb> R.
-  Proof. iIntros. destruct a. iNorm. Qed.
-
 End weakestpre_gensym.
 
 Module adequacy.
   Import fresh.
   Export gensym.
   Export weakestpre_gensym.
-
-  Lemma instance_heap : forall (P : iProp) (Q : Prop), (forall tmps, P () tmps -> Q) -> (P ⊢ ⌜Q⌝).
-  Proof.
-    MonPred.unseal. intros. split. repeat red. intros.
-    exists ∅, x. repeat split; auto. destruct i. eapply H. eauto.
-    apply map_disjoint_empty_l. rewrite heap_union_empty_l. reflexivity.
-  Qed.
-
-  Lemma soundness1 h (Φ : Prop) : (heap_ctx h ⊢ (⌜ Φ ⌝) : iProp) -> Φ.
-  Proof.
-    MonPred.unseal=> -[H]. repeat red in H.
-    pose (H () h).
-    edestruct e as (h1&h2&P0&P1&P2&P3).
-    - reflexivity.
-    - inversion P0. apply H0.
-  Qed.
-
-  Lemma soundness2 (Φ : iProp) h : (⊢heap_ctx h -∗ Φ) -> Φ () h.
-  Proof.
-    MonPred.unseal=> -[H]. repeat red in H.
-    pose (H () ∅).
-    simpl in *. edestruct e.
-    - rewrite monPred_at_emp. split; auto; apply hempty_intro.
-    - repeat red. exists ∅. exists ∅. repeat split; auto. rewrite heap_union_empty_l. auto.
-    - inversion_star h P.
-      inversion P1.
-      apply H1.
-      exists heap_empty; exists h.
-      inversion H2; subst. rewrite heap_union_empty_r in P; subst.
-      repeat split; auto. apply map_disjoint_empty_l. rewrite heap_union_empty_l. auto.
-  Qed.
-
-  Lemma soundness3 (Φ : iProp) h : Φ () h -> (⊢heap_ctx h -∗ Φ).
-  Proof.
-    MonPred.unseal. unfold monPred_wand_def. unfold monPred_upclosed. simpl. split.
-    intros. simpl. repeat red. intros. exists emp. exists x; exists heap_empty.
-    repeat split; auto with heap_scope. rewrite monPred_at_emp in H0. apply H0.
-    intros h0 P0. inversion_star h P. simpl in *. rewrite <- P2 in *. inversion P1. inversion H3.
-    subst. rewrite heap_union_empty_l. rewrite <- P2. destruct a. apply H.
-    apply map_disjoint_empty_r. rewrite heap_union_empty_r. reflexivity.
-  Qed.
-
-  Lemma heap_ctx_split (h h' : state) : h ##ₘ h' -> (⊢heap_ctx (h \u h') -∗ heap_ctx h ∗ heap_ctx h').
-  Proof.
-    intro.
-    MonPred.unseal. repeat red.
-    unfold monPred_wand_def.
-    unfold monPred_sep_def.
-    unfold monPred_upclosed. split. simpl.
-    intro. intro P. intro. repeat red. exists hempty. rewrite monPred_at_emp in H0.
-    inversion H0; subst.
-    exists heap_empty; exists heap_empty. repeat split; auto.
-    + repeat intro. inversion_star h P. inversion P1. subst.
-      exists h; exists h'. repeat split; auto. inversion P2; subst.
-      rewrite heap_union_empty_l. reflexivity.
-    + inversion H3. rewrite heap_union_empty_l. reflexivity.
-  Qed.
-
-  Lemma heap_ctx_split_sing (h : state) l t : h ##ₘ ({[l := t]}) ->
-                                              (⊢heap_ctx (<[l := t]>h) -∗ heap_ctx h ∗ l ↦ t).
-  Proof.
-    iIntros (?) "HA". rewrite insert_union_singleton_r; auto. iApply heap_ctx_split; auto.
-    rewrite <- map_disjoint_singleton_r. eauto.
-  Qed.
 
   Lemma adequacy {X} : forall (e : mon X) (Φ : X -> iProp) h v h',
       (heap_ctx h ⊢ WP e |{ Φ }|) ->
