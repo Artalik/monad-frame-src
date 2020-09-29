@@ -635,105 +635,54 @@ Module SepBasicCore.
 End SepBasicCore.
 
 Module fresh.
-
-  Definition ident := positive.
-
-  Definition max := Pos.max.
-  Definition upper := fun r i => max (i+1) r.
-  Definition fresh (s:list ident) : ident := foldl upper 1%positive s.
-
-  Lemma max_comm : forall n m, max n m = max m n.
-  Proof.
-    intros. unfold max. rewrite Pos.max_comm. reflexivity.
-  Qed.
-
-  Lemma foldl_upper : forall l a0 a1, foldl upper (max a0 a1) l = max a1 (foldl upper a0 l).
-  Proof.
-    induction l; simpl; intros.
-    - by rewrite max_comm.
-    - repeat rewrite IHl. unfold max. rewrite Pos.max_assoc. rewrite (Pos.max_comm a0). reflexivity.
-  Qed.
-
-  Lemma upper_spec: forall l a, Pos.le a (foldl upper a l).
-  Proof.
-    unfold upper.
-    induction l; simpl.
-    - reflexivity.
-    - intro. rewrite foldl_upper. apply Pos.le_max_l.
-  Qed.
-
-  Lemma fresh_step : forall l a, fresh (a :: l) = max (a + 1) (fresh l).
-  Proof.
-    induction l; intros.
-    - reflexivity.
-    - unfold fresh. unfold upper. simpl. unfold max.
-      unfold fresh in IHl. unfold upper in IHl. simpl in IHl. unfold max in IHl.
-      rewrite IHl. rewrite Pos.max_1_r. rewrite foldl_upper.
-      unfold upper. unfold max.
-      f_equal. rewrite <- (Pos.max_1_r (a+1)%positive). rewrite IHl.
-      rewrite Pos.max_1_r. reflexivity.
-  Qed.
-
-  Lemma fresh_higher : forall l v, v ∈ l -> Pos.lt v (fresh l).
-  Proof.
-    intros. unfold fresh.
-    apply elem_of_list_split in H as (l1&l2&H0).
-    rewrite H0. rewrite foldl_app. pose fresh_step. unfold fresh in e. simpl in *. unfold upper.
-    rewrite foldl_upper.
-    destruct (Pos.max_spec (foldl (λ r i : positive, max (i + 1) r) 1%positive l1)
-                           (foldl upper (v + 1)%positive l2)); destruct H.
-    - unfold max. rewrite H1. pose (upper_spec l2 (v+1)).
-      eapply Pos.lt_le_trans; eauto.
-      setoid_rewrite Pos2Nat.inj_lt. rewrite <- Pplus_one_succ_r.
-      rewrite Pos2Nat.inj_succ. omega.
-    - unfold max. rewrite H1. pose (upper_spec l2 (v+1)). eapply Pos.lt_le_trans; eauto.
-      eapply Pos.lt_le_trans; eauto.
-      setoid_rewrite Pos2Nat.inj_lt. rewrite <- Pplus_one_succ_r.
-      rewrite Pos2Nat.inj_succ. omega.
-  Qed.
-
-  Lemma fresh_is_fresh : forall l, (fresh l) ∉ l.
-  Proof.
-    induction l.
-    - intro. inversion H.
-    - intro. inversion H ; subst.
-      + unfold fresh in H2. unfold upper in H2. unfold max in H2.
-        simpl in H2. rewrite Pos.max_1_r in H2.
-        pose (upper_spec l (a+1)%positive). unfold upper in l0. unfold max in l0.
-        rewrite <- H2 in l0 at 1.
-        rewrite Pos.add_1_r in l0. apply Pos.le_succ_l in l0.
-        apply Pos.lt_irrefl in l0. apply l0.
-      + rewrite fresh_step in H2. destruct (Pos.max_spec (a+1) (fresh l)); destruct H0.
-        * unfold max in H2. rewrite H1 in H2.
-          contradiction IHl.
-        * unfold max in H2. rewrite H1 in H2. apply fresh_higher in H.
-          setoid_rewrite Pos2Nat.inj_lt in H. setoid_rewrite Pos2Nat.inj_le in H0.
-          omega.
-  Qed.
-
-
   Import SepBasicCore.
+  Definition ident := positive.
+  
+  Record state_gen {X} := mk_state
+                            {state_heap : @heap X;
+                             next : ident;
+                             wf_heap : forall p, (∃ v, state_heap !! p = Some v) -> Pos.lt p next
+                            }.   
 
-  Definition fresh_ident {A} (s: @heap A) := fresh (map_to_list s).*1.
-
-  Lemma fresh_ident_spec {A} : forall (s : @heap A), s !! (fresh_ident s) = None.
+  Lemma succ_fresh_state : forall {X} (x : X) (s : @state_gen X),
+      forall (p :ident), (∃ v, (<[next s:=x]>(state_heap s)) !! p = Some v) -> Pos.lt p (Pos.succ (next s)).
   Proof.
-    intros. unfold fresh_ident. pose (fresh_is_fresh (map_to_list s).*1).
-    apply not_elem_of_list_to_map in n.
-    rewrite (list_to_map_to_list s) in n.
-    apply n.
+    intros. destruct s. destruct H. simpl in *. destruct (Pos.eq_dec next0 p).
+    - subst. lia.
+    - rewrite lookup_insert_ne in H; auto.
+      assert (Pos.lt p next0). apply wf_heap0. eauto. lia.
   Qed.
+      
+  Definition fresh {X} (x : X) (s: state_gen) : ident * state_gen :=
+    let h := state_heap s in
+    let n := next s in
+    (n, mk_state X (<[next s:=x]>h) (Pos.succ n) (succ_fresh_state x s)).
 
+  Lemma fresh_is_fresh : forall {X} (l : @state_gen X), (state_heap l) !! (next l) = None.
+  Proof.
+    destruct l. simpl. destruct (state_heap0 !! next0) eqn:?; auto.
+    assert (Pos.lt next0 next0). apply wf_heap0. eauto. lia.
+  Qed.
+    
 End fresh.
 
 Require Import Ctypes.
 
 Module gensym.
+  Import Errors.
+  Export SepBasicCore.
+  Import fresh.
+  
+  Definition state := @state_gen type.
+  
+  Lemma init_state : forall {X},
+      forall (p :ident), (∃ v, (∅ : @heap X) !! p = Some v) -> Pos.lt p xH.
+  Proof.
+    intros. destruct H. rewrite lookup_empty in H. inversion H.
+  Qed.
 
-  Import SepBasicCore.
-
-  Definition state := @heap type.
-
+  Definition initial_state : state := mk_state type ∅ xH init_state.
+  
   Import fresh.
   Inductive sig (X : Type) : Type :=
   | Err : Errors.errmsg -> sig X
@@ -786,30 +735,30 @@ Module gensym.
       ** simpl. do 2 f_equal. apply functional_extensionality. intro. apply m.
   Qed.
 
-  Inductive err (X: Type) : Type :=
-  | Erro : Errors.errmsg -> err X
-  | Res : X -> err X.
+  (* Inductive err (X: Type) : Type := *)
+  (* | Erro : Errors.errmsg -> err X *)
+  (* | Res : X -> err X. *)
 
-  Arguments Erro [X].
-  Arguments Res [X].
+  (* Arguments Erro [X]. *)
+  (* Arguments Res [X]. *)
   Local Open Scope positive_scope.
 
-  Fixpoint run {X} (m : mon X) : state -> err (state * X) :=
+  Fixpoint run {X} (m : mon X) : state -> res (state * X) :=
     match m with
-    | ret v => fun s => Res (s, v)
-    | op (Err e) => fun s => Erro e
+    | ret v => fun s => OK (s, v)
+    | op (Err e) => fun s => Error e
     | op (Gensym t f) =>
       fun s =>
-        let l := fresh_ident s in
-        run (f l) (<[l:=t]>s)
+        let (l,s') := fresh t s in
+        run (f l) s'
     end.
 
 End gensym.
 
 
 Module weakestpre_gensym.
-  Export proofmode.monpred.
   Export gensym.
+  Export proofmode.monpred.
   Export SepBasicCore.
   Import reduction.
 
@@ -1108,66 +1057,60 @@ Module adequacy.
   Import fresh.
   Export gensym.
   Export weakestpre_gensym.
-
-  Lemma adequacy {X} : forall (e : mon X) (Φ : X -> iProp) h v h',
-      (heap_ctx h ⊢ WP e |{ Φ }|) ->
-      run e h = Res (h', v) ->
-      (Φ v) () h'.
+  
+  Lemma adequacy {X} : forall (e : mon X) (Φ : X -> iProp) (s s' : state) v ,
+      (heap_ctx (state_heap s) ⊢ WP e |{ Φ }|) ->
+      run e s = Errors.OK (s', v) ->
+      (Φ v) () (state_heap s').
   Proof.
     fix e 1. destruct e0; simpl; intros.
     - inversion H0; subst. apply soundness2. iApply H.
     - destruct s.
       + inversion H0.
       + eapply e.
-        2 : apply H0.
-        iIntros "HA".
-        pose (fresh_ident_spec h).
-        apply (map_disjoint_singleton_r h (fresh_ident h) t) in e0.
-        iDestruct ((heap_ctx_split_sing _ _ _ e0) with "HA") as "[HA HB]".
+        2 : apply H0. 
+        iIntros "HA". simpl.
+        epose (fresh_is_fresh s0).
+        apply (map_disjoint_singleton_r _ _ t) in e0.
+        iDestruct (heap_ctx_split_sing _ _ _ e0 with "HA") as "[HA HB]".
         iApply (H with "HA [HB]"); auto.
   Qed.
-
-  Lemma adequacy_triple {X} : forall (e : mon X) (Φ : X -> iProp) h v h' H,
-      (heap_ctx h ⊢ {{ H }} e {{ v, RET v; Φ v }} ∗ H) ->
-      run e h = Res (h', v) ->
-      (Φ v) () h'.
+  
+  Lemma adequacy_triple {X} : forall (e : mon X) (Φ : X -> iProp) s v s' H,
+      (heap_ctx (state_heap s) ⊢ H) -> (⊢ {{ H }} e {{ v, RET v; Φ v }}) ->
+      run e s = Errors.OK (s', v) ->
+      (Φ v) () (state_heap s').
   Proof.
-    fix e 1. destruct e0; simpl; intros.
-    - apply soundness2. inversion H1; subst.
-      iIntros "HA". iDestruct (H0 with "HA") as "[HA HB]".
-      iApply ("HA" with "HB"). auto.
-    - destruct s.
-      + inversion H1.
-      + eapply e.
-        2: eapply H1.
-        iIntros "HA". pose (fresh_ident_spec h).
-        apply (map_disjoint_singleton_r h (fresh_ident h) t) in e0.
-        iDestruct ((heap_ctx_split_sing _ _ _ e0) with "HA") as "[HA HB]".
-        iDestruct (H0 with "HA") as "[HA HC]".
-        iSplitR "HC".
-        iIntros (?) "HC HD". iApply ("HA" with "HC [HD]"); eauto. iApply "HC".
+    intros. eapply adequacy; eauto. iIntros "HA". iDestruct (H0 with "HA") as "HA".
+    iApply (H1 with "HA"). auto.
   Qed.
 
-  Lemma adequacy_pure {X} : forall (e : mon X) (Φ : X -> Prop) h v h' H,
-      (heap_ctx h ⊢ {{ H }} e {{ v, RET v; ⌜ Φ v ⌝}} ∗ H) ->
-      run e h = Res (h', v) ->
+  Lemma adequacy_wp_pure {X} : forall (e : mon X) (Φ : X -> Prop) s v s',
+      (heap_ctx (state_heap s) ⊢ WP e |{ v, ⌜Φ v⌝ }|) ->
+      run e s = Errors.OK (s', v) ->
       Φ v.
   Proof.
     fix e 1. destruct e0; intros.
-    - apply (soundness1 h).
-      inversion H1; subst.
-      iIntros "HA".
-      iDestruct (H0 with "HA") as "[HA HB]".
-      iDestruct ("HA" $! (fun v => ⌜ Φ v ⌝) with "HB []") as "HA"; eauto.
+    - apply (soundness1 (state_heap s)). inversion H0. subst.
+      simpl in H. apply H.
     - destruct s.
-      + inversion H1.
-      + simpl in H1. eapply e.
-        2 : apply H1.
-        iIntros "HA". pose (fresh_ident_spec h).
-        apply (map_disjoint_singleton_r h (fresh_ident h) t) in e0.
-        iDestruct ((heap_ctx_split_sing _ _ _ e0) with "HA") as "[HA HB]".
-        iDestruct (H0 with "HA") as "[HA HC]".
-        iSplitR "HC". simpl. iIntros (?) "HC HD". iApply ("HA" with "HC [HD]"); eauto. iApply "HC".
+      + inversion H0.
+      + simpl in *. eapply e.
+        2 : apply H0.
+        simpl. iIntros "HA".
+        epose (fresh_is_fresh s0).
+        apply (map_disjoint_singleton_r _ _ t) in e0.
+        iDestruct (heap_ctx_split_sing _ _ _ e0 with "HA") as "[HA HB]".
+        iApply (H with "HA [HB]"); auto.
+  Qed.
+
+  Lemma adequacy_pure {X} : forall (e : mon X) (Φ : X -> Prop) s v s' H,
+      (heap_ctx (state_heap s) ⊢ H) -> (⊢ {{ H }} e {{ v, RET v; ⌜ Φ v ⌝}}) ->
+      run e s = Errors.OK (s', v) ->
+      Φ v.
+  Proof.
+    intros. eapply adequacy_wp_pure; eauto. iIntros "HA". iDestruct (H0 with "HA") as "HA".
+    iDestruct (H1 $! (fun v => ⌜ Φ v ⌝) with "HA") as "HA". iApply "HA"; auto.
   Qed.
 
 End adequacy.

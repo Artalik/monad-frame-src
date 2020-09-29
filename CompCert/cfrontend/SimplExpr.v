@@ -463,18 +463,17 @@ with transl_lblstmt (ls: Csyntax.labeled_statements) : mon labeled_statements :=
   end.
 
 (** Translation of a function *)
-
 Definition transl_function (f: Csyntax.function) : res function :=
-  match run (transl_stmt f.(Csyntax.fn_body)) ∅  with
-  | Erro msg =>
+  match run (transl_stmt f.(Csyntax.fn_body)) initial_state  with
+  | Error msg =>
       Error msg
-  | Res tbody =>
+  | OK tbody =>
       OK (mkfunction
               f.(Csyntax.fn_return)
               f.(Csyntax.fn_callconv)
               f.(Csyntax.fn_params)
               f.(Csyntax.fn_vars)
-              (map_to_list (fst tbody))
+              (map_to_list (fresh.state_heap (fst tbody)))
               (snd tbody))
   end.
 

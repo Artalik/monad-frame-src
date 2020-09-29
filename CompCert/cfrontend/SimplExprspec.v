@@ -39,7 +39,7 @@ Section SPEC.
   Definition dest_below (dst: destination) : iProp :=
     match dst with
     | For_set sd => \s (sd_temp sd)
-    | _ => \⌜True⌝
+    | _ => emp
     end.
 
 
@@ -386,41 +386,41 @@ Section SPEC.
     - iFrame. repeat iExists _. iSplitL "HD"; eauto. iSplitL "HC"; eauto.
       destruct dst; simpl; simpl_list; auto. rewrite <- app_assoc. eauto. 
     - iFrame; repeat iExists _; destruct dst; simpl; simpl_list; eauto.
-    - repeat iExists _. iSplitL "HE"; auto. iDestruct ("HB" with "[HD]") as "HA"; auto.
-    - repeat iExists _. iSplitL "HC"; eauto.
+    - repeat iExists _. iSplitL "HF"; auto. iDestruct ("HC" with "[HE]") as "HA"; auto.
+    - repeat iExists _. iSplitL "HD"; eauto.
     - repeat iExists _. iSplitL "HD"; eauto. iSplitL; eauto. iApply ("HC" with "[HF]"); auto.
-    - repeat iExists _. iSplitL "HE"; auto. iSplitL; eauto. iApply ("HB" with "[HD]"); auto.
-    - repeat iExists _. iSplitL "HC"; eauto. 
+    - repeat iExists _. iSplitL "HF"; auto. iSplitL; eauto. iApply ("HC" with "[HE]"); auto.
+    - repeat iExists _. iSplitL "HD"; eauto. 
     - repeat iExists _. iSplitL "HD"; eauto. iSplitL; eauto. iApply ("HC" with "[HF]"); auto.
-    - repeat iExists _. iSplitL "HG"; auto. iSplitL; eauto. iSplit; iApply tr_expr_abs.
-      iApply ("HD" with "[HF]"); auto. iApply ("HB" with "[HF]"); auto.
-    - repeat iExists _. iSplitL "HF"; eauto. iSplitL "HE"; auto.
+    - repeat iExists _. iSplitL "HH"; auto. iSplitL; eauto. iSplit; iApply tr_expr_abs.
+      iApply ("HE" with "[HG]"); auto. iApply ("HC" with "[HG]"); auto.
+    - repeat iExists _. iSplitL "HG"; eauto. iSplitL "HF"; auto.
     - iSplitL "HJ"; auto. repeat iExists _. iSplitL "HH"; auto. iSplitL; eauto.
       iSplit; iApply tr_expr_abs.
       iApply ("HE" with "[HG]"); auto. iApply ("HC" with "[HG]"); auto.
     - iFrame; repeat iExists _; destruct dst; simpl; simpl_list; eauto.
     - iFrame; repeat iExists _; destruct dst; simpl; simpl_list; eauto.
-    - repeat iExists _. iSplitL "HE"; eauto. iSplitL "HD"; auto.
-    - repeat iExists _. iSplitL "HC"; eauto.
+    - repeat iExists _. iSplitL "HF"; eauto. iSplitL "HE"; auto.
+    - repeat iExists _. iSplitL "HD"; eauto.
     - repeat iExists _. iSplitL "HF"; eauto. iSplitL "HE"; auto. iSplitL "HC"; eauto. iSplitL; eauto.
       iPureIntro. split; auto. do 2 (rewrite <- app_assoc; f_equal).
-    - iSplitR; auto. repeat iExists _. iFrame. iSplitL "HG"; eauto. iSplitL "HF"; eauto. 
-    - repeat iExists _. iFrame. iSplitL "HE"; eauto. 
+    - iSplitR; auto. repeat iExists _. iFrame. iSplitL "HH"; eauto. iSplitL "HG"; eauto. 
+    - repeat iExists _. iFrame. iSplitL "HF"; eauto. 
     - iSplitL "HK"; auto. repeat iExists _. iSplitL "HH"; auto. iSplitL "HG"; eauto. 
       iSplitL "HE"; auto.
       iSplitL "HC"; eauto. iSplitL; auto.
       iPureIntro. do 3 (rewrite <- app_assoc; f_equal).
-    - repeat iExists _. iSplitL "HC"; eauto. 
-    - repeat iExists _. iSplitL "HC"; eauto.
+    - repeat iExists _. iSplitL "HD"; eauto. 
+    - repeat iExists _. iSplitL "HD"; eauto.
     - repeat iExists _. iSplitL "HD"; eauto. iSplitL "HF"; auto. iExists v0.
       iSplitL "HC"; auto. iSplitL; auto.
       iPureIntro. rewrite <- app_assoc; f_equal.
     - repeat iExists _. iSplitL "HD"; eauto. iSplitL; auto. iApply ("HC" with "HF").
-    - iSplitR; auto. repeat iExists _. iSplitL "HB"; auto. iSplitL "HE"; auto. 
-    - repeat iExists _. iSplitL "HC"; eauto.
+    - iSplitR; auto. repeat iExists _. iSplitL "HC"; auto. iSplitL "HF"; auto. 
+    - repeat iExists _. iSplitL "HD"; eauto.
     - iSplitL "HH"; auto. repeat iExists _. iSplitL "HC"; auto. iSplitL "HF"; auto.
       iSplitL "HE"; eauto. iPureIntro. split; auto. do 2 (rewrite <- app_assoc; f_equal).
-    - iSplitR; auto. repeat iExists _. iSplitL "HC"; auto. 
+    - iSplitR; auto. repeat iExists _. iSplitL "HD"; auto. 
     - iSplitL "HE"; auto. repeat iExists _. iSplitL "HD"; auto. iSplitL "HC"; auto. iSplitL; eauto.
       iPureIntro. rewrite <- app_assoc; f_equal.
     - repeat iExists _. iSplitL "HC"; auto.
@@ -684,13 +684,11 @@ with tr_lblstmts: Csyntax.labeled_statements -> labeled_statements -> Prop :=
       tr_function f tf.
   Proof.
     unfold transl_function; intros.
-    destruct (run (transl_stmt (Csyntax.fn_body f)) ∅) eqn:?; inversion H.
+    destruct (run (transl_stmt (Csyntax.fn_body f)) initial_state) eqn:?; inversion H.
     destruct p. simpl in *. 
     apply tr_function_intro; auto; simpl.
-    eapply (adequacy_pure (transl_stmt (Csyntax.fn_body f)) _ ∅ s0 s emp).
-    2: apply Heqe.
-    iIntros "HA". iSplitL; eauto.
-    iApply (transl_stmt_meets_spec (Csyntax.fn_body f)). 
+    eapply (adequacy_pure (transl_stmt (Csyntax.fn_body f)) _ initial_state s0 s emp); auto.
+    iApply (transl_stmt_meets_spec (Csyntax.fn_body f)).
   Qed.
 
   Lemma transl_fundef_spec:

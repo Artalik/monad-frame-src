@@ -178,9 +178,9 @@ Section PRESERVATION.
         | tr_rvalof _ ?l _ _ => f l h; apply_ind_core f t
         | _ => apply_ind_core f t
         end
-      | _ => idtac "bug2" P
+      | _ => idtac
       end
-    | _ => idtac "bug1" list_ident
+    | _ => idtac
     end.
     
   Ltac apply_ind f :=
@@ -328,14 +328,14 @@ Section PRESERVATION.
     - iPureIntro. subst. destruct dst; simpl in *; auto; repeat eexists; repeat split; auto;
                            pose (P := comp_env_preserved); simpl in P; rewrite <- P; constructor.
       
-    - destruct a0 as (P0&P1&P2). subst. iPureIntro. repeat split; auto. constructor. apply H.
-    - destruct a0 as (_&P1&P2). subst. iPureIntro. repeat split; auto. apply eval_Evar_global; auto.
-      rewrite symbols_preserved; auto.
+    - iStopProof. iIntros "#>[_ [% %]]". iPureIntro. subst. repeat split; auto. constructor. apply H.
+    - iStopProof. iIntros "#>[_ [% %]]". iPureIntro. subst. repeat split; auto.
+      apply eval_Evar_global; auto. rewrite symbols_preserved; auto.
       
     - subst. iPureIntro. repeat split. rewrite typeof_Ederef'. auto. apply eval_Ederef'; auto. 
     - subst. iPureIntro. repeat split. rewrite <- comp_env_preserved in *.
-      eapply eval_Efield_struct; eauto. rewrite <- H8. eauto.
-    - subst. iPureIntro. repeat split; auto. rewrite <- comp_env_preserved in *. rewrite H7 in H1.
+      eapply eval_Efield_struct; eauto. rewrite <- H7. eauto.
+    - subst. iPureIntro. repeat split; auto. rewrite <- comp_env_preserved in *. rewrite H6 in H1.
       eapply eval_Efield_union; eauto.
   Qed.
   
