@@ -548,7 +548,7 @@ Module SepBasicCore.
   Notation "l ↦ t" :=
     (single l t) (at level 20) : bi_scope.
 
-  Notation "\s l" :=
+  Notation "'IsFresh' l" :=
     (∃ t, l ↦ t) (at level 10) : bi_scope.
 
   Notation "\⌜ P ⌝" := (pure_empty P)
@@ -634,82 +634,52 @@ Module SepBasicCore.
 
 End SepBasicCore.
 
-Module fresh.
-  Import SepBasicCore.
-  Definition ident := positive.
-  
-  Record state_gen {X} := mk_state
-                            {state_heap : @heap X;
-                             next : ident;
-                             wf_heap : forall p, (∃ v, state_heap !! p = Some v) -> Pos.lt p next
-                            }.   
-
-  Lemma succ_fresh_state : forall {X} (x : X) (s : @state_gen X),
-      forall (p :ident), (∃ v, (<[next s:=x]>(state_heap s)) !! p = Some v) -> Pos.lt p (Pos.succ (next s)).
-  Proof.
-    intros. destruct s. destruct H. simpl in *. destruct (Pos.eq_dec next0 p).
-    - subst. lia.
-    - rewrite lookup_insert_ne in H; auto.
-      assert (Pos.lt p next0). apply wf_heap0. eauto. lia.
-  Qed.
-      
-  Definition fresh {X} (x : X) (s: state_gen) : ident * state_gen :=
-    let h := state_heap s in
-    let n := next s in
-    (n, mk_state X (<[next s:=x]>h) (Pos.succ n) (succ_fresh_state x s)).
-
-  Lemma fresh_is_fresh : forall {X} (l : @state_gen X), (state_heap l) !! (next l) = None.
-  Proof.
-    destruct l. simpl. destruct (state_heap0 !! next0) eqn:?; auto.
-    assert (Pos.lt next0 next0). apply wf_heap0. eauto. lia.
-  Qed.
-    
-End fresh.
-
 Require Import Ctypes.
 
 Module gensym.
   Import Errors.
   Export SepBasicCore.
-  Import fresh.
   
-  Definition state := @state_gen type.
+  Definition ident := positive.
   
-  Lemma init_state : forall {X},
-      forall (p :ident), (∃ v, (∅ : @heap X) !! p = Some v) -> Pos.lt p xH.
-  Proof.
-    intros. destruct H. rewrite lookup_empty in H. inversion H.
-  Qed.
+  Record state := mk_state { state_heap : @heap type;
+                                 next : ident
+                               }.   
 
-  Definition initial_state : state := mk_state type ∅ xH init_state.
+  Definition wf_state s := forall p, (∃ v, state_heap s !! p = Some v) -> Pos.lt p (next s).
+ 
+  Definition initial_state : state := mk_state ∅ 1%positive.
+
+  Lemma wf_init : wf_state initial_state.
+  Proof.
+    unfold wf_state. intros. destruct H. rewrite lookup_empty in H. inversion H.
+  Qed.
   
-  Import fresh.
-  Inductive sig (X : Type) : Type :=
-  | Err : Errors.errmsg -> sig X
-  | Gensym : type -> (ident -> X) -> sig X.
+  Inductive mon (X : Type) : Type :=
+  | ret : X -> mon X
+  | Err : Errors.errmsg -> mon X
+  | Gensym : type -> (ident -> mon X) -> mon X.
 
   Arguments Err [X].
   Arguments Gensym [X].
-
-  Inductive mon (X : Type) : Type :=
-  | ret : X -> mon X
-  | op : sig (mon X) -> mon X.
-
   Arguments ret {_} x.
-  Arguments op {_} s.
+  
 
   Fixpoint bind {X Y} (m : mon X) (f : X -> mon Y) : mon Y :=
     match m with
     | ret x => f x
-    | op (Err e) => op (Err e)
-    | op (Gensym t g) => op (Gensym t (fun x => bind (g x) f))
+    | Err e => Err e
+    | Gensym t g => Gensym t (fun x => bind (g x) f)
     end.
 
   Notation "'let!' x ':=' e1 'in' e2" := (bind e1 (fun x => e2))
                                            (x ident, at level 90).
 
-  Definition error {X} (e : Errors.errmsg) : mon X := op (Err e).
-  Definition gensym (t : type) : mon ident := op (Gensym t ret).
+  Notation "'ret!' v" := (ret v)
+                           (v ident, at level 90).
+
+  Definition error {X} (e : Errors.errmsg) : mon X := Err e.
+  Definition gensym (t : type) : mon ident := Gensym t ret.
 
   Lemma lid : forall X Y (a : X) (f : X -> mon Y), bind (ret a) f = f a.
   Proof. auto. Qed.
@@ -719,9 +689,8 @@ Module gensym.
     fix m 2.
     destruct m0.
     * reflexivity.
-    * destruct s.
-      ** reflexivity.
-      ** simpl. do 2 f_equal. apply functional_extensionality. intro. apply m.
+    * reflexivity.
+    * simpl. do 2 f_equal. apply functional_extensionality. intro. apply m.
   Qed.
 
   Lemma ass_bind : forall X Y Z (m : mon X) f (g : Y -> mon Z),
@@ -730,28 +699,46 @@ Module gensym.
     fix m 4.
     destruct m0; intros.
     * reflexivity.
-    * destruct s.
-      ** reflexivity.
-      ** simpl. do 2 f_equal. apply functional_extensionality. intro. apply m.
+    * reflexivity.
+    * simpl. do 2 f_equal. apply functional_extensionality. intro. apply m.
   Qed.
 
-  (* Inductive err (X: Type) : Type := *)
-  (* | Erro : Errors.errmsg -> err X *)
-  (* | Res : X -> err X. *)
-
-  (* Arguments Erro [X]. *)
-  (* Arguments Res [X]. *)
-  Local Open Scope positive_scope.
+  Definition fresh (ty : type) (s: state) : ident * state :=
+    let h := state_heap s in
+    let n := next s in
+    (n, mk_state (<[n:=ty]>h) (Pos.succ n)).
 
   Fixpoint run {X} (m : mon X) : state -> res (state * X) :=
     match m with
     | ret v => fun s => OK (s, v)
-    | op (Err e) => fun s => Error e
-    | op (Gensym t f) =>
+    | Err e => fun s => Error e
+    | Gensym t f =>
       fun s =>
-        let (l,s') := fresh t s in
-        run (f l) s'
+        let (i,s') := fresh t s in
+        run (f i) s'
     end.
+  
+  Lemma run_stay_fresh : forall {X} (m : mon X) s s' v,
+      wf_state s ->
+      run m s = OK (s',v) ->
+      (state_heap s') !! (next s') = None.
+  Proof.
+    induction m; intros.
+    - inversion H0. subst. destruct (state_heap s' !! next s') eqn:?.
+      assert (Pos.lt (next s') (next s')). apply H; eauto. lia. reflexivity.
+    - inversion H0.
+    - simpl in H1. eapply H. 2 : eauto. unfold wf_state in *. simpl in *. intros.
+      destruct H2. destruct (Pos.eq_dec p (next s)). lia.
+      rewrite lookup_insert_ne in H2; auto.
+      assert (Pos.lt p (next s)). apply H0; eauto. lia.
+  Qed.
+
+  Lemma fresh_is_fresh : forall (s : state), wf_state s -> (state_heap s) !! (next s) = None.
+  Proof.
+    unfold wf_state. 
+    intros. destruct ((state_heap s) !! (next s)) eqn:?; auto.
+    assert (Pos.lt (next s) (next s)). apply H. eauto. lia.
+  Qed.
 
 End gensym.
 
@@ -763,354 +750,198 @@ Module weakestpre_gensym.
   Import reduction.
 
   Definition iProp := monPred biInd (@hpropI type).
-
-  Fixpoint mwp {X} (e1 : mon X) (Q : X -> iProp) : iProp :=
+  
+  Fixpoint wp {X} (e1 : mon X) (Q : X -> iProp) : iProp :=
     match e1 with
     | ret v => Q v
-    | op (Err e) => True
-    | op (Gensym _ f) =>
-      ∀ l, \s l -∗ mwp (f l) Q
+    | Err e => True
+    | Gensym _ f =>
+      ∀ l, IsFresh l -∗ wp (f l) Q
     end.
 
+  Notation "'{{' P } } e {{ v ; Q } }" := (P -∗ wp e (fun v => Q))
+                                            (at level 20,
+                                             format "'[hv' {{  P  } }  '/  ' e  '/'  {{  v ;  Q  } } ']'").
 
-  Notation "'WP' e |{ Φ } |" := (mwp e Φ)
-                                  (at level 20, e, Φ at level 200, only parsing) : bi_scope.
-
-  Notation "'WP' e |{ v , Q } |" := (mwp e (λ v, Q))
-                                      (at level 20, e, Q at level 200,
-                                       format "'[' 'WP'  e  '[ ' |{  v ,  Q  } | ']' ']'") : bi_scope.
-
-
-  Notation "'{{' P } } e {{ x .. y , 'RET' pat ; Q } }" :=
-    (∀ Φ,
-        P -∗ (∀ x, .. (∀ y, Q -∗ Φ pat) .. ) -∗ WP e |{ Φ }|)%I
-                                                             (at level 20, x closed binder, y closed binder,
-                                                              format "'[hv' {{  P  } }  '/  ' e  '/'  {{  x  ..  y ,  RET  pat ;  Q  } } ']'") : bi_scope.
-
-  (** wp rules *)
+(** triple rules *)
   (** Generic rules *)
-  Lemma wp_value' {X} (Φ : X -> iProp) (v : X) : Φ v ⊢ WP ret v |{ Φ }|%I.
-  Proof. auto. Qed.
+Lemma wp_bind {X Y} (e : mon X) (f :  X → mon Y) (Q : Y -> iProp)  (Q' : X -> iProp) :
+  wp e Q' ⊢ (∀ v,  Q' v -∗ wp (f v) Q ) -∗ wp (bind e f) Q %I.
+Proof.
+  iIntros "HA HB". revert e. fix e 1.
+  destruct e0.
+  - iApply "HB". iApply "HA".
+  - simpl. auto.
+  - simpl. iIntros (l) "HC".
+      iDestruct ("HA" with "HC") as "HA".
+      iPoseProof "HB" as "HB". apply e.
+Qed.
 
-  Lemma wp_value_inv' {X} Φ (v : X) : WP ret v |{ Φ }| ⊢ Φ v%I.
-  Proof. auto. Qed.
+Lemma wp_consequence : forall {X} (P Q : X -> iProp) (f : mon X),
+    ⊢ wp f P -∗
+      (∀ x, P x -∗ Q x) -∗
+      wp f Q.
+Proof.
+  induction f; simpl; intros; auto.
+  - iIntros "HA HB". iApply ("HB" with "HA").
+  - iIntros "HA * HB * HC". iApply (H with "[HA HC] HB"). iApply ("HA" with "HC").
+Qed.
 
-  Lemma wp_mono {X} e (Φ Ψ : X -> iProp) :
-    WP e |{ Φ }| ⊢ (∀ (v : X), Φ v -∗ Ψ v) -∗ WP e |{ Ψ }|%I.
-  Proof.
-    iIntros "HA HB". revert e. fix e 1.
-    destruct e0.
-    { iApply "HB". iApply "HA". }
-    { destruct s.
-      { simpl. trivial. }
-      { simpl. iIntros (l) "HC".
-        iDestruct ("HA" with "HC") as "HA".
-        iPoseProof "HB" as "HB". apply e. }}
-  Qed.
+  
+Lemma ret_spec {X} (v : X) H (Q : X -> iProp) :
+  (H ⊢ Q v) -> ⊢{{ H }} ret v {{ v'; Q v' }}.
+Proof. simpl; iIntros. iApply H0; auto. Qed.
 
-  Lemma wp_bind {X Y} (e : mon X) (f :  X → mon Y) (Φ : Y -> iProp)  (Φ' : X -> iProp) :
-    WP e |{ Φ' }| ⊢ (∀ v,  Φ' v -∗ WP (f v) |{ Φ }|) -∗ WP bind e f |{ Φ }|%I.
-  Proof.
-    iIntros "HA HB". revert e. fix e 1.
-    destruct e0.
-    { iApply "HB". iApply "HA". }
-    { destruct s.
-      { simpl. auto. }
-      { simpl. iIntros (l) "HC".
-        iDestruct ("HA" with "HC") as "HA".
-        iPoseProof "HB" as "HB". apply e. }}
-  Qed.
+Lemma bind_spec {X Y} (e : mon X) (f : X -> mon Y) Q Q' H :
+   (⊢{{ H }} e {{ v; Q' v }}) ->
+    (∀ v, ⊢{{ Q' v }} (f v) {{ v'; Q v' }}) ->
+    ⊢ {{ H }} (bind e f) {{ v; Q v}}.
+Proof.
+  intros. iIntros "HA".
+  iApply (wp_bind e f _ Q' with "[HA]").
+  - iApply (H0 with "[HA]"); auto.
+  - iIntros (v) "HC". iApply (H1 with "[HC]"); auto.  
+Qed.
 
-  (** Monad rules *)
-  Lemma wp_gensym (t : type) : ⊢ WP gensym t |{ l, \s l }|.
-  Proof.
-    simpl. iIntros. auto.
-  Qed.
-
-  Lemma wp_frame_l {X} (e : mon X) Φ (R : iProp) : R ∗ WP e |{ Φ }| ⊢ WP e |{ v, R ∗ Φ v }|.
-  Proof. iIntros "[HA HB]". iApply (wp_mono with "HB"). auto with iFrame. Qed.
-  Lemma wp_frame_r {X} (e : mon X) Φ R : WP e |{ Φ }| ∗ R ⊢ WP e |{ v, Φ v ∗ R }|.
-  Proof. iIntros "[H ?]". iApply (wp_mono with "H"); auto with iFrame. Qed.
-
-
-  (** triple rules *)
-  (** Generic rules *)
-
-  Lemma ret_spec_complete {X} (v : X) H (Q : X -> iProp) :
-    (H ⊢ Q v) -> ⊢{{ H }} ret v {{ v', RET v'; Q v' }}.
-  Proof.
-    iIntros (? ?) "HA HB". iDestruct (H0 with "HA") as "HA". iApply "HB". iApply "HA".
-  Qed.
-
-  Lemma ret_spec {X} (v : X) :
-    ⊢{{ emp }} ret v {{ v', RET v'; ⌜ v' = v ⌝  }}.
-  Proof. iIntros (?) "HA HB". iApply "HB". auto. Qed.
+Lemma consequence {X} H H' (Q : X -> iProp) (Q' : X -> iProp) (e : mon X) :
+  (⊢{{ H' }} e {{ v; Q' v }}) ->
+  (forall v, Q' v ⊢ Q v) ->
+  (H ⊢ H') ->
+  ⊢{{ H }} e {{ v; Q v }}.
+Proof.
+  intros. iIntros "HA". iDestruct (H2 with "HA") as "HA".
+  iDestruct (H0 with "HA") as "HA". iApply (wp_consequence with "HA"). iIntros "*". iApply H1.
+Qed.
 
 
-  Lemma ret_spec_pure {X} (v : X) :
-    ⊢{{ emp }} ret v {{ v', RET v'; \⌜ v' = v ⌝  }}.
-  Proof.
-    iIntros (?) "HA HB". iApply "HB". auto.
-  Qed.
+Lemma frame_bind : forall (P : iProp), ⊢ P -∗ emp ∗ P.
+Proof. iIntros "* $". Qed.
 
-  Lemma ret_spec_bis {X} (v : X) (Q : X -> iProp) :
-    Q v ⊢{{ emp }} ret v {{ v', RET v'; Q v' }}.
-  Proof.
-    iIntros "HA" (?) "_ HB". iApply "HB". iFrame.
-  Qed.
+Lemma frame {X} H R Q (e : mon X) :
+  (⊢{{ H }} e {{ v; Q v }}) ->
+  ⊢{{ H ∗ R }} e {{ v; Q v ∗ R }}.
+Proof.
+  intro P. iIntros "[HA HC]". iApply (wp_consequence with "[HA]").
+  iApply P; auto. iIntros; iFrame.   
+Qed.
 
-  Lemma bind_spec {X Y} (e : mon X) (f : X -> mon Y) Φ' Φ'' H :
-    (⊢{{ H }} e {{ v, RET v; Φ'' v }}) ->
-    (∀ v, ⊢ {{ Φ'' v }} (f v) {{ v', RET v'; Φ' v' }}) ->
-    ⊢{{ H }} (bind e f) {{ v, RET v; Φ' v}}.
-  Proof.
-    intros. iIntros (?) "HA HB".
-    iApply (wp_bind e f _ Φ'' with "[HA]").
-    - iApply (H0 with "[HA]"); auto.
-    - iIntros (v) "HC". iApply (H1 with "[HC]"); auto.
-  Qed.
+Lemma intro_true_r {X} H Q (e : mon X) :
+  (⊢{{ emp ∗ H }} e {{ v; Q v }}) ->
+  ⊢{{ H }} e {{ v; Q v }}.
+Proof.
+  intro P. iIntros "HA". iApply (P with "[HA]").
+  iFrame.
+Qed.
 
-  Lemma frame_r {X} H R Φ' (e : mon X) :
-    (⊢{{ H }} e {{ v, RET v; Φ' v }}) ->
-    ⊢{{ H ∗ R }} e {{ v, RET v; Φ' v ∗ R }}.
-  Proof.
-    intro P. iIntros (?) "[HA HC] HB".
-    iApply (P with "[HA]"); auto.
-    iIntros (v) "HA". iApply "HB". iFrame.
-  Qed.
+Lemma exists_spec {X Y} v' H (Q : X -> Y -> iProp) (e : mon X) :
+  (⊢{{ H }} e {{ v; Q v v' }}) ->
+  ⊢{{ H }} e {{ v; ∃ t, Q v t }}.
+Proof.
+  intros. iIntros "HA". iApply consequence; eauto. 
+Qed.
 
-  Lemma frame_l {X} H R Φ' (e : mon X) :
-    (⊢{{ H }} e {{ v, RET v; Φ' v }}) ->
-    ⊢{{ R ∗ H }} e {{ v, RET v; R ∗ Φ' v }}.
-  Proof.
-    intro P. iIntros (?) "HA HB". iDestruct "HA" as "[HA HC]".
-    iApply (P with "[HC]"); auto.
-    iIntros (v) "HC". iApply "HB". iFrame.
-  Qed.
+Ltac Frame := eapply intro_true_r; eapply frame.
 
-  Lemma exists_spec {X Y} v' H (Q : X -> Y -> iProp) (e : mon X) :
-    (⊢{{ H }} e {{ v, RET v; Q v v' }}) ->
-    ⊢{{ H }} e {{ v, RET v; ∃ t, Q v t }}.
-  Proof.
-    iIntros (? ?) "HA HB".
-    iApply (H0 with "HA").
-    iIntros (?) "HA". iApply "HB". iExists v'. iApply "HA".
-  Qed.
+(** Effects rules *)
+Lemma gensym_spec t :
+  ⊢{{ emp }} gensym t {{ l; IsFresh l }}.
+Proof. simpl; auto. Qed.
 
-  Lemma post_weaker {X} H (Q : X -> iProp) (Q' : X -> iProp) (e : mon X) :
-    (⊢{{ H }} e {{ v, RET v; Q' v }}) ->
-    (forall v, Q' v ⊢ Q v) ->
-    ⊢{{ H }} e {{ v, RET v; Q v }}.
-  Proof.
-    intros. iIntros (?) "HA HB". iApply (H0 with "HA"). iIntros (?) "HA". iApply "HB".
-    iApply H1. iApply "HA".
-  Qed.
-
-  Lemma pre_stronger {X} H H' (Q : X -> iProp) (e : mon X) :
-    (⊢{{ H }} e {{ v, RET v; Q v }}) ->
-    (H' ⊢ H) ->
-    ⊢{{ H' }} e {{ v, RET v; Q v }}.
-  Proof.
-    intros. iIntros (?) "HA HB". iApply (H0 with "[HA]").
-    - iApply H1. iApply "HA".
-    - iApply "HB".
-  Qed.
-
-  Lemma intro_true_l {X} H Φ' (e : mon X) :
-    (⊢{{ H ∗ emp }} e {{ v, RET v; Φ' v }}) ->
-    ⊢{{ H }} e {{ v, RET v; Φ' v }}.
-  Proof.
-    intro P. iIntros (?) "HA HB". iApply (P with "[HA]").
-    iFrame.
-    iIntros (v) "HA". iApply "HB". iFrame.
-  Qed.
-
-  Lemma intro_true_r {X} H Φ' (e : mon X) :
-    (⊢{{ emp ∗ H }} e {{ v, RET v; Φ' v }}) ->
-    ⊢{{ H }} e {{ v, RET v; Φ' v }}.
-  Proof.
-    intro P. iIntros (?) "HA HB". iApply (P with "[HA]").
-    iFrame.
-    iIntros (v) "HA". iApply "HB". iFrame.
-  Qed.
-
-
-  Lemma wand_post {X} H R Φ' (v : X):
-    (⊢{{ H ∗ R }} ret v {{ v, RET v; Φ' v }}) ->
-    ⊢{{ H }} ret v {{ v, RET v; R -∗ Φ' v }}.
-  Proof.
-    iIntros (? ?) "HH HB". iApply "HB". iIntros "HR". iApply (H0 with "[HH HR]"). iFrame.
-    iIntros. iFrame.
-  Qed.
-
-
-  Lemma assoc_pre {X} H R Q Φ' (e : mon X):
-    (⊢{{ H ∗ R ∗ Q }} e {{ v, RET v; Φ' v }}) <->
-    ⊢{{ (H ∗ R) ∗ Q}} e {{ v, RET v; Φ' v }}.
-  Proof.
-    split; iIntros (? ?) "[HA HC] HB"; iApply (H0 with "[HA HC]"); iFrame. iApply "HC".
-  Qed.
-
-  Lemma assoc_post {X} H R Q P (e : mon X) :
-    (⊢{{ P }} e {{ v, RET v; H v ∗ R v ∗ Q v }}) <->
-    ⊢{{ P }} e {{ v, RET v; (H v ∗ R v) ∗ Q v}}.
-  Proof.
-    split; iIntros (? ?) "HA HB"; iApply (H0 with "HA"); iIntros (?) "[HA HC]"; iApply "HB"; iFrame.
-    iApply "HC".
-  Qed.
-
-  Lemma comm_pre {X} H R Φ' (e : mon X):
-    (⊢{{ H ∗ R }} e {{ v, RET v; Φ' v }}) <->
-    ⊢{{ R ∗ H }} e {{ v, RET v; Φ' v }}.
-  Proof.
-    split; iIntros (? ?) "[HA HC] HB"; iApply (H0 with "[HA HC]"); iFrame.
-  Qed.
-
-  Lemma comm_post {X} P H R (e : mon X):
-    (⊢{{ P }} e {{ v, RET v; H v ∗ R v }}) <->
-    ⊢{{ P }} e {{ v, RET v; R v ∗ H v }}.
-  Proof.
-    split; iIntros (? ?) "HA HB"; iApply (H0 with "HA"); iIntros (?) "[HA HC]"; iApply "HB"; iFrame.
-  Qed.
-
-  Lemma forall_useless_post {X Y} P Q (e : mon X):
-    (⊢{{ P }} e {{ v, RET v; Q v }}) ->
-    ⊢{{ P }} e {{ v, RET v; ∀ (t : Y), Q v }}.
-  Proof.
-    iIntros (? ?) "HA HB". iApply (H with "HA"). iIntros (?) "HA". iApply "HB"; iFrame.
-    iIntros. trivial.
-  Qed.
-
-  Lemma wand_true_pre {X} P (Q : X -> iProp) e :
-    (⊢{{ P }} e {{ v, RET v; Q v }}) ->
-    ⊢{{ \⌜True⌝ -∗ P }} e {{ v, RET v; Q v }}.
-  Proof.
-    iIntros (? ?) "HA HB". iApply (H with "[HA]"). iApply "HA". trivial. iApply "HB".
-  Qed.
-
-  Lemma wand_true_post {X} P (Q : X -> iProp) e :
-    (⊢{{ P }} e {{ v, RET v; Q v }}) ->
-    ⊢{{ P }} e {{ v, RET v; \⌜True⌝ -∗ Q v }}.
-  Proof.
-    iIntros (? ?) "HA HB". iApply (H with "HA"). iIntros (v) "HA". iApply "HB". eauto.
-  Qed.
-
-  Lemma wand_true_pre_l {X} P H (Q : X -> iProp) e :
-    (⊢{{ P ∗ H }} e {{ v, RET v; Q v }}) ->
-    ⊢{{ (\⌜True⌝ -∗ P) ∗ H }} e {{ v, RET v; Q v }}.
-  Proof.
-    iIntros (? ?) "[HA HC] HB". iApply (H0 with "[HA HC]"); eauto. iFrame. iApply "HA". trivial.
-  Qed.
-
-
-  Lemma wand_true_pre_r {X} P H (Q : X -> iProp) e :
-    (⊢{{ P ∗ H }} e {{ v, RET v; Q v }}) ->
-    ⊢{{ P ∗ (\⌜True⌝ -∗ H) }} e {{ v, RET v; Q v }}.
-  Proof.
-    iIntros (? ?) "[HA HC] HB". iApply (H0 with "[HA HC]"); eauto. iFrame. iApply "HC". trivial.
-  Qed.
-
-
-  Lemma wand_true_post_l {X} P H (Q : X -> iProp) e :
-    (⊢{{ P }} e {{ v, RET v; Q v ∗ H v }}) ->
-    ⊢{{ P }} e {{ v, RET v; (\⌜True⌝ -∗ Q v) ∗ H v }}.
-  Proof.
-    iIntros (? ?) "HA HB". iApply (H0 with "HA"). iIntros (v) "[HA HC]". iApply "HB". iFrame. eauto.
-  Qed.
-
-  Lemma wand_true_post_r {X} P H (Q : X -> iProp) e :
-    (⊢{{ P }} e {{ v, RET v; Q v ∗ H v }}) ->
-    ⊢{{ P }} e {{ v, RET v; Q v ∗ (\⌜True⌝ -∗ H v) }}.
-  Proof.
-    iIntros (? ?) "HA HB". iApply (H0 with "HA"). iIntros (v) "[HA HC]". iApply "HB". iFrame. eauto.
-  Qed.
-
-  Lemma forall_wand_true_pre {X Y} P (Q : X -> iProp) e :
-    (⊢{{ ∀ (y : Y), P y }} e {{ v, RET v; Q v }}) ->
-    ⊢{{ ∀ (y : Y), \⌜True⌝ -∗ P y }} e {{ v, RET v; Q v }}.
-  Proof.
-    iIntros (? ?) "HA HB". iApply (H with "[HA]"); eauto. iIntros. iApply "HA". trivial.
-  Qed.
-
-  Ltac frameL := apply intro_true_l; apply frame_l.
-  Ltac frameR := apply intro_true_r; apply frame_r.
-
-
-
-  (** Monad rules *)
-  Lemma gensym_spec t :
-    ⊢{{ emp }} gensym t {{ l, RET l; \s l }}.
-  Proof.
-    iIntros (Φ) "HA HB". simpl.
-    iIntros (σ) "HC". iApply "HB". iApply "HC".
-  Qed.
-
-  Lemma error_spec {X} (Q : X -> iProp) e :
-    ⊢{{ emp }} error e {{ v, RET v; Q v }}.
-  Proof.
-    simpl. auto.
-  Qed.
+Lemma error_spec {X} (Q : X -> iProp) e :
+  ⊢{{ emp }} error e {{ v; Q v }}.
+Proof. simpl. auto. Qed.
 
 End weakestpre_gensym.
 
 Module adequacy.
-  Import fresh.
+  (* Import fresh. *)
   Export gensym.
   Export weakestpre_gensym.
   
-  Lemma adequacy {X} : forall (e : mon X) (Φ : X -> iProp) (s s' : state) v ,
-      (heap_ctx (state_heap s) ⊢ WP e |{ Φ }|) ->
+  Lemma adequacy {X} : forall (e : mon X) (Q : X -> iProp) (s s' : state) v ,
+      wf_state s ->
+      (heap_ctx (state_heap s) ⊢ wp e Q) ->
       run e s = Errors.OK (s', v) ->
-      (Φ v) () (state_heap s').
+      (Q v) () (state_heap s').
   Proof.
-    fix e 1. destruct e0; simpl; intros.
-    - inversion H0; subst. apply soundness2. iApply H.
-    - destruct s.
-      + inversion H0.
-      + eapply e.
-        2 : apply H0. 
-        iIntros "HA". simpl.
-        epose (fresh_is_fresh s0).
-        apply (map_disjoint_singleton_r _ _ t) in e0.
-        iDestruct (heap_ctx_split_sing _ _ _ e0 with "HA") as "[HA HB]".
-        iApply (H with "HA [HB]"); auto.
-  Qed.
-  
-  Lemma adequacy_triple {X} : forall (e : mon X) (Φ : X -> iProp) s v s' H,
-      (heap_ctx (state_heap s) ⊢ H) -> (⊢ {{ H }} e {{ v, RET v; Φ v }}) ->
-      run e s = Errors.OK (s', v) ->
-      (Φ v) () (state_heap s').
-  Proof.
-    intros. eapply adequacy; eauto. iIntros "HA". iDestruct (H0 with "HA") as "HA".
-    iApply (H1 with "HA"). auto.
+    fix e 1.
+    destruct e0; intros.
+    - inversion H1; subst. apply soundness2. iApply H0.
+    - inversion H1.
+    - simpl in *. eapply e.
+      3 : apply H1.
+      + unfold wf_state in *. simpl. intros. destruct H2.
+        destruct (Pos.eq_dec p (next s)). lia. rewrite lookup_insert_ne in H2; auto.
+        assert (Pos.lt p (next s)). apply H. eauto. lia.
+      + iIntros "HA". simpl. apply fresh_is_fresh in H.
+        apply (map_disjoint_singleton_r _ _ t) in H.
+        iDestruct (heap_ctx_split_sing _ _ _ H with "HA") as "[HA HB]".
+        iApply (H0 with "HA [HB]"); auto.
   Qed.
 
-  Lemma adequacy_wp_pure {X} : forall (e : mon X) (Φ : X -> Prop) s v s',
-      (heap_ctx (state_heap s) ⊢ WP e |{ v, ⌜Φ v⌝ }|) ->
+  Lemma adequacy_init {X} : forall (e : mon X) (Q : X -> iProp) (s' : state) v ,
+      (⊢ wp e Q) ->
+      run e initial_state = Errors.OK (s', v) ->
+      (Q v) () (state_heap s').
+  Proof. intros. eapply adequacy; eauto. apply wf_init. auto. Qed.
+  
+  Lemma adequacy_triple {X} : forall (e : mon X) (Q : X -> iProp) s v s' H,
+      wf_state s ->
+      (heap_ctx (state_heap s) ⊢ H) -> (⊢ {{ H }} e {{ v; Q v }}) ->
       run e s = Errors.OK (s', v) ->
-      Φ v.
+      (Q v) () (state_heap s').
+  Proof.
+    intros. eapply adequacy; eauto. iIntros "HA". iDestruct (H1 with "HA") as "HA".
+    iApply (H2 with "HA"); auto.
+  Qed.
+
+  Lemma adequacy_triple_init {X} : forall (e : mon X) (Q : X -> iProp) v s' H,
+      (⊢ H) -> (⊢ {{ H }} e {{ v; Q v }}) ->
+      run e initial_state = Errors.OK (s', v) ->
+      (Q v) () (state_heap s').
+  Proof.
+    intros. eapply adequacy_init; eauto. iApply H1; eauto.
+  Qed.
+
+  Lemma adequacy_wp_pure {X} : forall (e : mon X) (Q : X -> Prop) s v s',
+      wf_state s ->
+      (heap_ctx (state_heap s) ⊢ wp e (fun v =>  ⌜Q v⌝)) ->
+      run e s = Errors.OK (s', v) ->
+      Q v.
   Proof.
     fix e 1. destruct e0; intros.
-    - apply (soundness1 (state_heap s)). inversion H0. subst.
-      simpl in H. apply H.
-    - destruct s.
-      + inversion H0.
-      + simpl in *. eapply e.
-        2 : apply H0.
-        simpl. iIntros "HA".
-        epose (fresh_is_fresh s0).
-        apply (map_disjoint_singleton_r _ _ t) in e0.
-        iDestruct (heap_ctx_split_sing _ _ _ e0 with "HA") as "[HA HB]".
-        iApply (H with "HA [HB]"); auto.
+    - apply (soundness1 (state_heap s)). inversion H1. subst. simpl in H0. apply H0.
+    - inversion H1.
+    - simpl in *. eapply e.
+      3 : apply H1.
+      + unfold wf_state in *. simpl. intros. destruct H2.
+        destruct (Pos.eq_dec p (next s)). lia. rewrite lookup_insert_ne in H2; auto.
+        assert (Pos.lt p (next s)). apply H. eauto. lia.
+      + simpl. iIntros "HA". apply fresh_is_fresh in H.
+        apply (map_disjoint_singleton_r _ _ t) in H.
+        iDestruct (heap_ctx_split_sing _ _ _ H with "HA") as "[HA HB]".
+        iApply (H0 with "HA [HB]"); auto.
   Qed.
 
-  Lemma adequacy_pure {X} : forall (e : mon X) (Φ : X -> Prop) s v s' H,
-      (heap_ctx (state_heap s) ⊢ H) -> (⊢ {{ H }} e {{ v, RET v; ⌜ Φ v ⌝}}) ->
+  Lemma adequacy_pure {X} : forall (e : mon X) (Q : X -> Prop) s v s' H,
+      wf_state s ->
+      (heap_ctx (state_heap s) ⊢ H) -> (⊢ {{ H }} e {{ v; ⌜ Q v ⌝}}) ->
       run e s = Errors.OK (s', v) ->
-      Φ v.
+      Q v.
   Proof.
-    intros. eapply adequacy_wp_pure; eauto. iIntros "HA". iDestruct (H0 with "HA") as "HA".
-    iDestruct (H1 $! (fun v => ⌜ Φ v ⌝) with "HA") as "HA". iApply "HA"; auto.
+    intros. eapply adequacy_wp_pure; eauto. iIntros "HA". iDestruct (H1 with "HA") as "HA".
+    iDestruct (H2 with "HA") as "$". 
+  Qed.
+
+  Lemma adequacy_pure_init {X} : forall (e : mon X) (Q : X -> Prop) v s' H,
+      (⊢ H) -> (⊢ {{ H }} e {{ v; ⌜ Q v ⌝}}) ->
+      run e initial_state = Errors.OK (s', v) ->
+      Q v.
+  Proof.
+    intros. eapply adequacy_pure; eauto. apply wf_init.
+    iIntros "_". iApply H1; auto. 
   Qed.
 
 End adequacy.
+
+  

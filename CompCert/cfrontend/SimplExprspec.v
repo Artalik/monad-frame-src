@@ -38,7 +38,7 @@ Section SPEC.
 
   Definition dest_below (dst: destination) : iProp :=
     match dst with
-    | For_set sd => \s (sd_temp sd)
+    | For_set sd => IsFresh (sd_temp sd)
     | _ => emp
     end.
 
@@ -54,7 +54,7 @@ Section SPEC.
   Definition tr_rvalof (ty : type) (e1 : expr) (ls : list statement) (e : expr) : iProp :=
     if type_is_volatile ty
     then
-      (∃ t, \⌜ ls = make_set t e1 :: nil /\ e = Etempvar t ty⌝ ∗ \s t)%I
+      (∃ t, \⌜ ls = make_set t e1 :: nil /\ e = Etempvar t ty⌝ ∗ IsFresh t)%I
     else
       \⌜ls =nil /\ e = e1⌝%I.
   
@@ -181,7 +181,7 @@ Section SPEC.
       ∃ sl2 a2 sl3 a3 t,
        tr_expr le For_val e1 sl2 a2  ∗
                tr_expr le For_val e2 sl3 a3  ∗
-               \s t ∗ dest_below dst ∗ 
+               IsFresh t ∗ dest_below dst ∗ 
                \⌜ sl = sl2 ++ sl3 ++ Sset t (Ecast a3 (Csyntax.typeof e1)) :: make_assign a2 (Etempvar t (Csyntax.typeof e1)) :: final dst (Etempvar t (Csyntax.typeof e1)) /\ a = Etempvar t (Csyntax.typeof e1)⌝
      end
     | Csyntax.Eassignop ope e1 e2 tyres ty =>
@@ -197,7 +197,7 @@ Section SPEC.
        tr_expr le For_val e1 sl2 a2  ∗
                tr_expr le For_val e2 sl3 a3  ∗
                tr_rvalof (Csyntax.typeof e1) a2 sl4 a4  ∗
-               \s t ∗
+               IsFresh t ∗
                \⌜ sl = sl2 ++ sl3 ++ sl4 ++ Sset t (Ecast (Ebinop ope a4 a3 tyres) (Csyntax.typeof e1)) :: make_assign a2 (Etempvar t (Csyntax.typeof e1)) :: final dst (Etempvar t (Csyntax.typeof e1))
        /\ a = Etempvar t (Csyntax.typeof e1) ⌝
      end
@@ -209,7 +209,7 @@ Section SPEC.
                  ∃ sl3 a3, tr_rvalof (Csyntax.typeof e1) a2 sl3 a3  ∗
                                      \⌜ sl = sl2 ++ sl3 ++ make_assign a2 (transl_incrdecr id a3 (Csyntax.typeof e1)) :: nil ⌝
     | _ =>
-      dest_below dst ∗ ∃ t, \s t  ∗
+      dest_below dst ∗ ∃ t, IsFresh t  ∗
             \⌜ sl = sl2 ++ make_set t a2 ::make_assign a2 (transl_incrdecr id (Etempvar t (Csyntax.typeof e1)) (Csyntax.typeof e1)) :: final dst (Etempvar t (Csyntax.typeof e1)) /\ a = Etempvar t (Csyntax.typeof e1)⌝
      end
 
@@ -228,7 +228,7 @@ Section SPEC.
                \⌜  sl = sl2 ++ sl3 ++ Scall None a2 al3 :: nil ⌝
     | _ =>
       dest_below dst ∗ ∃ sl2 a2 sl3 al3 t,
-       \s t ∗ 
+       IsFresh t ∗ 
         tr_expr le For_val e1 sl2 a2  ∗
         tr_exprlist le el2 sl3 al3  ∗
         \⌜ sl = sl2 ++ sl3 ++ Scall (Some t) a2 al3 :: final dst (Etempvar t ty) /\
@@ -244,7 +244,7 @@ Section SPEC.
     | _ =>
       dest_below dst ∗ ∃ sl2 al2 t,
        tr_exprlist le el sl2 al2  ∗
-                   \s t  ∗ 
+                   IsFresh t  ∗ 
                    \⌜ sl = sl2 ++ Sbuiltin (Some t) ef tyargs al2 :: final dst (Etempvar t ty) /\
        a = Etempvar t ty⌝
      end
@@ -273,67 +273,64 @@ Section SPEC.
             tr_exprlist le el2 sl3 al3  ∗
             \⌜ sl = sl2 ++ sl3 /\ a = a2 :: al3⌝
   end.
-
+  
   
   Ltac tac :=
     match goal with
-    | |- bi_emp_valid ({{ _ }} bind2 _ (fun _ _ => _) {{ _, RET _; _ }}) =>
+    | |- bi_emp_valid ({{ _ }} bind2 _ (fun _ _ => _) {{ _; _ }}) =>
       eapply bind_spec; intros; tac
-    | |- bi_emp_valid ({{ _ }} bind _ (fun _ => _) {{ _, RET _; _ }}) =>
+    | |- bi_emp_valid ({{ _ }} bind _ (fun _ => _) {{ _; _ }}) =>
       eapply bind_spec; [> tac | intro; tac]
-    | |- bi_emp_valid ({{ _ }} ret _ {{ _, RET _; ∃ _, _ }}) => eapply exists_spec; tac
-    | |- bi_emp_valid ({{ _ }} error _ {{ _, RET _; _ }}) => apply error_spec
-    | |- bi_emp_valid ({{ emp }} gensym _ {{ _, RET _; _ }}) => apply gensym_spec
-    | |- bi_emp_valid ({{ _ }} gensym _ {{ _, RET _; _ }}) => frameR; apply gensym_spec 
-    | H : (forall _ _, bi_emp_valid ({{ emp }} transl_valof _ _ {{ _, RET _; _}}))
-      |- bi_emp_valid ({{ emp }} transl_valof _ _ {{ _, RET _; _ }}) =>
+    | |- bi_emp_valid ({{ _ }} ret _ {{ _; ∃ _, _ }}) => eapply exists_spec; tac
+    | |- bi_emp_valid ({{ _ }} error _ {{ _; _ }}) => apply error_spec
+    | |- bi_emp_valid ({{ emp }} gensym _ {{ _; _ }}) => apply gensym_spec
+    | |- bi_emp_valid ({{ _ }} gensym _ {{ _; _ }}) => Frame; apply gensym_spec 
+    | H : (forall _ _, bi_emp_valid ({{ emp }} transl_valof _ _ {{ _; _}}))
+      |- bi_emp_valid ({{ emp }} transl_valof _ _ {{ _; _ }}) =>
       apply H; tac
-    | H : (forall _ _, bi_emp_valid ({{ emp }} transl_valof _ _ {{ _, RET _; _}}))
-      |- bi_emp_valid ({{ _ }} transl_valof _ _ {{ _, RET _; _ }}) =>
-      frameR; apply H; tac
-    | H : (forall _ _, bi_emp_valid ({{ emp }} transl_expr _ _ {{ _, RET _; _}}))
-      |- bi_emp_valid ({{ emp }} transl_expr _ _ {{ _, RET _; _ }}) =>
+    | H : (forall _ _, bi_emp_valid ({{ emp }} transl_valof _ _ {{ _; _}}))
+      |- bi_emp_valid ({{ _ }} transl_valof _ _ {{ _; _ }}) =>
+      Frame; apply H; tac
+    | H : (forall _ _, bi_emp_valid ({{ emp }} transl_expr _ _ {{ _; _}}))
+      |- bi_emp_valid ({{ emp }} transl_expr _ _ {{ _; _ }}) =>
       apply H; tac
-    | H : (forall _ _, bi_emp_valid ({{ emp }} transl_expr _ _ {{ _, RET _; _}}))
-      |- bi_emp_valid ({{ _ }} transl_expr _ _ {{ _, RET _; _ }}) =>
-      frameR; apply H; tac
-    | H : (forall _, bi_emp_valid ({{ emp }} transl_expr _ ?l {{ _, RET _; _}}))
-      |- bi_emp_valid ({{ emp }} transl_expr _ ?l {{ _, RET _; _ }}) =>
+    | H : (forall _ _, bi_emp_valid ({{ emp }} transl_expr _ _ {{ _; _}}))
+      |- bi_emp_valid ({{ _ }} transl_expr _ _ {{ _; _ }}) =>
+      Frame; apply H; tac
+    | H : (forall _, bi_emp_valid ({{ emp }} transl_expr _ ?l {{ _; _}}))
+      |- bi_emp_valid ({{ emp }} transl_expr _ ?l {{ _; _ }}) =>
       apply H; tac
-    | H : (forall _, bi_emp_valid ({{ emp }} transl_expr _ ?l {{ _, RET _; _}}))
-      |- bi_emp_valid ({{ _ }} transl_expr _ ?l {{ _, RET _; _ }}) =>
-      frameR; apply H; tac
-    | H :(forall _, bi_emp_valid ({{ emp }} transl_exprlist _ {{ _, RET _; _}}))
-      |- bi_emp_valid ({{ emp }} transl_exprlist _ {{ _, RET _; _ }}) =>
+    | H : (forall _, bi_emp_valid ({{ emp }} transl_expr _ ?l {{ __; _}}))
+      |- bi_emp_valid ({{ _ }} transl_expr _ ?l {{ _; _ }}) =>
+      Frame; apply H; tac
+    | H :(forall _, bi_emp_valid ({{ emp }} transl_exprlist _ {{ _; _}}))
+      |- bi_emp_valid ({{ emp }} transl_exprlist _ {{ _; _ }}) =>
       apply H; tac
-    | H :(forall _, bi_emp_valid ({{ emp }} transl_exprlist _ {{ _, RET _; _}}))
-      |- bi_emp_valid ({{ _ }} transl_exprlist _ {{ _, RET _; _ }}) =>
-      frameR; apply H; tac
-    | H : bi_emp_valid ({{ emp }} transl_exprlist ?l {{ _, RET _; _}})
-      |- bi_emp_valid ({{ emp }} transl_exprlist ?l {{ _, RET _; _ }}) =>
+    | H :(forall _, bi_emp_valid ({{ emp }} transl_exprlist _ {{ _; _}}))
+      |- bi_emp_valid ({{ _ }} transl_exprlist _ {{ _; _ }}) =>
+      Frame; apply H; tac
+    | H : bi_emp_valid ({{ emp }} transl_exprlist ?l {{ __; _}})
+      |- bi_emp_valid ({{ emp }} transl_exprlist ?l {{ _; _ }}) =>
       apply H; tac
-    | H : bi_emp_valid ({{ emp }} transl_exprlist ?l {{ _, RET _; _}})
-      |- bi_emp_valid ({{ _ }} transl_exprlist ?l {{ _, RET _; _ }}) =>
-      frameR; apply H; tac
+    | H : bi_emp_valid ({{ emp }} transl_exprlist ?l {{ _; _}})
+      |- bi_emp_valid ({{ _ }} transl_exprlist ?l {{ _; _ }}) =>
+      Frame; apply H; tac
     | |- bi_emp_valid ({{ _ }} match ?a with
                               | _ => _
-                              end  {{ _, RET _; _ }}) =>
+                              end  {{ _; _ }}) =>
       destruct a eqn:?; tac
     | _ => idtac
     end.
   
   Ltac tac2 :=
     match goal with
-    | |- bi_emp_valid ({{ emp }} ret ?v {{ v', RET v'; ⌜ v' = ?v ⌝ }}) => apply ret_spec
-    | |- bi_emp_valid ({{ emp }} ret ?v {{ v', RET v'; \⌜ v' = ?v ⌝ }}) => apply ret_spec_pure   
-    | |- bi_emp_valid ({{ emp }} ret _  {{ _, RET _; _ }}) => iApply ret_spec_bis; auto
-    | |- bi_emp_valid ({{ _ }} ret _  {{ _, RET _; _ }}) => iApply ret_spec_complete; auto
+    | |- bi_emp_valid ({{ _ }} ret _  {{ _; _ }}) => iApply ret_spec; auto
     | _ => (progress tac); tac2
     | _ => idtac
     end.
   
   Lemma transl_valof_meets_spec ty a :
-    ⊢{{ emp }} transl_valof ty a {{ r, RET r; tr_rvalof ty a r.1 r.2 }}.
+    ⊢{{ emp }} transl_valof ty a {{ r; tr_rvalof ty a r.1 r.2 }}.
   Proof.
     unfold transl_valof. unfold tr_rvalof. 
     destruct (type_is_volatile ty); tac2.
@@ -359,10 +356,10 @@ Section SPEC.
 
   Lemma transl_meets_spec :
     (forall r dst,
-        ⊢ {{ emp }} transl_expr dst r {{ res, RET res; dest_below dst -∗ ∀ le, tr_expr le dst r res.1 res.2 }})
+        ⊢ {{ emp }} transl_expr dst r {{ res; dest_below dst -∗ ∀ le, tr_expr le dst r res.1 res.2 }})
     /\
     (forall rl,
-        ⊢{{ emp }} transl_exprlist rl {{ res, RET res; ∀ le, tr_exprlist le rl res.1 res.2 }}).
+        ⊢{{ emp }} transl_exprlist rl {{ res; ∀ le, tr_exprlist le rl res.1 res.2 }}).
   Proof.
 
     Ltac iApplyA := iDestruct ("HA" with "[]") as "HA"; eauto.
@@ -453,9 +450,9 @@ Section SPEC.
   
   Lemma transl_expr_meets_spec:
     forall r dst,
-      ⊢ {{ emp }} transl_expr dst r {{ res, RET res;  dest_below dst -∗ ⌜ exists tmp, ∀ ge e le m, tr_top ge e le m dst r res.1 res.2 tmp ⌝ }}.
+      ⊢ {{ emp }} transl_expr dst r {{ res;  dest_below dst -∗ ⌜ exists tmp, ∀ ge e le m, tr_top ge e le m dst r res.1 res.2 tmp ⌝ }}.
   Proof.
-    intros. iApply (post_weaker _ _ _ _ (proj1 transl_meets_spec _ _)).
+    intros. iApply (consequence _ _ _ _ _ (proj1 transl_meets_spec _ _)); eauto. 
     iIntros "* HA HB". iDestruct ("HA" with "HB") as "HA". iStopProof. apply instance_heap.
     intros. exists tmps. intros. constructor. apply (start_proof _ _ _ H). auto.
   Qed.  
@@ -467,7 +464,7 @@ Section SPEC.
   
   
   Lemma transl_expression_meets_spec: forall r,
-      ⊢ {{ emp }} transl_expression r {{ res, RET res; ⌜ tr_expression r res.1 res.2 ⌝ }}.
+      ⊢ {{ emp }} transl_expression r {{ res; ⌜ tr_expression r res.1 res.2 ⌝ }}.
   Proof.
     intro. unfold transl_expression. epose transl_expr_meets_spec. tac2.
     iIntros "%". iPureIntro. destruct a; eauto. econstructor; eauto.
@@ -480,7 +477,7 @@ Section SPEC.
       tr_expr_stmt r (makeseq sl).
   
   Lemma transl_expr_stmt_meets_spec: forall r,
-      ⊢ {{ emp }} transl_expr_stmt r {{ res, RET res; ⌜ tr_expr_stmt r res ⌝}}.
+      ⊢ {{ emp }} transl_expr_stmt r {{ res; ⌜ tr_expr_stmt r res ⌝}}.
   Proof.
     intro. unfold transl_expr_stmt. epose transl_expr_meets_spec. tac2. 
     iIntros "%". iPureIntro. destruct a; auto. econstructor. eapply H.
@@ -492,7 +489,7 @@ Section SPEC.
       tr_if r s1 s2 (makeseq (sl ++ makeif a s1 s2 :: nil)).
   
   Lemma transl_if_meets_spec: forall r s1 s2,
-      ⊢ {{ emp }} transl_if r s1 s2 {{ res, RET res; ⌜ tr_if r s1 s2 res ⌝ }}.
+      ⊢ {{ emp }} transl_if r s1 s2 {{ res; ⌜ tr_if r s1 s2 res ⌝ }}.
   Proof.
     intros. epose transl_expr_meets_spec. unfold transl_if; tac2.
     iIntros "%". iPureIntro. destruct a; auto. econstructor. apply H.
@@ -567,55 +564,55 @@ with tr_lblstmts: Csyntax.labeled_statements -> labeled_statements -> Prop :=
 
   Ltac tac3 :=
     match goal with
-    | H : forall _, bi_emp_valid ({{ emp }} transl_expression _ {{ _, RET _; _ }})
-      |- bi_emp_valid ({{ emp }} transl_expression _ {{ _, RET _; _ }}) =>
+    | H : forall _, bi_emp_valid ({{ emp }} transl_expression _ {{ _; _ }})
+      |- bi_emp_valid ({{ emp }} transl_expression _ {{ _; _ }}) =>
       apply H; tac3
-    | H : forall _, bi_emp_valid ({{ emp }} transl_expression _ {{ _, RET _; _ }})
-      |- bi_emp_valid ({{ _ }} transl_expression _ {{ _, RET _; _ }}) =>
-      frameR; apply H; tac3
+    | H : forall _, bi_emp_valid ({{ emp }} transl_expression _ {{ _; _ }})
+      |- bi_emp_valid ({{ _ }} transl_expression _ {{ _; _ }}) =>
+      Frame; apply H; tac3
 
-    | H : forall _, bi_emp_valid ({{ emp }} transl_expr_stmt _ {{ _, RET _; _}})
-      |- bi_emp_valid ({{ emp }} transl_expr_stmt _ {{ _, RET _; _}}) =>
+    | H : forall _, bi_emp_valid ({{ emp }} transl_expr_stmt _ {{ _; _}})
+      |- bi_emp_valid ({{ emp }} transl_expr_stmt _ {{ _; _}}) =>
       apply H; tac3 
-    | H : forall _, bi_emp_valid ({{ emp }} transl_expr_stmt _ {{ _, RET _; _}})
-      |- bi_emp_valid ({{ _ }} transl_expr_stmt _ {{ _, RET _; _}}) =>
-      frameR; apply H; tac3
+    | H : forall _, bi_emp_valid ({{ emp }} transl_expr_stmt _ {{ _; _}})
+      |- bi_emp_valid ({{ _ }} transl_expr_stmt _ {{ _; _}}) =>
+      Frame; apply H; tac3
 
-    | H: forall _ _ _, bi_emp_valid ({{ emp }} transl_if _ _ _ {{ _, RET _; _ }})
-      |- bi_emp_valid ({{ emp }} transl_if _ _ _ {{ _, RET _; _ }}) =>
+    | H: forall _ _ _, bi_emp_valid ({{ emp }} transl_if _ _ _ {{ _; _ }})
+      |- bi_emp_valid ({{ emp }} transl_if _ _ _ {{ _; _ }}) =>
       apply H; tac3
-    | H: forall _ _ _, bi_emp_valid ({{ emp }} transl_if _ _ _ {{ _, RET _; _ }})
-      |- bi_emp_valid ({{ _ }} transl_if _ _ _ {{ _, RET _; _ }}) =>
-      frameR; apply H; tac3
+    | H: forall _ _ _, bi_emp_valid ({{ emp }} transl_if _ _ _ {{ _; _ }})
+      |- bi_emp_valid ({{ _ }} transl_if _ _ _ {{ _; _ }}) =>
+      Frame; apply H; tac3
 
-    | H: bi_emp_valid ({{ emp }} transl_stmt ?s {{ _, RET _; _ }})
-      |- bi_emp_valid ({{ emp }} transl_stmt ?s {{ _, RET _; _ }}) =>
+    | H: bi_emp_valid ({{ emp }} transl_stmt ?s {{ _; _ }})
+      |- bi_emp_valid ({{ emp }} transl_stmt ?s {{  _; _ }}) =>
       apply H; tac3
-    | H: bi_emp_valid ({{ emp }} transl_stmt ?s {{ _, RET _; _ }})
-      |- bi_emp_valid ({{ _ }} transl_stmt ?s {{ _, RET _; _ }}) =>
-      frameR; apply H; tac3
+    | H: bi_emp_valid ({{ emp }} transl_stmt ?s {{ _; _ }})
+      |- bi_emp_valid ({{ _ }} transl_stmt ?s {{ _; _ }}) =>
+      Frame; apply H; tac3
 
-    | H: (forall _, bi_emp_valid ({{ emp }} transl_stmt _ {{ _, RET _; _ }}))
-      |- bi_emp_valid ({{ emp }} transl_stmt _ {{ _, RET _; _ }}) =>
+    | H: (forall _, bi_emp_valid ({{ emp }} transl_stmt _ {{ _; _ }}))
+      |- bi_emp_valid ({{ emp }} transl_stmt _ {{ _; _ }}) =>
       apply H; tac3
-    | H:(forall _, bi_emp_valid ({{ emp }} transl_stmt _ {{ _, RET _; _ }}))
-      |- bi_emp_valid ({{ _ }} transl_stmt ?s {{ _, RET _; _ }}) =>
-      frameR; apply H; tac3
+    | H:(forall _, bi_emp_valid ({{ emp }} transl_stmt _ {{ _; _ }}))
+      |- bi_emp_valid ({{ _ }} transl_stmt ?s {{ _; _ }}) =>
+      Frame; apply H; tac3
 
 
-    | H: (⊢ {{ emp }} transl_lblstmt ?l {{ _, RET _; _ }})
-      |- (⊢ {{ emp }} transl_lblstmt ?l {{ _, RET _; _ }}) =>
+    | H: (⊢ {{ emp }} transl_lblstmt ?l {{ _; _ }})
+      |- (⊢ {{ emp }} transl_lblstmt ?l {{ _; _ }}) =>
       apply H; tac3
-    | H: (⊢ {{ emp }} transl_lblstmt ?l {{ _, RET _; _ }})
-      |- (⊢ {{ _ }} transl_lblstmt ?l {{ _, RET _; _ }}) =>
-      frameR; apply H; tac3
+    | H: (⊢ {{ emp }} transl_lblstmt ?l {{ _; _ }})
+      |- (⊢ {{ _ }} transl_lblstmt ?l {{ _; _ }}) =>
+      Frame; apply H; tac3
     
-    | H: (forall _, ⊢ {{ emp }} transl_lblstmt _ {{ _, RET _; _ }})
-      |- (⊢ {{ emp }} transl_lblstmt _ {{ _, RET _; _ }}) =>
+    | H: (forall _, ⊢ {{ emp }} transl_lblstmt _ {{ _; _ }})
+      |- (⊢ {{ emp }} transl_lblstmt _ {{ _; _ }}) =>
       apply H; tac3
-    | H: (forall _, ⊢ {{ emp }} transl_lblstmt _ {{ _, RET _; _ }})
-      |- (⊢ {{ _ }} transl_lblstmt _ {{ _, RET _; _ }}) =>
-      frameR; apply H; tac3
+    | H: (forall _, ⊢ {{ emp }} transl_lblstmt _ {{ _; _ }})
+      |- (⊢ {{ _ }} transl_lblstmt _ {{ _; _ }}) =>
+      Frame; apply H; tac3
                          
     | _ => (progress tac); tac3
     | _ => (progress tac2); tac3
@@ -624,17 +621,17 @@ with tr_lblstmts: Csyntax.labeled_statements -> labeled_statements -> Prop :=
                        
   
   Lemma transl_stmt_meets_spec : forall s,
-      ⊢ {{ emp }} transl_stmt s {{ res, RET res; ⌜ tr_stmt s res ⌝}}
+      ⊢ {{ emp }} transl_stmt s {{ res; ⌜ tr_stmt s res ⌝}}
   with transl_lblstmt_meets_spec:
          forall s,
-           ⊢ {{ emp }} transl_lblstmt s {{ res, RET res; ⌜ tr_lblstmts s res ⌝ }}. 
+           ⊢ {{ emp }} transl_lblstmt s {{ res; ⌜ tr_lblstmts s res ⌝ }}. 
   Proof.
     pose transl_expression_meets_spec. pose transl_if_meets_spec. pose transl_expr_stmt_meets_spec.
     clear transl_stmt_meets_spec. intro.
     induction s; rewrite /transl_stmt; fold transl_stmt; fold transl_lblstmt; tac3.
     
-    - iPureIntro. constructor.
-    - apply (post_weaker _ _ _ _ (b1 e)). iIntros. iPureIntro. apply (tr_do _ _ a).
+    - iIntros "_". iPureIntro. constructor.
+    - apply (consequence _ _ _ _ _ (b1 e)); eauto. iIntros. iPureIntro. apply (tr_do _ _ a).
     - iIntros "[% %]". iPureIntro. constructor; auto.
     - iIntros"[% [% %]]". iPureIntro. pose Heqb2. apply Is_true_eq_left in e0.
       apply andb_prop_elim in e0 as (P0&P1). 
@@ -645,15 +642,15 @@ with tr_lblstmts: Csyntax.labeled_statements -> labeled_statements -> Prop :=
     - iIntros "[% %]". iPureIntro. apply (tr_dowhile _ _ _ _ H0 H).
     - iIntros "[% [% [% %]]]"; iPureIntro; subst. apply (tr_for_1 _ _ _ _ _ _ H1 H0 H).
     - iIntros "[% [% [% %]]]"; iPureIntro; subst. apply (tr_for_2 _ _ _ _ _ _ _ _ H1 n H2 H0 H).
-    - iPureIntro. constructor.
-    - iPureIntro. constructor.
+    - iIntros "_". iPureIntro. constructor.
+    - iIntros "_". iPureIntro. constructor.
     - iIntros. iPureIntro. apply (tr_return_some _ _ _ a).
-    - iPureIntro. constructor. 
+    - iIntros "_". iPureIntro. constructor. 
     - iIntros "[% %]". iPureIntro. constructor; auto.
     - iIntros "%". iPureIntro. constructor; auto.
-    - iPureIntro. constructor.
+    - iIntros "_". iPureIntro. constructor.
     - induction s; rewrite /transl_lblstmt; fold transl_lblstmt; fold transl_stmt; tac3.
-      + iPureIntro. constructor.
+      + iIntros "_". iPureIntro. constructor.
       + iIntros "[% %]". iPureIntro. constructor; auto.
   Qed.
 
@@ -687,7 +684,7 @@ with tr_lblstmts: Csyntax.labeled_statements -> labeled_statements -> Prop :=
     destruct (run (transl_stmt (Csyntax.fn_body f)) initial_state) eqn:?; inversion H.
     destruct p. simpl in *. 
     apply tr_function_intro; auto; simpl.
-    eapply (adequacy_pure (transl_stmt (Csyntax.fn_body f)) _ initial_state s0 s emp); auto.
+    eapply (adequacy_pure_init (transl_stmt (Csyntax.fn_body f)) _ s0 s emp); auto.
     iApply (transl_stmt_meets_spec (Csyntax.fn_body f)).
   Qed.
 

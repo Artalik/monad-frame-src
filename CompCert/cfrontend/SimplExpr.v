@@ -473,7 +473,7 @@ Definition transl_function (f: Csyntax.function) : res function :=
               f.(Csyntax.fn_callconv)
               f.(Csyntax.fn_params)
               f.(Csyntax.fn_vars)
-              (map_to_list (fresh.state_heap (fst tbody)))
+              (map_to_list (state_heap (fst tbody)))
               (snd tbody))
   end.
 
