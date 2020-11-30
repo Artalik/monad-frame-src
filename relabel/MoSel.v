@@ -5,6 +5,7 @@ Require Import FunctionalExtensionality.
 From iris Require Export bi.bi proofmode.tactics proofmode.monpred proofmode.reduction.
 Global Set Warnings "-convert_concl_no_check".
 
+(* Monade libre *)
 Module FreeMonad.
 
   Inductive mon (E : Type -> Type) (X : Type) : Type :=
@@ -57,6 +58,7 @@ Module FreeMonad.
 
 End FreeMonad.
 
+(* Pour le moment, juste une tactique fait maison*)
 Module SepBasicCore.
 
   Local Ltac Fresh :=
@@ -128,6 +130,7 @@ Module SepBasicCore.
 
 End SepBasicCore.
 
+(* Règles structurelles commune aux logiques de ressources et effets *)
 Module weakestpre.
   Export SepBasicCore.
   Import FreeMonad.
@@ -238,6 +241,7 @@ End weakestpre.
 
 From stdpp Require Export pmap.
 
+(* Logique de séparation minimaliste *)
 Module SepMin.
   (* Export monpred. *)
   Axiom prop_extensionality : forall A B:Prop, (A <-> B) -> A = B.
@@ -632,6 +636,8 @@ Module SepMin.
 
 End SepMin.
 
+
+(* Gensym avec la monade libre *)
 Module gensym.
   Export FreeMonad.
   Export SepBasicCore.
@@ -678,7 +684,7 @@ Module gensym.
 
 End gensym.
 
-
+(* Raisonnement pour gensym avec la SL minimaliste *)
 Module weakestpre_gensym.
   Export gensym.
   Export weakestpre.
@@ -704,7 +710,7 @@ Module weakestpre_gensym.
 
 End weakestpre_gensym.
 
-
+(* Adequacy pour gensym *)
 Module adequacy_gensym.
   Export gensym.
   Export weakestpre_gensym.
