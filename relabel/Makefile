@@ -1,4 +1,6 @@
 all :
+	@coqc SepMin.v
+	@coqc SepList.v
 	@coqc MoSel.v
 	@coqc relabel.v
 
