@@ -224,7 +224,6 @@ Section hprop.
     - intros A Φ h a. rewrite /hor. unfold hlater in *. destruct a. right. exists x. apply H.
     - intros Hp h P. unfold hlater in *. right. intro. apply P.
   Qed.
-  Opaque hpure_abs.
 
   Instance inhabited_unit : Inhabited unit.
   Proof.
@@ -251,13 +250,14 @@ Section hprop.
   Local Notation "\s l" :=
     (∃ t, l ↦ t) (at level 10) : bi_scope.
 
-  Lemma singleton_false : forall t, ⊢ \s t -∗ \s t -∗ False.
+
+  Lemma singleton_neq : forall t t', ⊢ \s t -∗ \s t' -∗ ⌜t ≠ t'⌝.
   Proof.
     MonPred.unseal. split. MonPred.unseal. repeat red. intros. destruct i. destruct a. clear H0.
     inv H. exists emp, heap_empty, heap_empty. repeat split; auto with heap_scope.
     intros h H j C. clear C. clear j. inversion_star h P. clear H. inv P0. clear P2.
     destruct P1. red in H. rewrite heap_union_empty_l. exists (hheap_ctx h1), h1, heap_empty.
-    repeat split; eauto with heap_scope. subst. intros h H. inversion_star h P. destruct P1.
+    repeat split; eauto with heap_scope. subst. intros h H eq. inversion_star h P. destruct P1.
     red in H0. red in P0. subst. clear H. erewrite map_disjoint_spec in P2.
     edestruct P2; eapply lookup_singleton_Some; eauto.
     apply map_disjoint_empty_r.

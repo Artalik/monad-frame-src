@@ -59,7 +59,7 @@ Module FreeMonad.
 
 End FreeMonad.
 
-(* Pour le moment, juste une tactique fait maison*)
+(* Pour le moment, juste une tactique fait maison *)
 Module SepBasicCore.
 
   Local Ltac Fresh :=
@@ -150,7 +150,7 @@ Module weakestpre.
       | ret v => Q v
       | op e f =>
         let (pre,post) := E_SPEC _ e in
-        bi_sep pre (∀ l, post l -∗ (wp_gen (f l) Q))
+        pre ∗ (∀ l, post l -∗ (wp_gen (f l) Q))
       end.
 
     Lemma wp_bind {X Y} (e : mon E X) (f :  X → mon E Y) (Q : Y -> iPropGen) (Q' : X -> iPropGen) :
@@ -178,7 +178,7 @@ Module weakestpre.
     Qed.
 
     Definition triple {X} P (e : mon E X) Q : iPropGen :=
-      bi_wand P (wp_gen e Q).
+      P -∗ (wp_gen e Q).
 
     Notation "'{{' P } } e {{ v ; Q } } " := (triple P e (fun v => Q))
                                                (at level 20, format "'[hv' {{  P  } }  '/  ' e  '/'  {{  v ;  Q  } } ']'").
@@ -252,7 +252,6 @@ End gensym.
 
 Module gensym_run.
   Export gensym.
-  Export Pos.
 
   Definition ident := positive.
 
@@ -281,7 +280,6 @@ End gensym_run.
 
 Module gensym_run2.
   Export gensym.
-  Export Nat.
 
   Definition ident := nat.
 
@@ -312,7 +310,7 @@ Module weakestpre_gensym_SLMin.
     end.
 
   Definition wp {X} (m : mon Fresh X) (Q : X -> iProp) : iProp :=
-    @wp_gen _ _ Fresh op_spec _ m Q.
+    @wp_gen _ _ _ op_spec _ m Q.
 
   Notation "'{{' P } } e {{ v ; Q } }" := (@triple _ _ _ op_spec _ P e (fun v => Q))
       (at level 20, format "'[hv' {{  P  } }  '/  ' e  '/'  {{  v ;  Q  } } ']'").
@@ -323,6 +321,33 @@ Module weakestpre_gensym_SLMin.
   Proof. unfold triple. simpl. auto. Qed.
 
 End weakestpre_gensym_SLMin.
+
+
+(* Raisonnement pour gensym avec la SL sur liste minimaliste *)
+Module weakestpre_gensym_SLList.
+  Export SepList.
+  Export weakestpre.
+  Export gensym_run2.
+
+  Definition iProp := @iPropGen (@hpropList ident) biInd.
+
+  Definition op_spec X (m : Fresh X) : iProp * (X -> iProp) :=
+    match m with
+    | Gensym => (emp, IsFresh)
+    end.
+
+  Definition wp {X} (m : mon Fresh X) (Q : X -> iProp) : iProp :=
+    @wp_gen _ _ _ op_spec _ m Q.
+
+  Notation "'{{' P } } e {{ v ; Q } }" := (@triple _ _ _ op_spec _ P e (fun v => Q))
+      (at level 20, format "'[hv' {{  P  } }  '/  ' e  '/'  {{  v ;  Q  } } ']'").
+  (** triple rules *)
+
+  Lemma gensym_spec :
+  ⊢{{ emp }} gensym {{ l; IsFresh l }}.
+  Proof. unfold triple. simpl. auto. Qed.
+
+End weakestpre_gensym_SLList.
 
 
 (* Adequacy pour gensym avec la SL minimaliste *)
@@ -418,33 +443,6 @@ Module adequacy_gensym_SLMin.
   Qed.
 
 End adequacy_gensym_SLMin.
-
-
-(* Raisonnement pour gensym avec la SL sur liste minimaliste *)
-Module weakestpre_gensym_SLList.
-  Export SepList.
-  Export weakestpre.
-  Export gensym_run2.
-
-  Definition iProp := @iPropGen (@hpropList ident) biInd.
-
-  Definition op_spec X (m : Fresh X) : iProp * (X -> iProp) :=
-    match m with
-    | Gensym => (emp, IsFresh)
-    end.
-
-  Definition wp {X} (m : mon Fresh X) (Q : X -> iProp) : iProp :=
-    @wp_gen _ _ Fresh op_spec _ m Q.
-
-  Notation "'{{' P } } e {{ v ; Q } }" := (@triple _ _ _ op_spec _ P e (fun v => Q))
-      (at level 20, format "'[hv' {{  P  } }  '/  ' e  '/'  {{  v ;  Q  } } ']'").
-  (** triple rules *)
-
-  Lemma gensym_spec :
-  ⊢{{ emp }} gensym {{ l; IsFresh l }}.
-  Proof. unfold triple. simpl. auto. Qed.
-
-End weakestpre_gensym_SLList.
 
 (* Adequacy pour gensym avec la SL minimaliste *)
 Module adequacy_gensym_SLList.

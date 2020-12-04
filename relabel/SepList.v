@@ -279,7 +279,6 @@ Section hprop.
     - intros A Φ h a. rewrite /hor. unfold hlater in *. destruct a. right. exists x. apply H.
     - intros Hp h P. unfold hlater in *. right. intro. apply P.
   Qed.
-  Opaque hpure_abs.
 
   Instance inhabited_unit : Inhabited unit.
   Proof.
@@ -303,16 +302,16 @@ Section hprop.
   Local Notation "'IsFresh' l" :=
     (single l) (at level 20) : bi_scope.
 
-  Lemma singleton_false : forall t, ⊢ IsFresh t -∗ IsFresh t -∗ False.
+  Lemma singleton_neq : forall t t', ⊢ IsFresh t -∗ IsFresh t' -∗ ⌜t ≠ t'⌝.
   Proof.
     MonPred.unseal. split. MonPred.unseal. repeat red. intros.
     exists emp, heap_empty, heap_empty. repeat split; auto with list_scope. clear H0. destruct a.
     repeat red. intros l P0. inv H. destruct i. inversion_star h P. clear P0.
     inv P1. clear P3. intros. destruct a. clear H. red in P2. subst.
     exists (hheap_ctx l), l, ∅. repeat split; eauto with list_scope.
-    intros h H. inversion_star h P. clear H. red in P1. repeat red in P2. subst.
-    eapply P3. eapply P. apply in_or_app. right. apply (in_eq t); eauto.
-    apply (in_eq t); eauto. reflexivity. intros. apply in_or_app. left; auto.
+    intros h H eq. inversion_star h P. clear H. red in P1. repeat red in P2. subst.
+    eapply P3. eapply P. apply in_or_app. right. apply (in_eq t'); eauto.
+    apply (in_eq t'); eauto. reflexivity. intros. apply in_or_app. left; auto.
     intros. apply in_app_or in H as [H|H]; auto. inv H.
     intros. inv H. apply in_app_iff. left; auto.
     intros. inv H. apply in_app_iff in H1 as [H1|H1]; auto.
