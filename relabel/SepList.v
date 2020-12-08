@@ -137,11 +137,11 @@ Section hprop.
   Local Notation "h1 \u h2" := (h1 ∪ h2) (at level 37, right associativity).
 
   Local Notation "'Hexists' x1 , H" := (hexists (fun x1 => H))
-                                         (at level 39, x1 name, H at level 50).
+                                         (at level 39, x1 ident, H at level 50).
   Local Notation "'Hexists' x1 x2 , H" := (Hexists x1, Hexists x2, H)
-                                            (at level 39, x1 name, x2 name, H at level 50).
+                                            (at level 39, x1 ident, x2 ident, H at level 50).
   Local Notation "'Hexists' x1 x2 x3 , H" := (Hexists x1, Hexists x2, Hexists x3, H)
-                                               (at level 39, x1 name, x2 name, x3 name, H at level 50).
+                                               (at level 39, x1 ident, x2 ident, x3 ident, H at level 50).
 
   Local Notation "'\[]'" := (hempty)
                               (at level 0).

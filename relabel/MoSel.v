@@ -26,9 +26,9 @@ Module FreeMonad.
   Definition syntax_effect {E X} (e : E X) := op e ret.
 
   Notation "'let!' x ':=' e1 'in' e2" :=
-    (bind e1 (fun x => e2)) (x name, at level 50).
+    (bind e1 (fun x => e2)) (x ident, at level 50).
 
-  Notation "'ret!' v" := (ret v) (v name, at level 50).
+  Notation "'ret!' v" := (ret v) (v ident, at level 50).
 
   Lemma lid : forall E X Y (a : X) (f : X -> mon E Y), let! v := ret! a in f v = f a.
   Proof. auto. Qed.
