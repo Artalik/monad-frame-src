@@ -99,11 +99,11 @@ Section hprop.
   Local Notation "h1 \u h2" := (h1 ∪ h2) (at level 37, right associativity).
 
   Local Notation "'Hexists' x1 , H" := (hexists (fun x1 => H))
-                                         (at level 39, x1 ident, H at level 50).
+                                         (at level 39, x1 name, H at level 50).
   Local Notation "'Hexists' x1 x2 , H" := (Hexists x1, Hexists x2, H)
-                                            (at level 39, x1 ident, x2 ident, H at level 50).
+                                            (at level 39, x1 name, x2 name, H at level 50).
   Local Notation "'Hexists' x1 x2 x3 , H" := (Hexists x1, Hexists x2, Hexists x3, H)
-                                               (at level 39, x1 ident, x2 ident, x3 ident, H at level 50).
+                                               (at level 39, x1 name, x2 name, x3 name, H at level 50).
 
 
   Local Notation "'\[]'" := (hempty)
@@ -182,8 +182,8 @@ Section hprop.
     - rewrite /Transitive. intros. intros h P. eauto.
     - rewrite leibniz_equiv_iff. intros (P0&P1). extens. split; intro; auto.
     - intros X Y Z. rewrite /hpure_abs. repeat red. intro. extens. auto.
-    - intros X Y Z. rewrite /hforall. repeat red. intros. extens. split; intros; repeat red in H;
-                                                                    apply functional_extensionality in H; subst; auto.
+    - intros X Y Z. rewrite /hforall. repeat red. intros. extens.
+      split; intros; repeat red in H; apply functional_extensionality in H; subst; auto.
     - intros X Y Z. rewrite /hexists. repeat red. intros. extens.
       split; intro; repeat red in H; apply functional_extensionality in H; subst; auto.
     - rewrite /hpure_abs. intros φ P imp h P0. apply imp; auto.
@@ -275,13 +275,13 @@ Section hprop.
 
   Lemma pureIntro {X} P : ∀ (a b : X), P a ⊢ pure_empty (a = b) -∗ P b.
   Proof.
-    iIntros (a b) "HA %". rewrite a0. iApply "HA".
+    iIntros (a b) "HA %". rewrite H. iApply "HA".
   Qed.
 
   Lemma emp_trivial : ⊢ (emp : monPred biInd hpropI). simpl. auto. Qed.
 
   Lemma pure_empty_destruct : forall P Q, ⊢ \⌜ P /\ Q ⌝ -∗ \⌜ P ⌝ ∗ \⌜ Q ⌝ .
-  Proof. iIntros. destruct a. iSplit; iPureIntro; auto. Qed.
+  Proof. iIntros. destruct H. iSplit; iPureIntro; auto. Qed.
 
 
   Global Instance affine_heap_empty : Affine (heap_ctx ∅).
@@ -323,9 +323,8 @@ Section hprop.
 
   Lemma soundness3 (Φ : monPred biInd hpropI) h : Φ () h -> (⊢heap_ctx h -∗ Φ).
   Proof.
-    MonPred.unseal. unfold monPred_wand_def. unfold monPred_upclosed. simpl. split.
-    intros. simpl. repeat red. intros. exists emp. exists x; exists heap_empty.
-    repeat split; auto with heap_scope. rewrite monPred_at_emp in H0. apply H0.
+    MonPred.unseal. split. MonPred.unseal. simpl. repeat red. intros. exists emp. exists x; exists heap_empty.
+    repeat split; auto with heap_scope.
     intros h0 P0. inversion_star h P. simpl in *. rewrite <- P2 in *. inversion P1.
     subst. rewrite heap_union_empty_l. rewrite <- P2. destruct a. apply H.
     apply map_disjoint_empty_r.
@@ -333,13 +332,8 @@ Section hprop.
 
   Lemma heap_ctx_split (h h' : heap) : h ##ₘ h' -> (⊢heap_ctx (h \u h') -∗ heap_ctx h ∗ heap_ctx h').
   Proof.
-    intro.
-    MonPred.unseal. repeat red.
-    unfold monPred_wand_def.
-    unfold monPred_sep_def.
-    unfold monPred_upclosed. split. simpl.
-    intro. intro P. intro. repeat red. exists hempty. rewrite monPred_at_emp in H0.
-    inversion H0; subst.
+    MonPred.unseal. split. MonPred.unseal. repeat red.
+    intros. exists hempty. inversion H0; subst.
     exists heap_empty; exists heap_empty. repeat split; auto.
     + repeat intro. inversion_star h P. inversion P1. subst.
       exists h; exists h'. repeat split; auto. inversion P0; subst.
@@ -368,7 +362,7 @@ Notation "\Top" := htop.
 
 Declare Scope heap_scope.
 
-Hint Resolve heap_union_empty_l heap_union_empty_r hempty_intro map_disjoint_empty_l map_disjoint_empty_r heap_union_assoc heap_disjoint_union_r_l heap_disjoint_union_l_l heap_disjoint_union_r_r heap_disjoint_union_l_r : heap_scope.
+Global Hint Resolve heap_union_empty_l heap_union_empty_r hempty_intro map_disjoint_empty_l map_disjoint_empty_r heap_union_assoc heap_disjoint_union_r_l heap_disjoint_union_l_l heap_disjoint_union_r_r heap_disjoint_union_l_r : heap_scope.
 
 Ltac inversion_star h P :=
   match goal with
