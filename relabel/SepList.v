@@ -329,7 +329,7 @@ Section hprop.
   Lemma emp_trivial : ⊢ (emp : monPred biInd hpropList). Proof. simpl. auto. Qed.
 
   Lemma pure_empty_destruct : forall P Q, ⊢ \⌜ P /\ Q ⌝ -∗ \⌜ P ⌝ ∗ \⌜ Q ⌝ .
-  Proof. iIntros. destruct a. iSplit; iPureIntro; auto. Qed.
+  Proof. iIntros (P Q H). destruct H. iSplit; iPureIntro; auto. Qed.
 
 
   Global Instance affine_heap_empty : Affine (heap_ctx ∅).
