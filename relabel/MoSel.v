@@ -459,6 +459,19 @@ Module adequacy_gensym_SLList.
     destruct P0. lia. inversion H.
   Qed.
 
+  Lemma nodup_inject : forall n, NoDup (inject n).
+  Proof.
+    induction n.
+    - apply NoDup_nil. trivial.
+    - rewrite inject_last. apply NoDup_app. repeat split; auto.
+      + intros. intro. pose (next_disjoint n).
+        unfold list_disjoint in l.
+        apply elem_of_list_In in H0.
+        apply elem_of_list_In in H.
+          by apply (l _ _ H H0).
+      + apply NoDup_singleton.
+  Qed.
+
   Lemma adequacy {X} : forall (e : mon Fresh X) (Q : X -> iProp) n n' v,
       (heap_ctx (inject n) ⊢ wp e Q ) ->
       run e n = (n', v) ->
@@ -496,6 +509,15 @@ Module adequacy_gensym_SLList.
       (Q v) () (inject n').
   Proof.
     intros. eapply adequacy_init; eauto. iApply H1; eauto.
+  Qed.
+
+  Lemma use_adequacy {X} : forall (e : mon Fresh X) (Q : X -> iProp) v n' H,
+      (⊢ H) -> (⊢ {{ H }} e {{ v; Q v }}) ->
+      run e initial_state = (n', v) ->
+      exists s, NoDup s /\ (Q v) () s.
+  Proof.
+    intros. epose (adequacy_triple_init _ _ _ _ _ H0 H1 H2).
+    exists (inject n'). split; auto. apply nodup_inject.
   Qed.
 
   Lemma adequacy_wp_pure {X} : forall (e : mon Fresh X) (Q : X -> Prop) n v n',

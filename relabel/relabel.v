@@ -78,7 +78,8 @@ Qed.
 Lemma relabel_spec : forall X (t : Tree X) t',
     relabel t = t' -> NoDup (flatten t') /\ sameShape t t'.
 Proof.
-  intros. unfold relabel in H. destruct (run (label t) initial_state) eqn:?. destruct H. simpl.
-  eapply finish_him. eapply adequacy_triple_init; eauto.
-  apply emp_trivial. apply label_spec.
+  intros. unfold relabel in H. destruct (run (label t) initial_state) eqn:?.
+  destruct H. simpl.
+  destruct (use_adequacy _ _ _ _ _ emp_trivial (label_spec _ _) Heqp).
+  destruct H. eapply finish_him. eapply H0.
 Qed.
