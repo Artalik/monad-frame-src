@@ -514,10 +514,9 @@ Module adequacy_gensym_SLList.
   Lemma use_adequacy {X} : forall (e : mon Fresh X) (Q : X -> iProp) v n' H,
       (⊢ H) -> (⊢ {{ H }} e {{ v; Q v }}) ->
       run e initial_state = (n', v) ->
-      exists s, NoDup s /\ (Q v) () s.
+      ∃ s, (Q v) () s.
   Proof.
-    intros. epose (adequacy_triple_init _ _ _ _ _ H0 H1 H2).
-    exists (inject n'). split; auto. apply nodup_inject.
+    intros. exists (inject n'). apply (adequacy_triple_init _ _ _ _ _ H0 H1 H2).
   Qed.
 
   Lemma adequacy_wp_pure {X} : forall (e : mon Fresh X) (Q : X -> Prop) n v n',

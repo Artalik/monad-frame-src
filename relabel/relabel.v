@@ -81,5 +81,5 @@ Proof.
   intros. unfold relabel in H. destruct (run (label t) initial_state) eqn:?.
   destruct H. simpl.
   destruct (use_adequacy _ _ _ _ _ emp_trivial (label_spec _ _) Heqp).
-  destruct H. eapply finish_him. eapply H0.
+  eapply finish_him. eapply H.
 Qed.
