@@ -1,11 +1,5 @@
-Require Import Program.Wf Lia Omega.
+Require Import Program.Wf Lia Omega Subtr.
 From stdpp Require Import fin_sets.
-
-Fixpoint subtr {A} (eq : forall (v v': A), {v = v'}+{v <> v'}) (l1 : list A) (l2 : list A) : list A :=
-  match l2 with
-  | [] => l1
-  | h :: t => remove eq h (subtr eq l1 t)
-  end.
 
 Module REACHABILITY.
   Section definitions.
@@ -195,98 +189,20 @@ Lemma rule_ret : forall X (v : X) H (Q : X -> Prop),
     (H -> Q v) -> {{ H }} ret v {{ Q }}.
 Proof. auto. Qed.
 
-Lemma in_subtr : forall (l1 l2 : SubsetV) v, In v (subtr (Vertex_eq_dec G) l1 l2) -> In v l1.
-Proof.
-  induction l2; simpl; auto.
-  intros. apply IHl2.
-  destruct (ved v a).
-  - subst. apply remove_In in H. contradiction.
-  - apply (in_remove _ _ _ _ H).
-Qed.
-
-Lemma subtrV_nil l : subtrV l [] = l.
-Proof. reflexivity. Qed.
-
-Lemma In_subtrV : forall l1 l2 v, not (In v l2) -> In v l1 -> In v (subtrV l1 l2).
-Proof.
-  unfold subtrV.
-  induction l2; simpl; auto.
-  intros.
-  assert (a <> v). intro. apply H. left; auto.
-  apply in_in_remove; auto.
-Qed.
-
-Lemma In_subtrV' : forall l1 l2 v, In v (subtrV l1 l2) -> not (In v l2) /\ In v l1.
-Proof.
-  unfold subtrV.
-  induction l2; simpl; auto.
-  intros.
-  assert (a <> v). intro. subst. apply (remove_In _ _ _ H).
-  apply in_remove in H as [P0 P1]. apply IHl2 in P0 as [P0 P2].
-  split; auto. intro. destruct H; auto.
-Qed.
-
-Lemma In_subtrV_bis : forall l1 l2 v, not (In v l2) /\ In v l1 <-> In v (subtrV l1 l2).
-Proof.
-  split.
-  - intros [P0 P1]. apply In_subtrV; auto.
-  - apply In_subtrV'.
-Qed.
-
-Lemma subtrV3_aux : forall l3 l1 l2 a,
-    subtr ved (remove ved a (subtr ved l1 l2)) l3 = remove ved a (subtr ved (subtr ved l1 l2) l3).
-Proof.
-  induction l3; simpl; auto.
-  intros. rewrite IHl3. rewrite remove_remove_comm. reflexivity.
-Qed.
-
-Lemma subtrV3 : forall l1 l2 l3, subtrV (subtrV l1 l2) l3 = subtrV l1 (l2 ++ l3).
-Proof.
-  unfold subtrV. induction l2; simpl; auto.
-  intros. rewrite <- IHl2. apply subtrV3_aux.
-Qed.
-
-Lemma In_subtrV3_spec : forall l1 l2 l3 v,
-    not (In v l3) -> In v (subtrV l1 l2) -> In v (subtrV l1 (l2 ++ l3)).
-Proof.
-  induction l2; simpl; intros.
-  - apply In_subtrV; auto.
-  - rewrite app_comm_cons. rewrite <- subtrV3.
-    apply In_subtrV; auto.
-Qed.
-
-Lemma NoDup_subtrV_aux : forall l a, NoDup l -> NoDup (remove ved a l).
-Proof.
-  induction l; simpl; auto.
-  intros. inversion_clear H.
-  destruct (ved a0 a).
-  - subst. apply IHl; auto.
-  - constructor.
-    2 : apply (IHl _ H1).
-    intro. rewrite elem_of_list_In in H. apply in_remove in H as [P0 P1].
-    apply H0. apply elem_of_list_In; auto.
-Qed.
-
-Lemma NoDup_subtrV : forall l1 l2, NoDup l1 -> NoDup (subtrV l1 l2).
-Proof.
-  unfold subtrV. induction l2; auto.
-  intros. simpl. apply IHl2 in H. apply NoDup_subtrV_aux; auto.
-Qed.
-
 Lemma Termination_preserved : forall vs w ws,
     Termination vs (w :: ws) ->
     Termination (addV w vs) (rstep vs w ws).
 Proof.
   unfold Termination. unfold Disjoint. intros. destruct H. split.
   - inversion_clear H. apply NoDup_app. repeat split; auto.
-    + apply NoDup_subtrV. apply edges_NoDup.
+    + apply NoDup_subtr. apply edges_NoDup.
     + intros. intro. rewrite elem_of_list_In in H.
-      apply In_subtrV_bis in H as [P0 P1].
+      apply In_subtr in H as [P0 P1].
       apply P0. apply in_or_app. right. apply elem_of_list_In; auto.
   - inversion_clear H. intros v P0 P1.
     unfold rstep in P0. unfold subtrV in P0. rewrite elem_of_list_In in P0.
      rewrite elem_of_list_In in P1. apply in_app_or in P0. destruct P0.
-    + apply In_subtrV_bis in H as [P0 P2]. apply P0. apply in_or_app. left; auto.
+    + apply In_subtr in H as [P0 P2]. apply P0. apply in_or_app. left; auto.
     + inversion P1.
       * subst. apply H1. apply elem_of_list_In. apply H.
       * apply H0 with v.
@@ -312,7 +228,7 @@ Proof.
   apply in_or_app.
   destruct (In_dec (Vertex_eq_dec G) v ws).
   right; auto.
-  left. rewrite app_comm_cons. apply In_subtrV3_spec; auto.
+  left. rewrite app_comm_cons. apply In_subtr_app; auto.
 Qed.
 
 Program Lemma reachable_workers_spec : forall visited (waiting : {ws : SubsetV | Termination visited ws}),
@@ -336,7 +252,7 @@ Proof.
         apply P0. apply H.
       * intros v0 P3. unfold rstep in P3. apply in_app_or in P3. destruct P3.
         -- apply reachable_next with v.
-           apply P1. apply in_eq. eapply in_subtr; eauto.
+           apply P1. apply in_eq. eapply In_subtr; eauto.
         -- apply P1. apply in_cons. apply H.
       * unfold Invariant in *.
         unfold neighbours in *. simpl. apply incl_app.
@@ -344,7 +260,7 @@ Proof.
            destruct (In_dec (Vertex_eq_dec G) v0 (addV v visited)).
            apply in_or_app; auto.
            apply in_or_app. left.
-           apply rstep_Invariant_lemma. apply In_subtrV; auto.
+           apply rstep_Invariant_lemma. apply In_subtr; auto.
         -- apply incl_tran with (addV v x ++ visited); auto.
            apply incl_app. apply incl_cons. apply in_or_app. right. apply in_eq.
            apply incl_appl. unfold rstep. apply incl_appr. apply incl_refl.
@@ -366,7 +282,7 @@ Definition measureV {X} (m : mon X): nat :=
 Lemma measureV_decrease ws w vs :
     Disjoint (w :: ws) vs -> length (subtrV (vertices G) (w :: vs)) < length (subtrV (vertices G) vs).
 Proof.
-  intros. apply remove_length_lt. apply In_subtrV.
+  intros. apply remove_length_lt. apply In_subtr1.
   intro. eapply H. econstructor. apply elem_of_list_In; auto.
   apply vertices_exhaustive.
 Qed.
@@ -416,6 +332,4 @@ Next Obligation.
   simpl. split; auto. apply NoDup_singleton. intros v P0 P1. inversion P1.
 Defined.
 
-Definition print := reachables graph [true] (NoDup_singleton true) .
-
-Compute print.
+Definition print := reachables graph [true] (NoDup_singleton true).
