@@ -82,11 +82,11 @@ Section ContError.
   Definition contFalse := cont Prop.
   Definition contTrue := cont Prop.
 
-  (* `raise` as an `assert False` *)
+  (* **peut-être-je-sais-pas-faire** correctness (eg. undefined behavior?) et timeout *)
   Global Instance MonadError_wp1 : MonadError E contFalse :=
     { raise := fun _ e => mkCont (fun k => False) }.
 
-  (* Partial correctness *)
+  (* `raise` as an `assert False` ('anomaly' dans la spec de js *)
   Global Instance MonadError_wp2 : MonadError E contTrue :=
   { raise := fun _ e => mkCont (fun k => True)
   }.

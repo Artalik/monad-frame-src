@@ -93,3 +93,7 @@ Definition divider4 n : contTrue nat
 
 Check (runCont (divider4 n) P3).
 (* Eval lazy in runCont (divider4 n) P3. *)
+
+(* https://cakeml.org/vstte18.pdf *)
+(* liveness ITP'18 https://cakeml.org/publications.html *)
+(* https://cakeml.org/ijcar18.pdf *)
