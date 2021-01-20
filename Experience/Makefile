@@ -3,6 +3,7 @@ all :
 	@coqc SepList.v
 	@coqc FM.v
 	@coqc Gensym.v
+	@coqc Error.v
 	@coqc relabel.v
 
 clean :

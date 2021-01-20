@@ -64,7 +64,7 @@ Module adequacy_gensym.
   Definition inject n := seq 0 n.
 
   Lemma inject_last : forall n, inject (S n) = inject n ++ [n].
-  Proof. apply seq_S_end_app. Qed.
+  Proof. intros. unfold inject. rewrite seq_S. reflexivity. Qed.
 
   Lemma next_disjoint : forall n, list_disjoint (inject n) [n].
   Proof.
