@@ -93,7 +93,7 @@ Section hprop.
   Set Warnings "-redundant-canonical-projection -convert_concl_no_check".
   Canonical Structure hpropO := leibnizO hprop.
 
-  Program Canonical Structure hpropList : bi :=
+  Program Canonical Structure hpropProp : bi :=
     Bi hprop _ _ impl hempty hpure_abs hand hor
        impl (@hforall) (@hexists) hstar hwand hpersistent hlater _ _ _ _.
   Next Obligation.
@@ -162,20 +162,20 @@ Section hprop.
 
   Program Canonical Structure biInd := BiIndex unit inhabited_unit _ PreOrder_unit.
 
-  Lemma emp_trivial : ⊢ (emp : monPred biInd hpropList). Proof. simpl. auto. Qed.
+  Lemma emp_trivial : ⊢ (emp : monPred biInd hpropProp). Proof. simpl. auto. Qed.
 
-  Lemma soundness1 (Φ : Prop) : (⊢ ⌜ Φ ⌝ : monPred biInd hpropList) -> Φ.
+  Lemma soundness1 (Φ : Prop) : (⊢ ⌜ Φ ⌝ : monPred biInd hpropProp) -> Φ.
   Proof.
     MonPred.unseal=> -[H]. repeat red in H. eapply (H tt).
     MonPred.unseal. repeat red. trivial.
   Qed.
 
-  Lemma soundness2 (Φ : monPred biInd hpropList) : (⊢ Φ) -> Φ ().
+  Lemma soundness2 (Φ : monPred biInd hpropProp) : (⊢ Φ) -> Φ ().
   Proof.
     intros. apply H. MonPred.unseal. repeat red. trivial.
   Qed.
 
-  Lemma soundness3 (Φ : monPred biInd hpropList) : Φ () -> (⊢Φ).
+  Lemma soundness3 (Φ : monPred biInd hpropProp) : Φ () -> (⊢Φ).
   Proof.
     split. MonPred.unseal. intros i P0. destruct i. auto.
   Qed.

@@ -4,7 +4,6 @@ From iris.proofmode Require Export base intro_patterns spec_patterns
 Require Import FunctionalExtensionality.
 From iris Require Export bi.bi proofmode.tactics proofmode.monpred proofmode.reduction.
 Global Set Warnings "-convert_concl_no_check -notation-overridden".
-Require Import SepMin SepList.
 
 (* Monade libre *)
 Module FreeMonad.
@@ -24,7 +23,7 @@ Module FreeMonad.
     end.
 
   Definition syntax_effect {E X} (e : E X) := op e ret.
-
+-
   Notation "'let!' x ':=' e1 'in' e2" :=
     (bind e1 (fun x => e2)) (x name, at level 50).
 
@@ -150,7 +149,7 @@ Module weakestpre.
       | ret v => Q v
       | op e f =>
         let (pre,post) := E_SPEC _ e in
-        pre ∗ (∀ l, post l -∗ (wp_gen (f l) Q))
+        bi_sep pre (∀ l, post l -∗ (wp_gen (f l) Q))
       end.
 
     Lemma wp_bind {X Y} (e : mon E X) (f :  X → mon E Y) (Q : Y -> iPropGen) (Q' : X -> iPropGen) :
@@ -177,8 +176,8 @@ Module weakestpre.
         iApply (H with "[HA HH] HE"). iApply ("HH" with "HA").
     Qed.
 
-    Definition triple {X} P (e : mon E X) Q : iPropGen :=
-      P -∗ (wp_gen e Q).
+    Definition triple {X} (P : iPropGen) (e : mon E X) Q : iPropGen :=
+      bi_wand P (wp_gen e Q).
 
     Notation "'{{' P } } e {{ v ; Q } } " := (triple P e (fun v => Q))
                                                (at level 20, format "'[hv' {{  P  } }  '/  ' e  '/'  {{  v ;  Q  } } ']'").

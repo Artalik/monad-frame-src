@@ -29,6 +29,7 @@ Module gensym_run.
 
 End gensym_run.
 
+Require Import SepList.
 
 (* Raisonnement pour gensym avec la SL sur liste minimaliste *)
 Module weakestpre_gensym.

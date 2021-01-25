@@ -22,19 +22,21 @@ Module Error_run.
 
 End Error_run.
 
+Require Import SepProp.
+
 (* Raisonnement pour error avec la SL sur liste minimaliste *)
 Module weakestpre_error.
-  Export SepList.
+  Export SepProp.
   Export weakestpre.
   Export Error_run.
 
   (* unit est le type des elements de la liste*)
-  Definition iProp := @iPropGen (@hpropList unit) biInd.
+  Definition iProp := @iPropGen hpropProp biInd.
 
   (* retourne (pre,post) *)
   Definition op_spec X (m : Error X) : iProp * (X -> iProp) :=
     match m with
-    | Gensym => (emp, fun _ => False)
+    | Gensym => (bi_emp, (fun _ => False)%I)
     end.
 
   Definition wp {X} (m : mon Error X) (Q : X -> iProp) : iProp :=
@@ -54,10 +56,10 @@ End weakestpre_error.
 Module adequacy_error.
   Export weakestpre_error.
 
-  Lemma adequacy {X} : forall (e : mon Error X) (Q : X -> iProp) v l,
-      (heap_ctx l ⊢ wp e Q ) ->
+  Lemma adequacy {X} : forall (e : mon Error X) (Q : X -> iProp) v,
+      (⊢ wp e Q ) ->
       run e = Some v ->
-      (Q v) () l.
+      (Q v) ().
   Proof.
     fix e 1.
     destruct e0; intros.
@@ -65,62 +67,12 @@ Module adequacy_error.
     - simpl in *. destruct e0. inversion H0.
   Qed.
 
-  Lemma adequacy_init {X} : forall (e : mon Error X) (Q : X -> iProp) v,
-      (⊢ wp e Q) ->
-      run e  = Some v ->
-      (Q v) () nil.
-  Proof. intros. eapply adequacy; eauto. Qed.
-
-  Lemma adequacy_triple {X} : forall (e : mon Error X) (Q : X -> iProp) v H l,
-      (heap_ctx l ⊢ H) -> (⊢ {{ H }} e {{ v; Q v }}) ->
-      run e = Some v ->
-      (Q v) () l.
-  Proof.
-    intros. eapply adequacy; eauto. iIntros "HA". iDestruct (H0 with "HA") as "HA".
-    iApply (H1 with "HA").
-  Qed.
-
-  Lemma adequacy_triple_init {X} : forall (e : mon Error X) (Q : X -> iProp) v H,
+  Lemma adequacy_triple {X} : forall (e : mon Error X) (Q : X -> iProp) v H,
       (⊢ H) -> (⊢ {{ H }} e {{ v; Q v }}) ->
       run e = Some v ->
-      (Q v) () nil.
+      (Q v) ().
   Proof.
-    intros. eapply adequacy_init; eauto. iApply H1; eauto.
-  Qed.
-
-  Lemma use_adequacy {X} : forall (e : mon Error X) (Q : X -> iProp) v H,
-      (⊢ H) -> (⊢ {{ H }} e {{ v; Q v }}) ->
-      run e = Some v ->
-      ∃ s, (Q v) () s.
-  Proof.
-    intros. exists nil. apply (adequacy_triple_init _ _ _ _ H0 H1 H2).
-  Qed.
-
-  Lemma adequacy_wp_pure {X} : forall (e : mon Error X) (Q : X -> Prop) v l,
-      (heap_ctx l ⊢ wp e (fun v =>  ⌜Q v⌝)) ->
-      run e = Some v ->
-      Q v.
-  Proof.
-    intros. apply (soundness1 l). iApply soundness3.
-    eapply (adequacy _ _ _ _ H H0).
-  Qed.
-
-  Lemma adequacy_pure {X} : forall (e : mon Error X) (Q : X -> Prop) v H l,
-      (heap_ctx l ⊢ H) -> (⊢ {{ H }} e {{ v; ⌜ Q v ⌝}}) ->
-      run e = Some v ->
-      Q v.
-  Proof.
-    intros. eapply adequacy_wp_pure; eauto. iIntros "HA". iDestruct (H0 with "HA") as "HA".
-    iApply (H1 with "HA").
-  Qed.
-
-  Lemma adequacy_pure_init {X} : forall (e : mon Error X) (Q : X -> Prop) v H,
-      (⊢ H) -> (⊢ {{ H }} e {{ v; ⌜ Q v ⌝}}) ->
-      run e = Some v ->
-      Q v.
-  Proof.
-    intros. eapply adequacy_pure; eauto.
-    iIntros "_". iApply H1; auto.
+    intros. eapply adequacy; eauto. iApply H1. iApply H0.
   Qed.
 
 End adequacy_error.
