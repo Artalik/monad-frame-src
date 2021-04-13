@@ -2,23 +2,27 @@ Require Import Gensym.
 
 Import adequacy_gensym.
 
+(* =tree= *)
 Inductive Tree (X : Type) :=
 | Leaf : X -> Tree X
 | Node : Tree X -> Tree X -> Tree X.
+(* =end= *)
 
 Arguments Leaf {_}.
 Arguments Node {X}.
 
+(* =label= *)
 Fixpoint label {X} (t : Tree X) : mon Fresh (Tree ident) :=
   match t with
   | Leaf _ =>
     let! v := gensym in
-    ret (Leaf v)
+    ret! (Leaf v)
   | Node l r =>
     let! l' := label l in
     let! r' := label r in
-    ret (Node l' r')
+    ret! (Node l' r')
   end.
+(* =end= *)
 
 Definition relabel {X} (t : Tree X): Tree ident := snd (run (label t) initial_state).
 
